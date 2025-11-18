@@ -36,6 +36,12 @@ copy_gitrepo_files() {
 
     local src="$dir.gitrepo"
     if [[ -f "$src" ]]; then
+      # Skip if .suedeignore exists in the same directory
+      if [[ -f "$dir.suedeignore" ]]; then
+        log "Skipped $src (found .suedeignore)"
+        continue
+      fi
+      
       local dst="$DEST_DIR/$base.gitrepo"
       cp -f "$src" "$dst"
       log "Copied $src -> $dst"
