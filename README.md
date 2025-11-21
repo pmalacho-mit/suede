@@ -92,15 +92,19 @@ Follow the below steps when setting up a codebase that will behave as a dependen
 
 ... todo ...
 
+... maintain codebase as normal, with `main` acting as your primary development source. `./release` folder is where all code that is to be distributed should go (but nothing else!). In this way, the `main` branch acts as the development / testbed for developing your code. The [subrepo-push-release action](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/subrepo-push-release.yml) handles updating the code on your `release` branch with whatever state of code is in the `./relase` folder at the time of the push to `main` (NOTE: This will also create a push to `main` updating the commit that your `./release/.gitrepo` file references, so it might be necessary to do a pull before pushing again to `main`). 
+
 ### Dependencies of Dependencies
 
 ... todo ...
 
-## Anatomy
+... the [subrepo-push-release action](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/subrepo-push-release.yml) automatically looks at the following files to determine and [populate dependencies](https://github.com/pmalacho-mit/suede/blob/main/scripts/populate-dependencies.sh)
 
-### Dependency
+- any `*/.subrepo` files at the root of your project (so top level folders with .subrepo file). In this way, it's a convention to place suede dependencies of your codebase in the root of your project and import them simply by using the local path. Then the action will take all of the `.subrepo` files, and place them into the `.dependencies` folder on the release branch, named as `folder-name.subrepo`. That way you can then easily install the same version of that dependency (especially/automated by using [this script](https://github.com/pmalacho-mit/suede/blob/main/scripts/add-subrepo-dependency.sh))
+- any `"dependencies"` listed in your root level package.json will be copied to `.dependencies/package.json` on the release branch
+- the `requirements.txt` file at the root of your repo will be copied to `.dependencies/requirements.txt` on the release branch
 
-### Consumer
+### Converting an Existing Repository to a Dependency
 
 ## Prequisites
 
@@ -114,9 +118,8 @@ If you haven't worked with devcontainers before, checkout this [tutorial](https:
 
 ##### Initializing a repository with `git subrepo` devcontainer support
 
-1. Fork [git-subrepo-devcontainer-template](https://github.com/pmalacho-mit/git-subrepo-devcontainer-template) and configure it as a template (see [Creating a template repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-template-repository)). 
-2. Create a new repository using your [git-subrepo-devcontainer-template](https://github.com/pmalacho-mit/git-subrepo-devcontainer-template) fork as a template (see [Creating a repository from a template](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template)).
-> <img width="500" alt="Screenshot 2025-11-04 at 11 26 34 PM" src="https://github.com/user-attachments/assets/68ef7c01-92b1-4db3-b31a-c86925a073f5" />
+Copy the contents of [this file]() to `.devcontainer/devcontainer.json` or create your repository using [git-subrepo-devcontainer-template](https://github.com/pmalacho-mit/git-subrepo-devcontainer-template) as a [template repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template) by selecting _Use this template ▼ > Create a new repository_
+> <img width="815" height="62" alt="Screenshot 2025-11-20 at 7 30 13 PM" src="https://github.com/user-attachments/assets/212d33a2-e16b-4c49-b4e7-ed21a1e4363b" />
 
 
 #### On your system
