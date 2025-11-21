@@ -77,9 +77,10 @@ Follow the below steps when setting up a codebase that will behave as a dependen
 
 1. Create your repository using the [suede-dependency-template](https://github.com/pmalacho-mit/suede-dependency-template) as a [template repository]()
    - After navigating to the [repo](https://github.com/pmalacho-mit/suede-dependency-template), select _Use this template ▼ > Create a new repository_
-   <img width="769" height="55" alt="Screenshot 2025-11-20 at 7 30 54 PM" src="https://github.com/user-attachments/assets/f7b698ff-7ddd-4fbd-949f-249aab59f7c2" />
+   > <img width="769" height="55" alt="Screenshot 2025-11-20 at 7 30 54 PM" src="https://github.com/user-attachments/assets/f7b698ff-7ddd-4fbd-949f-249aab59f7c2" />
 > [!IMPORTANT]  
 > You **must** toggle on _Include all branches_
+>
 > <img width="553" height="192" alt="Screenshot 2025-11-20 at 7 29 07 PM" src="https://github.com/user-attachments/assets/daf502e5-43c2-42e1-84e1-503be4acc64a" />
 
 3. Open your repository in an environment that has the `git subrepo` command available. If not, see [instructions on installing git-subrepo](#install-git-subrepo).
