@@ -75,31 +75,18 @@ This will do two things:
 
 Follow the below steps when setting up a codebase that will behave as a dependency for one or more "consumer" projects.
 
-1. Create your repository using the [suede-dependency-template](https://github.com/pmalacho-mit/suede-dependency-template) as a [template repository]()
-   - After navigating to the [repo](https://github.com/pmalacho-mit/suede-dependency-template), select _Use this template ▼ > Create a new repository_
+1. Create your repository using the [suede-dependency-template](https://github.com/pmalacho-mit/suede-dependency-template) as a [template repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template)
    > <img width="769" height="55" alt="Screenshot 2025-11-20 at 7 30 54 PM" src="https://github.com/user-attachments/assets/f7b698ff-7ddd-4fbd-949f-249aab59f7c2" />
-> [!IMPORTANT]  
-> You **must** toggle on _Include all branches_
->
-> <img width="553" height="192" alt="Screenshot 2025-11-20 at 7 29 07 PM" src="https://github.com/user-attachments/assets/daf502e5-43c2-42e1-84e1-503be4acc64a" />
-
-3. Open your repository in an environment that has the `git subrepo` command available. If not, see [instructions on installing git-subrepo](#install-git-subrepo).
-
-```
-git subrepo --version
-```
-
-3. Execute the [install-templates.sh](https://github.com/pmalacho-mit/subrepo-dependency-management/blob/main/scripts/install-templates.sh) script
-
-```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/pmalacho-mit/subrepo-dependency-management/refs/heads/main/scripts/install-templates.sh)"
-```
-> **NOTE:** If you're [relying on git subrepo within a devcontainer](), make sure to execute the above command from within a terminal tied to the devcontainer.
-
-4. Update your repository's action settings (⚙️ Settings > ▶️ Actions > General) to enable:
-   - Read and write permissions
-   - Allow GitHub Actions to create and approve pull requests
-> <img width="755" height="349" alt="Screenshot 2025-09-21 at 3 20 02 PM" src="https://github.com/user-attachments/assets/0595ad07-1bbb-4421-a876-161b2f1b1c24" />
+   - After navigating to the [repo](https://github.com/pmalacho-mit/suede-dependency-template), select _Use this template ▼ > Create a new repository_
+   > [!IMPORTANT]  
+   > When creating the respotory, you <ins>**must**</ins> toggle on _Include all branches_
+   >
+   > <img width="553" height="192" alt="Screenshot 2025-11-20 at 7 29 07 PM" src="https://github.com/user-attachments/assets/daf502e5-43c2-42e1-84e1-503be4acc64a" />
+2. Once your repository is created from the template, its [`README.md`](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/README.md) will instruct you on next steps, which include:
+   - Enabling certain github action workflow permissions
+   - Dispatching the [initialization workflow](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/initialize.yml)
+3. Once you complete the setup steps, your repository can now be distributed as a suede dependency. Your repo's `README.md` file will automatically be updated to instruct users on how to install your dependency, which will be of the form:
+   > `git subrepo clone --branch release <repo URL> <destination>`
 
 ### Maintaing a Dependency
 
