@@ -15,7 +15,7 @@ Not convinced? Jump down to [why](#why).
 In addition to [git](https://git-scm.com/)...
 
 - [git-subrepo](https://github.com/ingydotnet/git-subrepo): Enables us to more easily include git repositories as project dependencies (as compared to [git submodules](https://www.atlassian.com/git/tutorials/git-submodule) and/or [subtrees](https://www.atlassian.com/git/tutorials/git-subtree))  
-- [github actions](https://github.com/features/actions): Enables us to keep our remote subrepo dependency branches (`main` and `dist`) up to date with each other. See more about branch structure in [anatomy of a dependency](#dependency).
+- [github actions](https://github.com/features/actions): Enables us to keep our remote subrepo dependency branches (`main` and `release`) up to date with each other. See more about branch structure in [anatomy of a dependency](#dependency).
 
 It is also highly ***recommended*** to use:
 - [devcontainers](https://containers.dev/): Enables us to easily spin up a development environment that has [git-subrepo installed as a feature](https://github.com/pmalacho-mit/devcontainer-features/tree/main/src/git-subrepo).
@@ -30,13 +30,13 @@ It is also highly ***recommended*** to use:
 git subrepo --version
 ```
 
-2. Use the `git subrepo clone` command to clone the `dist` branch of your dependency repository into a location of your choosing.
+2. Use the `git subrepo clone` command to clone the `release` branch of your dependency repository into a location of your choosing.
 
 ```bash
-git subrepo clone --branch dist <repo URL> <destination>
+git subrepo clone --branch release <repo URL> <destination>
 ```
 
-> For example: `git subrepo clone --branch dist git@github.com:my-username/my-repo.git ./my-dependency`
+> For example: `git subrepo clone --branch release git@github.com:my-username/my-repo.git ./my-dependency`
 
 3. From here, you are in control of how your dependency's source code is included in your project. Consider:
    - Using symlinks:
@@ -67,7 +67,7 @@ git subrepo push <path-to-dependency>
 This will do two things:
 
 1. <u>Immediately</u> make your changes available to any consumer that follows the [upgrading instructions](#upgrading-ie-pulling)
-2. Kick off the [subrepo-pull-into-main](https://github.com/pmalacho-mit/subrepo-dependency-management/blob/main/templates/dist/.github/workflows/subrepo-pull-into-main.yml) github action, which will create a pull request of your changes into the `main` branch. That way, your changes can be easily reviewed, tested, adjusted, and/or rolled-back, if necessary. See more in [maintaing a dependency](#maintaing-a-dependency).
+2. Kick off the [subrepo-pull-into-main](https://github.com/pmalacho-mit/subrepo-dependency-management/blob/main/templates/release/.github/workflows/subrepo-pull-into-main.yml) github action, which will create a pull request of your changes into the `main` branch. That way, your changes can be easily reviewed, tested, adjusted, and/or rolled-back, if necessary. See more in [maintaing a dependency](#maintaing-a-dependency).
 
 > **NOTE:** Because these changes are immediately available, any large and/or breaking changes should instead be accomplished via the [maintaing a dependency](#maintaing-a-dependency) guidance.
 
@@ -98,14 +98,6 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/pmalacho-mit/subrepo-dep
 ### Maintaing a Dependency
 
 ... todo ...
-
-#### On `subrepo-push-dist` failure
-
-`git subrepo pull dist`
-should fail and then follow prompts
-after `git subrepo commit dist` simply `git push`
-a new run will be triggered which should succeed
-
 
 ### Dependencies of Dependencies
 
