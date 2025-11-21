@@ -77,9 +77,8 @@ Follow the below steps when setting up a codebase that will behave as a dependen
 
 1. Create your repository using the [suede-dependency-template](https://github.com/pmalacho-mit/suede-dependency-template) as a [template repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template) by selecting _Use this template ▼ > Create a new repository_
 > <img width="769" height="55" alt="Screenshot 2025-11-20 at 7 30 54 PM" src="https://github.com/user-attachments/assets/f7b698ff-7ddd-4fbd-949f-249aab59f7c2" />
-   - After navigating to the [repo](https://github.com/pmalacho-mit/suede-dependency-template), select _Use this template ▼ > Create a new repository_
 > [!IMPORTANT]  
-> When creating the respotory, you <ins>**must**</ins> toggle on _Include all branches_
+> On the next screen, you <ins>**must**</ins> toggle on _Include all branches_
 >
 > <img width="553" height="192" alt="Screenshot 2025-11-20 at 7 29 07 PM" src="https://github.com/user-attachments/assets/daf502e5-43c2-42e1-84e1-503be4acc64a" />
 2. Once your repository is created from the template, its [`README.md`](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/README.md) will instruct you on next steps, which include:
