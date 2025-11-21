@@ -85,7 +85,7 @@ Follow the below steps when setting up a codebase that will behave as a dependen
 2. Once your repository is created from the template, its [`README.md`](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/README.md) will instruct you on next steps, which include:
    - Enabling certain github action workflow permissions
    - Dispatching the [initialization workflow](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/initialize.yml)
-3. Once you complete the setup steps, your repository can now be distributed as a suede dependency. Your repo's `README.md` file will automatically be updated to instruct users on how to install your dependency, which will be of the form:
+3. Once you complete the setup steps, your repository can now be distributed as a suede dependency. The [initialization workflow](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/initialize.yml) will automatically update your repo's `README.md` to instruct users on how to install your dependency, which will follow the format:
    > `git subrepo clone --branch release <repo URL> <destination>`
 
 ### Maintaing a Dependency
