@@ -15,7 +15,7 @@ Not convinced? Jump down to [why](#why).
 In addition to [git](https://git-scm.com/)...
 
 - [git-subrepo](https://github.com/ingydotnet/git-subrepo): Enables us to more easily include git repositories as project dependencies (as compared to [git submodules](https://www.atlassian.com/git/tutorials/git-submodule) and/or [subtrees](https://www.atlassian.com/git/tutorials/git-subtree))  
-- [github actions](https://github.com/features/actions): Enables us to keep our remote subrepo dependency branches (`main` and `release`) up to date with each other. See more about branch structure in [anatomy of a dependency](#dependency).
+- [Github Actions](https://github.com/features/actions): Enables us to keep our remote subrepo dependency branches (`main` and `release`) up to date with each other. See more about branch structure in [anatomy of a dependency](#dependency).
 
 It is also highly ***recommended*** to use:
 - [devcontainers](https://containers.dev/): Enables us to easily spin up a development environment that has [git-subrepo installed as a feature](https://github.com/pmalacho-mit/devcontainer-features/tree/main/src/git-subrepo).
@@ -24,13 +24,13 @@ It is also highly ***recommended*** to use:
 
 ### Consuming a Dependency
 
-1. Confirm that your environment has the `git subrepo` command available. If not, see [instructions on installing git-subrepo](#install-git-subrepo).
+1. **Verify git-subrepo is available.** Confirm that your environment has the `git subrepo` command available. If not, see [instructions on installing git-subrepo](#install-git-subrepo).
 
 ```bash
 git subrepo --version
 ```
 
-2. Use the `git subrepo clone` command to clone the `release` branch of your dependency repository into a location of your choosing.
+2. **Clone the dependency's release branch into your project.** Use the `git subrepo clone` command to clone the `release` branch of your dependency repository into a location of your choosing.
 
 ```bash
 git subrepo clone --branch release <repo URL> <destination>
@@ -38,9 +38,9 @@ git subrepo clone --branch release <repo URL> <destination>
 
 > For example: `git subrepo clone --branch release git@github.com:my-username/my-repo.git ./my-dependency`
 
-3. From here, you are in control of how your dependency's source code is included in your project. Consider:
-   - Using symlinks:
-   - Create a typescript alias:
+3. **Integrate the dependency into your project.** At this point, you have the dependency's source code [vendored](https://htmx.org/essays/vendoring/) in your repository. How you integrate it is up to you and depends on your project’s needs. A couple of common approaches:
+   - **Use symlinks or folder references:** If your build or runtime expects dependencies in a certain location (e.g., a libs directory or within node_modules), you can create a symlink from that expected location to the ./my-dependency folder. This way, your project can import/require the dependency as if it were installed normally.
+   - **Use path aliases (for languages like TypeScript):** Many build systems or language toolchains allow you to define alias paths for imports. For example, in a TypeScript project, you could configure tsconfig.json to map an import like "my-dependency/*" to your local ./my-dependency/src/* (or whichever subdirectory contains the code). This allows you to import the dependency in code using a clean module name, while actually resolving to your vendored subrepo code.
 
 #### Upgrading (i.e. `pull`ing)
 
@@ -51,10 +51,15 @@ git subrepo pull <path-to-dependency>
 ```
 
 > For example: `git subrepo pull ./my-dependency`
+
+This will fetch and merge the newest commits from the dependency’s release branch into your subrepo folder. 
  
 #### Modifying (i.e. `push`ing)
 
-Since this workflow treats your dependencies as source code within your project, you can freely modify a dependency's files, and track those changes in your top-level project's history (i.e., with the normal `git add` / `git commit` workflow).
+One of the advantages of this workflow is that you can treat your dependency's code as if it were part of your own project while developing. If you need to modify the dependency (e.g., fix a bug or add a feature), you can edit the files in `./my-dependency` directly and test those changes in the context of your project. All such changes will be tracked in your main project's history.
+
+> [!NOTE]  
+> It's **recommended** to be mindful when modifying any dependency code, since it might require resolving conflicts down the line if you decide to [pull](#upgrading-ie-pulling). Nevertheless, that process will merely be resolving [merge conflicts](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-using-the-command-line). 
 
 If you then want to make those changes available to all consumers of the dependency, you can simply run the `git subrepo push` command, with the final argument being the location of your dependency.
 
@@ -64,10 +69,10 @@ git subrepo push <path-to-dependency>
 
 > For example: `git subrepo push ./my-dependency`
 
-This will do two things:
+This will push your local changes to the dependency's remote `release` branch, which does two things:
 
-1. <u>Immediately</u> make your changes available to any consumer that follows the [upgrading instructions](#upgrading-ie-pulling)
-2. Kick off the [subrepo-pull-into-main](https://github.com/pmalacho-mit/subrepo-dependency-management/blob/main/templates/release/.github/workflows/subrepo-pull-into-main.yml) github action, which will create a pull request of your changes into the `main` branch. That way, your changes can be easily reviewed, tested, adjusted, and/or rolled-back, if necessary. See more in [maintaing a dependency](#maintaing-a-dependency).
+1. **Immediate availability:** Your changes will be available to any consumer of the dependency that follows the [upgrading instructions](#upgrading-ie-pulling)
+2. **Pull request into main:** The [subrepo-pull-into-main](https://github.com/pmalacho-mit/subrepo-dependency-management/blob/main/templates/release/.github/workflows/subrepo-pull-into-main.yml) Github Action will kick off in your dependency's repository, which will create a pull request of your changes into its `main` branch. That way, your changes can be easily reviewed, tested, adjusted, and/or rolled-back, if necessary. See more in [maintaing a dependency](#maintaing-a-dependency).
 
 > **NOTE:** Because these changes are immediately available, any large and/or breaking changes should instead be accomplished via the [maintaing a dependency](#maintaing-a-dependency) guidance.
 
@@ -75,24 +80,31 @@ This will do two things:
 
 Follow the below steps when setting up a codebase that will behave as a dependency for one or more "consumer" projects.
 
-1. Create your repository using the [suede-dependency-template](https://github.com/pmalacho-mit/suede-dependency-template) as a [template repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template) by selecting _Use this template ▼ > Create a new repository_
+1. **Create the repository from the template.** Start by creating a new repository using the [suede-dependency-template](https://github.com/pmalacho-mit/suede-dependency-template) as a [template](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template) (select _Use this template ▼ > Create a new repository_).
 > <img width="769" height="55" alt="Screenshot 2025-11-20 at 7 30 54 PM" src="https://github.com/user-attachments/assets/f7b698ff-7ddd-4fbd-949f-249aab59f7c2" />
 
 > [!IMPORTANT]  
-> On the next screen, you <ins>**must**</ins> toggle on _Include all branches_
+> On the next screen, you <ins>**must**</ins> toggle on _Include all branches_. This ensures that you get both the `main` and `release` branches from the template.
 >
 > <img width="553" height="192" alt="Screenshot 2025-11-20 at 7 29 07 PM" src="https://github.com/user-attachments/assets/daf502e5-43c2-42e1-84e1-503be4acc64a" />
-2. Once your repository is created from the template, its [`README.md`](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/README.md) will instruct you on next steps, which include:
-   - Enabling certain github action workflow permissions
+2. **Follow the setup steps in your repository's README.** Once your repository is created from the template, its [`README.md`](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/README.md) will instruct you on next steps, which include:
+   - Enabling certain Github Action workflow permissions
    - Dispatching the [initialization workflow](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/initialize.yml)
-3. Once you complete the setup steps, your repository can now be distributed as a suede dependency. The [initialization workflow](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/initialize.yml) will automatically update your repo's `README.md` to instruct users on how to install your dependency, which will follow the format:
+3. **Share your dependency.** Once you complete the setup steps, your repository can now be distributed as a suede dependency. The [initialization workflow](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/initialize.yml) will automatically update your repo's `README.md` to instruct users on how to install your dependency, which will follow the format:
    > `git subrepo clone --branch release <repo URL> <destination>`
 
 ### Maintaing a Dependency
 
-... todo ...
+After your dependency repository is set up, you can maintain and develop it as you would any other project, with a few conventions:
 
-... maintain codebase as normal, with `main` acting as your primary development source. `./release` folder is where all code that is to be distributed should go (but nothing else!). In this way, the `main` branch acts as the development / testbed for developing your code. The [subrepo-push-release action](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/subrepo-push-release.yml) handles updating the code on your `release` branch with whatever state of code is in the `./relase` folder at the time of the push to `main` (NOTE: This will also create a push to `main` updating the commit that your `./release/.gitrepo` file references, so it might be necessary to do a pull before pushing again to `main`). 
+- **Use the main branch for all development.** Treat the main branch as the primary development branch where you add features, fix bugs, and iterate on the code. You can freely edit files on main, commit changes, and create sub-branches for feature development as needed.
+- **Keep distributable code in the `./release` folder.** Only the code intended to be consumed by other projects should go in the `./release` directory on `main`. This folder will mirror the content of the release branch. Do not put other files (tests, examples, docs, etc.) inside `./release`.
+- **Automatic syncing to the `release` branch.** Whenever you push changes to `main`, the [subrepo-push-release Github Action workflow]() will automatically update the `release` branch to match the latest state of the code in your `./release` folder. If all goes well, the `release` branch will always contain the up-to-date distributable code after any changes on `main`.
+   > Note: The [subrepo-push-release action]() will also update the reference in your `./release/.gitrepo` file on `main` to point to the new commit on the `release` branch. Therefore, you will need to pull the latest changes from `main` before pushing further changes.
+- **Avoid direct commits to the release branch.** Under normal circumstances, you should not need to work on the release branch directly. All changes should flow from main → release via the automated workflow. The only time you'd interact with release manually is if something went wrong and you need to fix the merge conflicts (which should be rare).
+- **Handle external contributions via PRs.** Because this workflow allows consumers to push changes to the dependency's release branch (as described in the Modifying section), your repository has a mechanism to integrate those contributions. The subrepo-pull-into-main action runs whenever new commits appear on the release branch (e.g., someone pushed via a subrepo). This action will create a pull request from release into main. As a maintainer, you should review these PRs and merge them after appropriate testing. This way, contributions from others get incorporated into your main branch (the source of truth) in a controlled manner, even though they've already landed on release.
+
+In summary, do your day-to-day development on main, keep the ./release folder up-to-date with the code you want to distribute, and let the automation handle syncing that code to the release branch. You usually won't have to bump version numbers or manage separate release branches – each commit to main (specifically changes within ./release) effectively becomes a new release of your dependency.
 
 ### Dependencies of Dependencies
 
@@ -139,3 +151,9 @@ This workflow gets rid of those issues, since the state of a repository's commit
 If local changes can't succesfully be pushed to the dependency, then it's just a manner of resolving git conflicts (not ideal, but a well trotted path). 
 
 In this way, it tries to get the best of both worlds. Vendored dependencies, but also source control and bidirectional updates. 
+
+## Environment-specific Tips 
+
+### Vite
+
+### SvelteKit
