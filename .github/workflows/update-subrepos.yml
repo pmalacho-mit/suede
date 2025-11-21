@@ -1,0 +1,70 @@
+name: update-subrepos
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-subrepos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Git user
+        run: |
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
+
+      - name: Install git-subrepo
+        run: |
+          git clone https://github.com/ingydotnet/git-subrepo ~/.git-subrepo
+          source ~/.git-subrepo/.rc
+          git subrepo --version
+
+      - name: Update all subrepos
+        run: |
+          set -e
+          source ~/.git-subrepo/.rc
+          
+          # Find all .gitrepo files and extract their parent directories
+          SUBREPO_DIRS=$(find . -name ".gitrepo" -type f | sed 's|/\.gitrepo$||' | sort -u)
+          
+          if [ -z "$SUBREPO_DIRS" ]; then
+            echo "No subrepos found"
+            exit 0
+          fi
+          
+          echo "Found subrepos:"
+          echo "$SUBREPO_DIRS"
+          echo ""
+          
+          # Pull each subrepo
+          for dir in $SUBREPO_DIRS; do
+            echo "=================================================="
+            echo "Updating subrepo: $dir"
+            echo "=================================================="
+            
+            if git subrepo pull "$dir"; then
+              echo "✓ Successfully pulled $dir"
+            else
+              echo "⚠ Failed to pull $dir (may be up to date or have conflicts)"
+            fi
+            echo ""
+          done
+
+      - name: Commit and push changes
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git add .
+            git commit -m "chore(subrepos): daily update of all subrepos [skip ci]"
+            git push
+            echo "Changes committed and pushed"
+          else
+            echo "No changes to commit"
+          fi
