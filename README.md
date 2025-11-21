@@ -118,7 +118,7 @@ If you haven't worked with devcontainers before, checkout this [tutorial](https:
 
 ##### Initializing a repository with `git subrepo` devcontainer support
 
-Copy the contents of [this file]() to `.devcontainer/devcontainer.json` or create your repository using [git-subrepo-devcontainer-template](https://github.com/pmalacho-mit/git-subrepo-devcontainer-template) as a [template repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template) by selecting _Use this template ▼ > Create a new repository_
+Copy the contents of [this file](https://github.com/pmalacho-mit/git-subrepo-devcontainer-template/blob/main/.devcontainer/devcontainer.json) to `.devcontainer/devcontainer.json` or create your repository using [git-subrepo-devcontainer-template](https://github.com/pmalacho-mit/git-subrepo-devcontainer-template) as a [template repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template) by selecting _Use this template ▼ > Create a new repository_
 > <img width="815" height="62" alt="Screenshot 2025-11-20 at 7 30 13 PM" src="https://github.com/user-attachments/assets/212d33a2-e16b-4c49-b4e7-ed21a1e4363b" />
 
 
@@ -129,3 +129,13 @@ Install `git subrepo` on your system according to their [installation instructio
 ## Why
 
 ... todo ...
+
+If gitsubmodules worked better, we'd just use those! You could imagine a similiar branching structure, where you always install the `release` branch as a submodule. 
+
+But unfortunately they too often get in a state where you push up code that relies on changes made to submodules without updating/pushing the submodule and committing that to your top-level repository, leading to a state where the working code you experienced as a developer is not what is reflected upstream. This is understandable in submodules since it requires extra work, where often you'll want to create a seperate branch in the submodule for your branch in the consuming codebase. Then this also brings in the added complexity of managing multiple related branches across repos. 
+
+This workflow gets rid of those issues, since the state of a repository's committed code is fully tracked in the repository itself. Then using gitsubrepo, we enable git as a tool for receiving continuous updates, and also how we can distribute our changes. 
+
+If local changes can't succesfully be pushed to the dependency, then it's just a manner of resolving git conflicts (not ideal, but a well trotted path). 
+
+In this way, it tries to get the best of both worlds. Vendored dependencies, but also source control and bidirectional updates. 
