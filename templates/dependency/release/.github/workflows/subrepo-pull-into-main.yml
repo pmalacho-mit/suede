@@ -58,9 +58,3 @@ jobs:
             --head "${{ steps.generate-branch-name.outputs.branch-name }}" \
             --title "chore(suede): pull latest upstream release into main" \
             --body "Automated subrepo pull of origin:release into ./release"
-
-      - name: Revert triggering commit on release branch
-        run: |
-          git switch release
-          git revert --no-edit HEAD
-          git push origin release
