@@ -8,12 +8,12 @@ set -euo pipefail
 #
 #   ## Installation (HTTPS)
 #   ```bash
-#   git subrepo clone --branch dist https://github.com/example/my-repo.git ./my-repo
+#   git subrepo clone --branch release https://github.com/example/my-repo.git ./my-repo
 #   ```
 #
 #   ## Installation (SSH)
 #   ```bash
-#   git subrepo clone --branch dist git@github.com:example/my-repo.git ./my-repo
+#   git subrepo clone --branch release git@github.com:example/my-repo.git ./my-repo
 #   ```
 #
 # Safe to run on GitHub runners and locally. Existing README.md content is preserved.
@@ -86,7 +86,7 @@ log "HTTPS URL: $HTTPS_URL"
 log "SSH URL:   $SSH_URL"
 
 DEST_PATH="./$REPO_NAME"
-DIST_URL="${HTTPS_URL%.git}/tree/dist"
+RELEASE_URL="${HTTPS_URL%.git}/tree/release"
 
 # Build the new content
 cat > "$README" <<EOF
@@ -94,18 +94,18 @@ cat > "$README" <<EOF
 
 This repo is a [suede dependency](https://github.com/pmalacho-mit/suede). 
 
-To see the installable source code, please checkout the [dist branch]($DIST_URL).
+To see the installable source code, please checkout the [release branch]($RELEASE_URL).
 
 ## Installation (SSH)
 
 \`\`\`bash
-git subrepo clone --branch dist $SSH_URL $DEST_PATH
+git subrepo clone --branch release $SSH_URL $DEST_PATH
 \`\`\`
 
 ## Installation (HTTPS)
 
 \`\`\`bash
-git subrepo clone --branch dist $HTTPS_URL $DEST_PATH
+git subrepo clone --branch release $HTTPS_URL $DEST_PATH
 \`\`\`
 
 EOF
