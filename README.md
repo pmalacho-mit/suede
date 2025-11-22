@@ -1,4 +1,4 @@
-# _suede_: [git-subrepo](https://github.com/ingydotnet/git-subrepo) based dependency management
+# _Suede_: [git-subrepo](https://github.com/ingydotnet/git-subrepo) based dependency management
 
 <sub>git-</sub>***Su***<sub>br</sub>***e***<sub>po based</sub> ***de***<sub>pendency management</sub>
 
@@ -61,7 +61,7 @@ One of the advantages of this workflow is that you can treat your dependency's c
 > [!NOTE]  
 > It's **recommended** to be mindful when modifying any dependency code, since it might require resolving conflicts down the line if you decide to [pull](#upgrading-ie-pulling). Nevertheless, that process will merely be resolving [merge conflicts](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-using-the-command-line). 
 
-If you then want to make those changes available to all consumers of the dependency, you can simply run the `git subrepo push` command, with the final argument being the location of your dependency.
+If you then want to make those changes available to all consumers of the dependency (and you have permissions to push to its repository), you can simply run the `git subrepo push` command, with the final argument being the location of your dependency.
 
 ```
 git subrepo push <path-to-dependency>
@@ -100,11 +100,12 @@ After your dependency repository is set up, you can maintain and develop it as y
 - **Use the main branch for all development.** Treat the main branch as the primary development branch where you add features, fix bugs, and iterate on the code. You can freely edit files on main, commit changes, and create sub-branches for feature development as needed.
 - **Keep distributable code in the `./release` folder.** Only the code intended to be consumed by other projects should go in the `./release` directory on `main`. This folder will mirror the content of the release branch. Do not put other files (tests, examples, docs, etc.) inside `./release`.
 - **Automatic syncing to the `release` branch.** Whenever you push changes to `main`, the [subrepo-push-release Github Action workflow]() will automatically update the `release` branch to match the latest state of the code in your `./release` folder. If all goes well, the `release` branch will always contain the up-to-date distributable code after any changes on `main`.
-   > Note: The [subrepo-push-release action]() will also update the reference in your `./release/.gitrepo` file on `main` to point to the new commit on the `release` branch. Therefore, you will need to pull the latest changes from `main` before pushing further changes.
-- **Avoid direct commits to the release branch.** Under normal circumstances, you should not need to work on the release branch directly. All changes should flow from main → release via the automated workflow. The only time you'd interact with release manually is if something went wrong and you need to fix the merge conflicts (which should be rare).
-- **Handle external contributions via PRs.** Because this workflow allows consumers to push changes to the dependency's release branch (as described in the Modifying section), your repository has a mechanism to integrate those contributions. The subrepo-pull-into-main action runs whenever new commits appear on the release branch (e.g., someone pushed via a subrepo). This action will create a pull request from release into main. As a maintainer, you should review these PRs and merge them after appropriate testing. This way, contributions from others get incorporated into your main branch (the source of truth) in a controlled manner, even though they've already landed on release.
+   > Note: The [subrepo-push-release action]() will also update the reference in your `./release/.gitrepo` file on `main` to point to the new commit on the `release` branch. Therefore, you will need to pull from `main` before pushing further changes.
+- **Avoid direct commits to the release branch.** Under normal circumstances, you should not need to work on the release branch directly. All changes should flow from `main` → `release` via the automated workflow. The only time you'd interact with release manually is if something went wrong and you need to fix merge conflicts (which should be rare).
+- **Handle external contributions via PRs.** As mentioned above in the [Modifying section](#modifying-ie-pushing), users that consume your dependency can also push changes to its release branch via the `git subrepo push ...` command (assuming their account has write access to your repository). This will trigger the [subrepo-pull-into-main action]() which will create a pull request from update the content of the `./release` folder on `main` based on the state of the `release` branch. As a maintainer, you should review these PRs and merge them after appropriate testing. This way, contributions from others get incorporated into your `main` branch (the source of truth) in a controlled manner, even though they've already landed on release.
+   - If this 
 
-In summary, do your day-to-day development on main, keep the ./release folder up-to-date with the code you want to distribute, and let the automation handle syncing that code to the release branch. You usually won't have to bump version numbers or manage separate release branches – each commit to main (specifically changes within ./release) effectively becomes a new release of your dependency.
+In summary, do your day-to-day development on `main`, keep the `./release` folder up-to-date with the code you want to distribute, and let the automation handle syncing that code to the `release` branch.
 
 ### Dependencies of Dependencies
 
