@@ -29,7 +29,7 @@ COMMIT="$(get_value commit)"; [[ -n "$COMMIT" ]] || { echo "ERROR: 'commit' not 
 
 # Normalize GitHub remote -> "github.com/<owner>/<repo>[.git]"
 case "$REMOTE" in
-  git@github.com:*)        NORM="github.com/${REMOTE#git@github.com:}" ;;
+  https://github.com/*)        NORM="github.com/${REMOTE#https://github.com/}" ;;
   https://github.com/*)     NORM="${REMOTE#https://}" ;;
   ssh://git@github.com/*)   NORM="${REMOTE#ssh://}" ;;
   *) echo "ERROR: unsupported or non-GitHub remote: $REMOTE" >&2; exit 1 ;;

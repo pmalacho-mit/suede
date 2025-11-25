@@ -3,5 +3,5 @@
 ## Locally installing
 
 ```bash
-git subrepo clone git@github.com:pmalacho-mit/subrepo-dependency-management-example.git example -b dist
+git subrepo clone https://github.com/pmalacho-mit/subrepo-dependency-management-example.git example -b dist
 ```

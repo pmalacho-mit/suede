@@ -4,7 +4,7 @@
 ; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
 ;
 [subrepo]
-	remote = git@github.com:pmalacho-mit/suede-dependency-template.git
+	remote = https://github.com/pmalacho-mit/suede-dependency-template.git
 	branch = release
 	commit = 2a41ca40063fb73a303d1a91a838135be4167759
 	parent = dd0f44bea90c076dac75193e97d7ea0f0fd901d8

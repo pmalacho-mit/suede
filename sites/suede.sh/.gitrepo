@@ -4,7 +4,7 @@
 ; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
 ;
 [subrepo]
-	remote = git@github.com:pmalacho-mit/suede-cloudflare-worker.git
+	remote = https://github.com/pmalacho-mit/suede-cloudflare-worker.git
 	branch = main
 	commit = 562cd5e6266979fda026b26e3888f4103e727698
 	parent = fcf9767a83af753887490915631f408504048293

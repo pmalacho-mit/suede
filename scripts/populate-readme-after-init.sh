@@ -13,7 +13,7 @@ set -euo pipefail
 #
 #   ## Installation (SSH)
 #   ```bash
-#   git subrepo clone --branch release git@github.com:example/my-repo.git ./my-repo
+#   git subrepo clone --branch release https://github.com/example/my-repo.git ./my-repo
 #   ```
 #
 # Safe to run on GitHub runners and locally. Existing README.md content is preserved.

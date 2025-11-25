@@ -4,7 +4,7 @@
 ; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
 ;
 [subrepo]
-	remote = git@github.com:pmalacho-mit/subrepo-dependency-management-example.git
+	remote = https://github.com/pmalacho-mit/subrepo-dependency-management-example.git
 	branch = main
 	commit = c939df9630e6818c891fb97bb18361b0fc84a1cb
 	parent = eacfea1ed6acb42d2b33041ed00813d8b61277ec

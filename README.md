@@ -39,7 +39,7 @@ git subrepo --version
 git subrepo clone --branch release <repo URL> <destination>
 ```
 
-> For example: `git subrepo clone --branch release git@github.com:my-username/my-repo.git ./my-dependency`
+> For example: `git subrepo clone --branch release https://github.com/my-username/my-repo.git ./my-dependency`
 
 3. **Integrate the dependency into your project.** At this point, you have the dependency's source code [vendored](https://htmx.org/essays/vendoring/) in your repository. How you integrate it is up to you and depends on your project’s needs. A couple of common approaches:
    - **Use symlinks or folder references:** If your build or runtime expects dependencies in a certain location (e.g., a libs directory or within node_modules), you can create a symlink from that expected location to the ./my-dependency folder. This way, your project can import/require the dependency as if it were installed normally.
