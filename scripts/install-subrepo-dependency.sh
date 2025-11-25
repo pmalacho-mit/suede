@@ -17,8 +17,9 @@ set -euo pipefail
 
 # ----- External Script Dependencies -----
 # These scripts are downloaded and executed at runtime.
-readonly EXTERNAL_SCRIPT_EXTRACT="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/extract-subrepo-config.sh"
-readonly EXTERNAL_SCRIPT_DEGIT="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/utils/degit.sh"
+readonly EXTERNAL_SCRIPT_BASE="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts" 
+readonly EXTERNAL_SCRIPT_EXTRACT="${EXTERNAL_SCRIPT_BASE}/extract-subrepo-config.sh"
+readonly EXTERNAL_SCRIPT_DEGIT="${EXTERNAL_SCRIPT_BASE}/utils/degit.sh"
 
 # Print usage information to stderr.  This function is invoked when
 # incorrect flags are supplied or when --help is requested.
@@ -136,7 +137,7 @@ if [[ ! -f "$FILE" ]]; then
 fi
 
 # Parse the .gitrepo file.  This populates OWNER, REPO and COMMIT variables.
-eval "$(bash <(curl -fsSL ${EXTERNAL_SCRIPT_EXTRACT}) ${FILE})"
+eval "$(cat "${FILE}" | bash <(curl -fsSL ${EXTERNAL_SCRIPT_EXTRACT}))"
 printf "Determined subrepo ref: %s/%s@%s\n" "${OWNER}" "${REPO}" "${COMMIT}" >&2
 
 # Determine derived destination if not provided.  For

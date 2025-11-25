@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # Parse a git-subrepo .gitrepo file and output OWNER, REPO, COMMIT as KEY=VALUE lines.
-# Usage: parse-gitrepo [path/to/.gitrepo]   (default: ./.gitrepo)
+# Usage: cat .gitrepo | parse-gitrepo
+#        parse-gitrepo < .gitrepo
 
 set -euo pipefail
 
-usage() { printf 'Usage: %s [path/to/.gitrepo]\n' "$(basename "$0")" >&2; exit 1; }
+usage() { printf 'Usage: %s < path/to/.gitrepo\n       cat path/to/.gitrepo | %s\n' "$(basename "$0")" "$(basename "$0")" >&2; exit 1; }
 [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]] && usage
 
-GITREPO_FILE="${1:-.gitrepo}"
-[[ -f "$GITREPO_FILE" ]] || { printf 'ERROR: file not found: %s\n' "$GITREPO_FILE" >&2; exit 1; }
+# Read content from stdin into a variable
+GITREPO_CONTENT=$(cat)
 
 # Extract a value from "key = value" lines (whitespace tolerant).
 get_value() {
@@ -20,7 +21,7 @@ get_value() {
       sub(/[[:space:]]+$/,"",val)
       print val
     }
-  ' "$GITREPO_FILE" | tail -n1
+  ' <<< "$GITREPO_CONTENT" | tail -n1
 }
 
 REMOTE="$(get_value remote)"; [[ -n "$REMOTE" ]] || { echo "ERROR: 'remote' not found" >&2; exit 1; }

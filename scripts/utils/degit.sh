@@ -5,18 +5,20 @@ usage() {
   cmd="$(basename "$0")"
   cat >&2 <<USAGE
 Usage:
-  $cmd --repo OWNER/REPO [--branch BRANCH] [--commit SHA] [--directory DIR]
+  $cmd --repo OWNER/REPO [--branch BRANCH] [--commit SHA] [--directory DIR] [--include PATH...]
 Options:
   -r, --repo OWNER/REPO     (required) repository in OWNER/REPO form
   -b, --branch BRANCH       branch or tag to fetch if --commit not supplied
   -c, --commit SHA          specific commit SHA to fetch (takes precedence)
   -d, --directory DIR       destination directory (default: repo name)
+  -i, --include PATH...     only extract files matching these path patterns
   -h, --help                show this help
 
 Examples:
   $cmd -r vercel/next.js
   $cmd -r sveltejs/svelte -b v5.0.0 -d svelte-src
   $cmd -r torvalds/linux -c 5c3f1b2 -d ./linux-snapshot
+  $cmd -r facebook/react -i packages/react packages/shared
 USAGE
   exit 1
 }
@@ -26,6 +28,7 @@ REPO=""
 BRANCH=""
 COMMIT=""
 DEST=""
+INCLUDE_PATHS=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -33,6 +36,13 @@ while [[ $# -gt 0 ]]; do
     -b|--branch)    BRANCH="${2-}"; shift 2 || usage ;;
     -c|--commit)    COMMIT="${2-}"; shift 2 || usage ;;
     -d|--directory) DEST="${2-}"; shift 2 || usage ;;
+    -i|--include)   
+      shift
+      while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
+        INCLUDE_PATHS+=("$1")
+        shift
+      done
+      ;;
     -h|--help)      usage ;;
     --)             shift; break ;;
     -*)
@@ -133,10 +143,23 @@ fi
 echo "Fetching from $URL ..."
 
 # ---- Fetch & extract ----
+# Build tar arguments
+TAR_ARGS=(-xz --strip-components=1 -C "$DEST")
+
+# If include paths specified, add wildcards for filtering
+if [[ ${#INCLUDE_PATHS[@]} -gt 0 ]]; then
+  TAR_ARGS+=(--wildcards --no-wildcards-match-slash)
+  for path in "${INCLUDE_PATHS[@]}"; do
+    # Add pattern matching any top-level dir (GitHub tarball prefix) + user path
+    # Use a single pattern that matches the directory and all its contents recursively
+    TAR_ARGS+=("*/${path}*")
+  done
+fi
+
 curl -fLSS --retry 3 --connect-timeout 10 \
   "${UA_HEADER[@]}" "${ACCEPT_HEADER[@]}" ${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"} \
   "$URL" \
-| tar -xz --strip-components=1 -C "$DEST"
+| tar "${TAR_ARGS[@]}"
 
 # ---- Done ----
 if [[ -n "$COMMIT" && -n "$BRANCH" ]]; then
