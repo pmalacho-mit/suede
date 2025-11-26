@@ -17,8 +17,9 @@ In addition to [git](https://git-scm.com/)...
 - [git-subrepo](https://github.com/ingydotnet/git-subrepo): Enables us to more easily include git repositories as project dependencies (as compared to [git submodules](https://www.atlassian.com/git/tutorials/git-submodule) and/or [subtrees](https://www.atlassian.com/git/tutorials/git-subtree))  
 - [Github Actions](https://github.com/features/actions): Enables us to keep our remote subrepo dependency branches (`main` and `release`) up to date with each other. See more about branch structure in [anatomy of a dependency](#dependency).
 - [Bash scripts](https://github.com/pmalacho-mit/suede/tree/main/scripts): Automates common tasks like installing dependencies, extracting repository metadata, and downloading specific folders from remote repositories without requiring a full git clone. 
-> [!NOTE]  
-> Please submit an issue if you experience any issues with these scripts on your operating system. Also, consider using a [linux-based](https://mcr.microsoft.com/en-us/artifact/mar/devcontainers/base/about) [devcontainer](https://containers.dev/), where these scripts are more easily/regularly tested.
+   - For convenience, [suede.sh](https://suede.sh) acts as a proxy to the [scripts folder](https://github.com/pmalacho-mit/suede/tree/main/scripts)
+   > [!NOTE]  
+   > Please submit an issue if you experience any issues with these scripts on your operating system. Also, consider using a [linux-based](https://mcr.microsoft.com/en-us/artifact/mar/devcontainers/base/about) [devcontainer](https://containers.dev/), where these scripts are more easily/regularly tested.
 
 It is also highly ***recommended*** to use:
 - [devcontainers](https://containers.dev/): Enables us to easily spin up a (typically [linux-based](https://mcr.microsoft.com/en-us/artifact/mar/devcontainers/base/about)) development environment that has [git-subrepo installed as a feature](https://github.com/pmalacho-mit/devcontainer-features/tree/main/src/git-subrepo).
