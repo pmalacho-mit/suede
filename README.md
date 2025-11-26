@@ -17,7 +17,7 @@ In addition to [git](https://git-scm.com/)...
 - [git-subrepo](https://github.com/ingydotnet/git-subrepo): Enables us to more easily include git repositories as project dependencies (as compared to [git submodules](https://www.atlassian.com/git/tutorials/git-submodule) and/or [subtrees](https://www.atlassian.com/git/tutorials/git-subtree))  
 - [Github Actions](https://github.com/features/actions): Enables us to keep our remote subrepo dependency branches (`main` and `release`) up to date with each other. See more about branch structure in [anatomy of a dependency](#dependency).
 - [Bash scripts](https://github.com/pmalacho-mit/suede/tree/main/scripts): Automates common tasks like installing dependencies, extracting repository metadata, and downloading specific folders from remote repositories without requiring a full git clone. 
-   - For convenience, [suede.sh](https://suede.sh) acts as a proxy to the [scripts folder](https://github.com/pmalacho-mit/suede/tree/main/scripts)
+   - For convenience, [suede.sh](https://suede.sh) acts as a proxy for [script content](https://github.com/pmalacho-mit/suede/tree/main/scripts). See more in the [suede.sh subsection](#suedesh).
    > [!NOTE]  
    > Please submit an issue if you experience any issues with these scripts on your operating system. Also, consider using a [linux-based](https://mcr.microsoft.com/en-us/artifact/mar/devcontainers/base/about) [devcontainer](https://containers.dev/), where these scripts are more easily/regularly tested.
 
@@ -28,21 +28,28 @@ It is also highly ***recommended*** to use:
 
 ### Consuming a Dependency
 
-1. **Verify git-subrepo is available.** Confirm that your environment has the `git subrepo` command available. If not, see [instructions on installing git-subrepo](#install-git-subrepo).
+To consume a dependency, you'll make use of the [install-release.sh](./scripts/install-release.sh) script, which is proxied at [suede.sh/install-release](https://suede.sh/install-release) (see more: [suede.sh](#suedesh)).
+
+First, `cd` into your repository and execute the following command:
 
 ```bash
-git subrepo --version
+bash <(curl --fail --silent --show-error --location https://suede.sh/install-release) --repo <owner/name> 
 ```
 
-2. **Clone the dependency's release branch into your project.** Use the `git subrepo clone` command to clone the `release` branch of your dependency repository into a location of your choosing.
+Optionally, you can provide an install destination using the `--dest` flag (or `d` shorthand). Otherwise, the dependency will be written to a folder named the same as its repository.
 
+<details>
+<summary>
+See alternative to using [suede.sh](https://suede.sh)
+</summary>
 ```bash
-git subrepo clone --branch release <repo URL> <destination>
+bash <(curl -fsSL https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install-release.sh) --repo <owner/name> 
 ```
+</details>
 
-> For example: `git subrepo clone --branch release https://github.com/my-username/my-repo.git ./my-dependency`
+After the script succeeds, follow its instructions to `git add ...` & `git commit ...` the new dependency folder.
 
-3. **Integrate the dependency into your project.** At this point, you have the dependency's source code [vendored](https://htmx.org/essays/vendoring/) in your repository. How you integrate it is up to you and depends on your project’s needs. A couple of common approaches:
+You then have the dependency's source code [vendored](https://htmx.org/essays/vendoring/) in your repository. How you integrate it is up to you and depends on your project’s needs. A couple of common approaches:
    - **Use symlinks or folder references:** If your build or runtime expects dependencies in a certain location (e.g., a libs directory or within node_modules), you can create a symlink from that expected location to the ./my-dependency folder. This way, your project can import/require the dependency as if it were installed normally.
       > [!TIP]
       > Make sure the location of your symlink is not `.gitignore`'d.
@@ -51,7 +58,13 @@ git subrepo clone --branch release <repo URL> <destination>
 
 #### Upgrading (i.e. `pull`ing)
 
-To get the latest changes for your dependency, simply run the `git subrepo pull` command, with the final argument being the location of your dependency.
+To get the latest changes for your dependency, first confirm that your environment has the `git subrepo` command available. If not, see [instructions on installing git-subrepo](#install-git-subrepo).
+
+```bash
+git subrepo --version
+```
+
+Then, simply run the `git subrepo pull` command, with the final argument being the location of your dependency.
 
 ```
 git subrepo pull <path-to-dependency>
@@ -124,6 +137,44 @@ In summary, do your day-to-day development on `main`, keep the `./release` folde
 - the `requirements.txt` file at the root of your repo will be copied to `.dependencies/requirements.txt` on the release branch
 
 ### Converting an Existing Repository to a Dependency
+
+## [suede.sh](https://suede.sh)
+
+[suede.sh](https://suede.sh) is a Cloudflare Worker that provides cached, convenient access to the scripts in this repository. It serves as a proxy to the GitHub raw content URLs, with two key benefits:
+
+1. **Simplified URLs:** Instead of typing the full GitHub raw content URL, you can use shorter URLs like `https://suede.sh/install-release`
+2. **Optional file extensions:** The `.sh` extension can be omitted from requests (e.g., `https://suede.sh/utils/degit` instead of `https://suede.sh/utils/degit.sh`)
+3. **Caching:** Responses are cached via Cloudflare's CDN for faster access
+
+### Usage
+
+Throughout this documentation, you'll see commands like:
+
+```bash
+bash <(curl -fsSL https://suede.sh/install-release)
+```
+
+This is equivalent to:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install-release.sh)
+```
+
+### Security Considerations
+
+If you have concerns about executing scripts through a third-party proxy, you can always use the direct GitHub raw content URLs instead. Both approaches fetch the same script content, but the GitHub URL bypasses the suede.sh proxy entirely.
+
+For example, replace:
+```bash
+curl -fsSL https://suede.sh/install-release
+```
+
+With:
+```bash
+curl -fsSL https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install-release.sh
+```
+
+The source code for the suede.sh worker is available at [github.com/pmalacho-mit/suede-cloudflare-worker](https://github.com/pmalacho-mit/suede-cloudflare-worker) for review.
 
 ## Prequisites
 
