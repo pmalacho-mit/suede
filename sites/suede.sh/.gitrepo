@@ -6,7 +6,7 @@
 [subrepo]
 	remote = https://github.com/pmalacho-mit/suede-cloudflare-worker.git
 	branch = main
-	commit = 562cd5e6266979fda026b26e3888f4103e727698
-	parent = fcf9767a83af753887490915631f408504048293
+	commit = 6b6819d3759c80450771fbc7b4ab9da220f3bec6
+	parent = 76397e57e7095d5bf31fd3a701e23880a3884b4b
 	method = merge
 	cmdver = 0.4.9
