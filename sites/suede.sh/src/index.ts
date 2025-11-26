@@ -36,7 +36,7 @@ const index = `<!DOCTYPE html>
 		
 		<p>
 			Source code for this worker: 
-			<a href="https://github.com/pmalacho-mit/suede-cloudflare-worker">github.com/pmalacho-mit/suede-cloudflare-worker</a>
+			<a href="https://github.com/pmalacho-mit/suede-cloudflare-worker/blob/main/src/index.ts">github.com/pmalacho-mit/suede-cloudflare-worker</a>
 		</p>
 	</main>
 </body>
