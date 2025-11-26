@@ -17,7 +17,7 @@ In addition to [git](https://git-scm.com/)...
 - [git-subrepo](https://github.com/ingydotnet/git-subrepo): Enables us to more easily include git repositories as project dependencies (as compared to [git submodules](https://www.atlassian.com/git/tutorials/git-submodule) and/or [subtrees](https://www.atlassian.com/git/tutorials/git-subtree))  
 - [Github Actions](https://github.com/features/actions): Enables us to keep our remote subrepo dependency branches (`main` and `release`) up to date with each other. See more about branch structure in [anatomy of a dependency](#dependency).
 - [Bash scripts](https://github.com/pmalacho-mit/suede/tree/main/scripts): Automates common tasks like installing dependencies, extracting repository metadata, and downloading specific folders from remote repositories without requiring a full git clone. 
-   - For convenience, [suede.sh](https://suede.sh) acts as a proxy for [script content](https://github.com/pmalacho-mit/suede/tree/main/scripts). See more in the [suede.sh subsection](#suedesh).
+   - For convenience, [suede.sh](https://suede.sh) acts as a proxy for script content, [see more](#suedesh).
    > [!NOTE]  
    > Please submit an issue if you experience any issues with these scripts on your operating system. Also, consider using a [linux-based](https://mcr.microsoft.com/en-us/artifact/mar/devcontainers/base/about) [devcontainer](https://containers.dev/), where these scripts are more easily/regularly tested.
 
@@ -40,11 +40,13 @@ Optionally, you can provide an install destination using the `--dest` flag (or `
 
 <details>
 <summary>
-See alternative to using [suede.sh](https://suede.sh)
+See alternative to using suede.sh
 </summary>
+
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install-release.sh) --repo <owner/name> 
 ```
+
 </details>
 
 After the script succeeds, follow its instructions to `git add ...` & `git commit ...` the new dependency folder.
