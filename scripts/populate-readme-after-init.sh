@@ -1,20 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Prepends installation instructions (HTTPS + SSH) to the root README.md.
+# Generates installation instructions for the root README.md using suede.sh.
 #
-# Example inserted content:
-#   # My Repo
-#
-#   ## Installation (HTTPS)
-#   ```bash
-#   git subrepo clone --branch release https://github.com/example/my-repo.git ./my-repo
-#   ```
-#
-#   ## Installation (SSH)
-#   ```bash
-#   git subrepo clone --branch release https://github.com/example/my-repo.git ./my-repo
-#   ```
+# Parses the git remote origin URL to extract host and path components,
+# which are required for the suede.sh installation script.
 #
 # Safe to run on GitHub runners and locally. Existing README.md content is preserved.
 
@@ -62,9 +52,16 @@ case "$ORIGIN_URL" in
     _path="${ORIGIN_URL#*:}"
     ;;
   *)
-    log "WARNING: Unrecognized remote format; using as-is for both HTTPS and SSH."
+    log "ERROR: Unrecognized remote format. Could not parse host and path from: $ORIGIN_URL"
+    exit 1
     ;;
 esac
+
+# Ensure we successfully parsed host and path
+if [[ -z "$_host" || -z "$_path" ]]; then
+  log "ERROR: Failed to extract host and path from origin URL: $ORIGIN_URL"
+  exit 1
+fi
 
 ensure_git_suffix() {
   case "$1" in
@@ -73,20 +70,14 @@ ensure_git_suffix() {
   esac
 }
 
-if [[ -n "$_host" && -n "$_path" ]]; then
-  _path="$(ensure_git_suffix "$_path")"
-  HTTPS_URL="https://$_host/$_path"
-  SSH_URL="git@$_host:$_path"
-else
-  HTTPS_URL="$ORIGIN_URL"
-  SSH_URL="$ORIGIN_URL"
-fi
+_path="$(ensure_git_suffix "$_path")"
+_repo_id="${_path%.git}"
 
-log "HTTPS URL: $HTTPS_URL"
-log "SSH URL:   $SSH_URL"
+log "Parsed host: $_host"
+log "Parsed path: $_path"
+log "Parsed repo identifier: $_repo_id"
 
-DEST_PATH="./$REPO_NAME"
-RELEASE_URL="${HTTPS_URL%.git}/tree/release"
+RELEASE_URL="https://$_host/$_repo_id/tree/release"
 
 # Build the new content
 cat > "$README" <<EOF
@@ -99,7 +90,7 @@ To see the installable source code, please checkout the [release branch]($RELEAS
 ## Installation
 
 \`\`\`bash
-bash <(curl https://suede.sh/install-release) --repo $_host/$_path
+bash <(curl https://suede.sh/install-release) --repo $_repo_id
 \`\`\`
 
 <details>
@@ -108,7 +99,7 @@ See alternative to using <a href="https://github.com/pmalacho-mit/suede#suedesh"
 </summary>
 
 \`\`\`bash
-bash <(curl https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install-release.sh) --repo $_host/$_path
+bash <(curl https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install-release.sh) --repo $_repo_id
 \`\`\`
 
 </details>
