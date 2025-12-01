@@ -11,7 +11,7 @@ set -euo pipefail
 
 # ----- External Script Dependencies -----
 # These scripts are downloaded and executed at runtime.
-readonly EXTERNAL_SCRIPT_BASE="https://suede.sh"
+readonly EXTERNAL_SCRIPT_BASE="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts"
 readonly EXTERNAL_SCRIPT_GIT_RAW="${EXTERNAL_SCRIPT_BASE}/utils/git-raw"
 readonly EXTERNAL_SCRIPT_DEGIT="${EXTERNAL_SCRIPT_BASE}/utils/degit"
 readonly EXTERNAL_SCRIPT_EXTRACT="${EXTERNAL_SCRIPT_BASE}/extract-subrepo-config"
