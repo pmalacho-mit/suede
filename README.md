@@ -49,7 +49,7 @@ The `release` branch is a clean, distribution-only branch that contains:
 
 This branch is what consumers actually install. It's kept automatically synchronized with `./release/` on `main` via GitHub Actions, ensuring that the distributed code is always up-to-date.
 
-**Key principle:** Never commit directly to the `release` branch. All changes should flow from `main` → `release` automatically, except for external contributions pushed via `git subrepo push`, which trigger a PR back to `main` for review. See more in [Maintaining a Dependency](#maintaing-a-dependency) and [Understanding Direct Pushes to Release](#understanding-direct-pushes-to-release).
+**Key principle:** Never commit directly to the `release` branch. All changes should flow from `main` → `release` automatically, except for external contributions pushed via `git subrepo push`, which trigger a PR back to `main` for review. See more in [Maintaining a Dependency](#maintaing-a-dependency) and [Understanding Direct Pushes to `release`](#understanding-direct-pushes-to-release).
 
 ## Workflow
 
@@ -128,7 +128,7 @@ This will push your local changes to the dependency's remote `release` branch, w
 1. **Immediate availability:** Your changes will be available to any consumer of the dependency that follows the [upgrading instructions](#upgrading-ie-pulling)
 2. **Pull request into main:** The [subrepo-pull-into-main](https://github.com/pmalacho-mit/subrepo-dependency-management/blob/main/templates/release/.github/workflows/subrepo-pull-into-main.yml) Github Action will kick off in your dependency's repository, which will create a pull request of your changes into its `main` branch. That way, your changes can be easily reviewed, tested, adjusted, and/or rolled-back, if necessary. See more in [maintaing a dependency](#maintaing-a-dependency).
 
-> **NOTE:** Because these changes are immediately available, any large and/or breaking changes should instead be accomplished via the [maintaing a dependency](#maintaing-a-dependency) guidance. See [Understanding Direct Pushes to Release](#understanding-direct-pushes-to-release) for important details about this workflow.
+> **NOTE:** Because these changes are immediately available, any large and/or breaking changes should instead be accomplished via the [maintaing a dependency](#maintaing-a-dependency) guidance. See [Understanding Direct Pushes to `release`](#understanding-direct-pushes-to-release) for important details about this workflow.
 
 ### Creating a Dependency
 
@@ -177,7 +177,7 @@ What if your dependency itself relies on other libraries or modules? The suede w
 
 ... todo ...
 
-## Understanding Direct Pushes to Release
+## Understanding Direct Pushes to `release`
 
 When using `git subrepo push` to publish dependency changes, it's important to understand that these changes bypass the normal review process and become immediately available to other users. This section explains how this works and how to manage it.
 
@@ -321,7 +321,7 @@ Suede uses git-subrepo to vendor dependency code directly into your repository w
 - Changes pushed via `git subrepo push` can trigger pull requests for review
 - Maintainers can vet changes before they're merged into the dependency's main branch
 - New installations always use the vetted version from main
-- See [Understanding Direct Pushes to Release](#understanding-direct-pushes-to-release) for details
+- See [Understanding Direct Pushes to `release`](#understanding-direct-pushes-to-release) for details
 
 **5. Clean Separation**
 - The two-branch structure keeps development artifacts (tests, examples, docs) separate from distributed code
