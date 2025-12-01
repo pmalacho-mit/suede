@@ -176,7 +176,12 @@ What if your dependency itself relies on other libraries or modules? The suede w
 
 ### Converting an Existing Repository to a Dependency
 
-... todo ...
+... todo: ...
+
+basically:
+
+```
+```
 
 ## Understanding Direct Pushes to `release`
 
