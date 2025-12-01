@@ -12,7 +12,7 @@ Aims to provide the benefits of vendored dependencies with the power of git-base
 
 Not convinced? Jump down to [why](#why).
 
-## Stack
+## Tech Stack
 
 In addition to [git](https://git-scm.com/)...
 
@@ -78,10 +78,9 @@ bash <(curl https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main
 
 </details>
 
-The [install script](./scripts/install-release.sh) will inspect the `./release/.gitrepo` file of the dependency's `main` branch to determine the appropriate commit of its `release` branch to install (see more in [Anatomy of a Suede Dependency](#anatomy-of-a-suede-dependency)). It then will extract the `release` branch's content (along with the `./release/.gitrepo` file) to a folder named the same as the dendency's repository.
+The [install script](./scripts/install-release.sh) will inspect the `./release/.gitrepo` file of the dependency's `main` branch to determine the appropriate commit of its `release` branch to install (see more in [Anatomy of a Suede Dependency](#anatomy-of-a-suede-dependency)). 
 
-> [!TIP]
-> You can optionally provide a destination to the [install script](./scripts/install-release.sh) using the `--dest` flag (or `d` shorthand) to install the depenency to a location other than a folder named the same as it's repository.
+It then will extract the `release` branch's content (along with the `./release/.gitrepo` file) to a folder named the same as the dendency's repository (or use the `--dest` flag / `-d` shorthand to install the depenency to different location).
 
 Finally, `git add` & `git commit` the new files.
 
@@ -114,8 +113,8 @@ This will fetch and merge the newest commits from the dependency’s `release` b
 
 One of the advantages of this workflow is that you can treat your dependency's code as if it were part of your own project while developing. If you need to modify the dependency (e.g., fix a bug or add a feature), you can edit the depdency's files directly and test those changes in the context of your project. All such changes will be tracked in your main project's history.
 
-> [!NOTE]  
-> It's **recommended** to be mindful when modifying any dependency code, since it might require resolving conflicts down the line if you decide to [pull](#upgrading-ie-pulling). Nevertheless, that process will merely be resolving [merge conflicts](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-using-the-command-line). 
+> [!IMPORTANT]  
+> Be mindful when modifying any dependency code, since it might require resolving conflicts down the line if you decide to [pull](#upgrading-ie-pulling). Nevertheless, that process will merely be resolving [merge conflicts](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-using-the-command-line). 
 
 If you then want to make those changes available to all consumers of the dependency (and you have permissions to push to its repository), you can simply run the `git subrepo push` command, with the final argument being the location of your dependency.
 
@@ -130,7 +129,7 @@ This will push your local changes to the dependency's remote `release` branch, w
 1. **Immediate availability:** Your changes will be available to any consumer of the dependency that follows the [upgrading instructions](#upgrading-ie-pulling)
 2. **Pull request into main:** The [subrepo-pull-into-main](https://github.com/pmalacho-mit/subrepo-dependency-management/blob/main/templates/release/.github/workflows/subrepo-pull-into-main.yml) Github Action will kick off in your dependency's repository, which will create a pull request of your changes into its `main` branch. That way, your changes can be easily reviewed, tested, adjusted, and/or rolled-back, if necessary. See more in [maintaing a dependency](#maintaing-a-dependency).
 
-> **NOTE:** Because these changes are immediately available, any large and/or breaking changes should instead be accomplished via the [maintaing a dependency](#maintaing-a-dependency) guidance. See [Understanding Direct Pushes to `release`](#understanding-direct-pushes-to-release) for important details about this workflow.
+Because these changes are immediately available, any large and/or breaking changes should instead be accomplished via the [maintaing a dependency](#maintaing-a-dependency) guidance. See [Understanding Direct Pushes to `release`](#understanding-direct-pushes-to-release) for important details about this workflow.
 
 ### Creating a Dependency
 
@@ -187,18 +186,18 @@ When using `git subrepo push` to publish dependency changes, it's important to u
 
 When a user follows the [modifying](#modifying-ie-pushing) guidance and pushes changes directly to the `release` branch (via `git subrepo push`), those changes become immediately available to anyone who runs `git subrepo pull` to upgrade their dependency (see more in [Upgrading](#upgrading-ie-pulling)). However, these changes have not yet been vetted or tested in the `main` branch environment and thus bypass the normal development workflow.
 
-This creates a temporary mismatch: the `release` branch contains changes that aren't yet reflected in `./release/` on `main`. The changes won't be incorporated into `main` until the [subrepo-pull-into-main](./templates/dependency/release/.github/workflows/subrepo-pull-into-main.yml) GitHub Action creates a pull request and a maintainer reviews and merges it.
+This creates a temporary mismatch: the `release` branch contains changes that aren't yet reflected in `./release/` on `main`. The changes won't be incorporated into `main` until a maintainer reviews and merges the pull request created by the [subrepo-pull-into-main](./templates/dependency/release/.github/workflows/subrepo-pull-into-main.yml) GitHub Action.
 
-**Important distinction:** Users who _newly install_ the dependency are not affected by this mismatch. The [install script](./scripts/install-release.sh) reads `./release/.gitrepo` on the `main` branch to determine which commit of the `release` branch to install. This ensures new installations use a version that's been vetted through the `main` branch workflow.
+> [!IMPORTANT]  
+> Users who _newly install_ the dependency are not affected by this mismatch. The [install script](./scripts/install-release.sh) reads `./release/.gitrepo` on the `main` branch to determine which commit of the `release` branch to install. This ensures new installations use a version that's been vetted through the `main` branch workflow.
 
 ### Design Rationale
 
-This behavior is an intentional design decision. The workflow was created to enable rapid iteration on dependencies within the context of the codebases that consume them. By allowing direct pushes to `release` that take effect immediately, developers can:
+This behavior is a (_mostly_) intentional design decision, as it enables rapid iteration on dependencies within the context of the codebases that consume them. By allowing direct pushes to `release` that take effect immediately, developers can:
 
-1. Make a change to a dependency while working in a consumer codebase
-2. Test that change in the real-world context where it will be used
-3. Push it to `release` to share with other consumers
-4. Continue development without waiting for a review cycle (while preserving the ability do a review later on)
+1. Make a change to a dependency while working in a consumer codebase (effectively testing it in a real-world context)
+2. Push it to `release` to share with other consumers
+3. Continue development without waiting for a review cycle (while preserving the ability do a review later on)
 
 This minimizes friction and accelerates the development feedback loop, especially when working across multiple related repositories that you maintain.
 
@@ -217,6 +216,9 @@ If you're concerned about unvetted changes reaching users who upgrade their depe
 
 4. **Communicate with your team:** If you have multiple consumers of a dependency, establish conventions about when to use `git subrepo push` (quick fixes, minor improvements) versus the standard workflow (breaking changes, major features).
 
+### One headache: Changes to `main` after `release` is updated
+
+... todo: when `main` and `release` are out of sync ...
 
 ## [suede.sh](https://suede.sh)
 
@@ -231,13 +233,13 @@ If you're concerned about unvetted changes reaching users who upgrade their depe
 Throughout this documentation, you'll see commands like:
 
 ```bash
-bash <(curl -fsSL https://suede.sh/install-release)
+bash <(curl https://suede.sh/<script-name>)
 ```
 
 This is equivalent to:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install-release.sh)
+bash <(curl https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/<script-name>.sh)
 ```
 
 ### Security Considerations
@@ -278,17 +280,15 @@ Install `git subrepo` on your system according to their [installation instructio
 
 ## Why
 
-Managing dependencies for code you control presents unique challenges that traditional package managers aren't designed to solve. Suede addresses these challenges by combining the benefits of vendored dependencies with the power of git-based version control.
+Managing dependencies for code you control presents unique challenges that traditional package managers aren't designed to solve. Suede addresses these challenges by combining the benefits of vendored dependencies with the power of git-based version control. 
 
 ### The Problem with Existing Solutions
 
-**Package Managers (npm, pip, etc.)** work well for stable, third-party dependencies but create friction when you need to:
-- Iterate quickly on a dependency while developing a project that uses it
-- Test changes in the real context where the dependency will be consumed
-- Share local modifications across multiple projects before publishing
-- Maintain perfect version alignment across a monorepo or related projects
-
-The publish-test-fix-republish cycle adds significant overhead, especially for dependencies you actively maintain.
+**Package Managers (npm, pip, etc.)**: While package managers serve a purpose for stable, third-party dependencies from trusted sources, they're poorly suited for code you control and actively develop (and are increasingly becoming a liability due to supply chain attacks).
+- **Opaque dependencies:** Most packages deliver pre-built, minified code that's difficult to inspect or understand. You have to trust (and reason about) black-box code in your project.
+- **Supply chain vulnerabilities:** The centralized registry model creates attack vectors, which seem to be exploited with increasing frequency.
+- **Development friction:** The publish-test-fix-republish cycle adds significant overhead when you're actively maintaining a dependency and need to iterate quickly.
+- **Version coordination:** Maintaining perfect version alignment across multiple related projects or a monorepo requires constant attention and manual updates. The technologies developed to support these usecases (especially monorepos) are complex pieces of software, which require their own learning maintenance. 
 
 **Git Submodules** seem like the natural solution for code you control, but they introduce their own problems:
 - **State mismatches:** It's easy to push code that depends on submodule changes without also pushing and updating those submodule references, leading to broken builds for other developers
@@ -321,8 +321,8 @@ Suede uses git-subrepo to vendor dependency code directly into your repository w
 
 **4. Optional Review Process**
 - Changes pushed via `git subrepo push` can trigger pull requests for review
-- Maintainers can vet changes before they're merged into the dependency's main branch
-- New installations always use the vetted version from main
+- Maintainers can vet changes before they're merged into the dependency's `main` branch
+- New installations always use the vetted version from `main`
 - See [Understanding Direct Pushes to `release`](#understanding-direct-pushes-to-release) for details
 
 **5. Clean Separation**
@@ -330,23 +330,7 @@ Suede uses git-subrepo to vendor dependency code directly into your repository w
 - Consumers only get what they need, not your entire development environment
 - Maintainers work on `main` as usual; automation handles distribution
 
-### When to Use Suede
-
-Suede is particularly valuable when you:
-- Maintain both the dependency and the code that consumes it
-- Need to iterate quickly across multiple related repositories
-- Want the benefits of vendoring (complete repo state) without losing version control
-- Have a small team with write access and want minimal process overhead
-- Need to test dependency changes in real-world contexts before publishing
-
-It's less suitable when:
-- You're consuming third-party dependencies you don't maintain (use package managers)
-- You need strict version pinning and isolated dependency updates (use package managers)
-- Your dependency has a large number of independent consumers who shouldn't get immediate updates (consider traditional releases with semantic versioning)
-
-### The Best of Both Worlds
-
-Suede tries to get the best of both worlds: **vendored dependencies** (complete repository state, no external coordination) with **source control and bidirectional updates** (version tracking, easy syncing, git-based workflows). If local changes can't be successfully pushed to the dependency, it's just a matter of resolving git merge conflicts—not ideal, but a well-understood process that doesn't require learning new tools or managing complex state. 
+Suede tries to get the best of both worlds: **vendored dependencies** (complete repository state, no external coordination) with **source control and bidirectional updates** (version tracking, easy syncing, git-based workflows).
 
 ## Environment-specific Tips 
 
