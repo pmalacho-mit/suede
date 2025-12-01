@@ -96,17 +96,22 @@ This repo is a [suede dependency](https://github.com/pmalacho-mit/suede).
 
 To see the installable source code, please checkout the [release branch]($RELEASE_URL).
 
-## Installation (SSH)
+## Installation
 
 \`\`\`bash
-git subrepo clone --branch release $SSH_URL $DEST_PATH
+bash <(curl https://suede.sh/install-release) --repo $_host/$_path
 \`\`\`
 
-## Installation (HTTPS)
+<details>
+<summary>
+See alternative to using <a href="https://github.com/pmalacho-mit/suede#suedesh">suede.sh</a> script proxy
+</summary>
 
 \`\`\`bash
-git subrepo clone --branch release $HTTPS_URL $DEST_PATH
+bash <(curl https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install-release.sh) --repo $_host/$_path
 \`\`\`
+
+</details>
 
 EOF
 
