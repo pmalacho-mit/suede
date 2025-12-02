@@ -22,7 +22,7 @@ bash <(curl https://suede.sh/install-release) --repo OWNER/REPO [--branch BRANCH
 Downloads and extracts a repository referenced in a `.gitrepo` file.
 
 ```bash
-bash <(curl https://suede.sh/install-subrepo-dependency) <file.gitrepo> [--dest DIR]
+bash <(curl https://suede.sh/install-subrepo-dependency) <file.gitrepo> [--destination DIR]
 ```
 
 ## `populate-dependencies.sh`
@@ -52,8 +52,8 @@ Generates installation instructions in README.md by parsing the git remote origi
 Downloads a GitHub repository archive at a specific commit/branch without cloning.
 
 ```bash
-bash <(curl https://suede.sh/utils/degit) --repo OWNER/REPO [--commit SHA] [--branch BRANCH] [--directory DIR] [--include PATH...]
-# Defaults: --branch=<default-branch>, --directory=./<repo-name>
+bash <(curl https://suede.sh/utils/degit) --repo OWNER/REPO [--commit SHA] [--branch BRANCH] [--destination DIR] [--include PATH...]
+# Defaults: --branch=<default-branch>, --destination=./<repo-name>
 ```
 
 ## `utils/git-raw.sh`
