@@ -15,6 +15,42 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: release
+      
+      - name: Set up Git user
+        run: |
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
+      
+      - name: Revert most recent commit on release branch
+        id: revert-release
+        run: |
+          set -e
+          # Capture the trigger commit (the commit that triggered this workflow)
+          TRIGGER_COMMIT=$(git rev-parse HEAD)
+          echo "trigger-commit=$TRIGGER_COMMIT" >> $GITHUB_OUTPUT
+          echo "Trigger commit: $TRIGGER_COMMIT"
+          
+          # Capture the trigger commit message
+          TRIGGER_COMMIT_MSG=$(git log -1 --format=%B HEAD)
+          echo "trigger-commit-message<<EOF" >> $GITHUB_OUTPUT
+          echo "$TRIGGER_COMMIT_MSG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          # Revert the most recent commit
+          git revert --no-edit HEAD
+          
+          # Capture the revert commit SHA
+          REVERT_COMMIT=$(git rev-parse HEAD)
+          echo "revert-commit=$REVERT_COMMIT" >> $GITHUB_OUTPUT
+          echo "Revert commit: $REVERT_COMMIT"
+          
+          # Push the revert to the release branch
+          git push origin release
+      
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
           ref: main
           
       - name: Check for release/ folder
@@ -23,15 +59,58 @@ jobs:
             echo "release/ folder not found on main branch. Exiting early."
             exit 0
           fi
-
-      - name: Install git-subrepo
+      
+      - name: Capture .gitrepo content
+        id: capture-gitrepo
         run: |
-          git clone https://github.com/ingydotnet/git-subrepo ~/.git-subrepo
-
-      - name: Set up Git user
+          set -e
+          # Save the current .gitrepo content
+          GITREPO_CONTENT=$(cat ./release/.gitrepo)
+          echo "gitrepo-content<<EOF" >> $GITHUB_OUTPUT
+          echo "$GITREPO_CONTENT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Determine repository owner and name
+        id: repo-info
         run: |
-          git config --global user.email "action@github.com"
-          git config --global user.name "GitHub Action"
+          set -e
+          OWNER="${{ github.repository_owner }}"
+          NAME="${{ github.event.repository.name }}"
+          echo "owner=$OWNER" >> $GITHUB_OUTPUT
+          echo "name=$NAME" >> $GITHUB_OUTPUT
+          echo "Repository: $OWNER/$NAME"
+      
+      - name: Delete release folder
+        run: |
+          rm -rf ./release
+          echo "Deleted release/ folder"
+      
+      - name: Install trigger commit using degit.sh
+        run: |
+          set -e
+          # Download and execute degit.sh to install the trigger commit
+          bash <(curl -fsSL https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/utils/degit.sh) \
+            --repo "${{ steps.repo-info.outputs.owner }}/${{ steps.repo-info.outputs.name }}" \
+            --commit "${{ steps.revert-release.outputs.trigger-commit }}" \
+            --destination release
+          echo "Installed trigger commit into release/ folder"
+      
+      - name: Recreate .gitrepo file with updated values
+        run: |
+          set -e
+          # Write the original .gitrepo content
+          cat > ./release/.gitrepo << 'EOF'
+          ${{ steps.capture-gitrepo.outputs.gitrepo-content }}
+          EOF
+          
+          # Update the commit line to point to revert-commit
+          sed -i "s/^\(\s*commit = \).*/\1${{ steps.revert-release.outputs.revert-commit }}/" ./release/.gitrepo
+          
+          # Update the parent line to point to trigger-commit
+          sed -i "s/^\(\s*parent = \).*/\1${{ steps.revert-release.outputs.trigger-commit }}/" ./release/.gitrepo
+          
+          echo "Updated .gitrepo file:"
+          cat ./release/.gitrepo
 
       - name: Generate branch name
         id: generate-branch-name
@@ -41,12 +120,15 @@ jobs:
           echo "branch-name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           echo "Using branch name: $BRANCH_NAME"
 
-      - name: Update release/ from origin:release
+      - name: Commit and push changes
         run: |
           set -e
           git switch -c "${{ steps.generate-branch-name.outputs.branch-name }}"
-          source ~/.git-subrepo/.rc
-          git subrepo pull release
+          git add release/
+          git commit -m "chore(suede): update release to trigger commit ${{ steps.revert-release.outputs.trigger-commit }}
+          
+          Original commit message:
+          ${{ steps.revert-release.outputs.trigger-commit-message }}"
           git push -u origin HEAD
 
       - name: Create PR
@@ -57,4 +139,11 @@ jobs:
             --base main \
             --head "${{ steps.generate-branch-name.outputs.branch-name }}" \
             --title "chore(suede): pull latest upstream release into main" \
-            --body "Automated subrepo pull of origin:release into ./release"
+            --body "Automated subrepo pull of origin:release into ./release
+          
+          **Trigger commit:** ${{ steps.revert-release.outputs.trigger-commit }}
+          
+          **Original commit message:**
+          \`\`\`
+          ${{ steps.revert-release.outputs.trigger-commit-message }}
+          \`\`\`"

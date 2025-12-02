@@ -229,6 +229,9 @@ If you're concerned about unvetted changes reaching users who upgrade their depe
 2. **Optional file extensions:** The `.sh` extension can be omitted from requests (e.g., `https://suede.sh/utils/degit` instead of `https://suede.sh/utils/degit.sh`)
 3. **Caching:** Responses are cached via Cloudflare's CDN for faster access
 
+> [!NOTE]  
+> [suede.sh](https://suede.sh) is <ins>**not**</ins> utilized in any [./scripts](./scripts/) or Github Action workflows, and instead the GitHub raw content URLs are used instead.
+
 ### Usage
 
 Throughout this documentation, you'll see commands like:
