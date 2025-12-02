@@ -80,7 +80,7 @@ bash <(curl https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main
 
 The [install script](./scripts/install-release.sh) will inspect the `./release/.gitrepo` file of the dependency's `main` branch to determine the appropriate commit of its `release` branch to install (see more in [Anatomy of a Suede Dependency](#anatomy-of-a-suede-dependency)). 
 
-It then will extract the `release` branch's content (along with the `./release/.gitrepo` file) to a folder named the same as the dendency's repository (or use the `--dest` flag / `-d` shorthand to install the depenency to different location).
+It then will extract the `release` branch's content (along with the `./release/.gitrepo` file) to a folder named the same as the dendency's repository (or use the `--dest` flag / `-d` shorthand to install the depenency to a different location).
 
 Finally, `git add` & `git commit` the new files.
 
@@ -111,7 +111,7 @@ This will fetch and merge the newest commits from the dependency’s `release` b
  
 #### Modifying (i.e. `push`ing)
 
-One of the advantages of this workflow is that you can treat your dependency's code as if it were part of your own project while developing. If you need to modify the dependency (e.g., fix a bug or add a feature), you can edit the depdency's files directly and test those changes in the context of your project. All such changes will be tracked in your main project's history.
+One of the advantages of this workflow is that you can treat your dependency's code as if it were your own source code. If you need to modify the dependency (e.g., fix a bug or add a feature), you can edit the depdency's files directly and test those changes in the context of your project. All such changes will be tracked in your main project's history.
 
 If you then want to make those changes available to all consumers of the dependency (and you have permissions to push to its repository), you can simply run the `git subrepo push` command, with the final argument being the location of your dependency.
 
@@ -146,18 +146,19 @@ Follow the below steps when setting up a codebase that will behave as a dependen
    - Enabling certain Github Action workflow permissions
    - Dispatching the [initialization workflow](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/initialize.yml)
 3. **Share your dependency.** Once you complete the setup steps, your repository can now be distributed as a suede dependency. The [initialization workflow](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/initialize.yml) will automatically update your repo's `README.md` to instruct users on how to install your dependency, which will follow the format:
-   > `git subrepo clone --branch release <repo URL> <destination>`
+   > `bash <(curl https://suede.sh/install-release) --repo owner/name`
 
 ### Maintaing a Dependency
 
 After your dependency repository is set up, you can maintain and develop it as you would any other project, with a few conventions:
 
-- **Use the main branch for all development.** Treat the main branch as the primary development branch where you add features, fix bugs, and iterate on the code. You can freely edit files on main, commit changes, and create sub-branches for feature development as needed.
+- **Use the `main` branch for all development.** Treat the `main` branch as the primary development branch where you add features, fix bugs, and iterate on the code. You can freely edit files on main, commit changes, and create sub-branches for feature development as needed.
 - **Keep distributable code in the `./release` folder.** Only the code intended to be consumed by other projects should go in the `./release` directory on `main`. This folder will mirror the content of the release branch. Do not put other files (tests, examples, docs, etc.) inside `./release`.
-- **Automatic syncing to the `release` branch.** Whenever you push changes to `main`, the [subrepo-push-release Github Action workflow](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) will automatically update the `release` branch to match the latest state of the code in your `./release` folder. If all goes well, the `release` branch will always contain the up-to-date distributable code after any changes on `main`.
-   > Note: The [subrepo-push-release action](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) will also update the reference in your `./release/.gitrepo` file on `main` to point to the new commit on the `release` branch. Therefore, you will need to pull from `main` before pushing further changes.
+- **Automatic syncing to the `release` branch.** Whenever you push changes to `main`, the [subrepo-push-release](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) Github Action will automatically update the `release` branch to match the latest state of the code in your `./release` folder. If all goes well, the `release` branch will always contain the up-to-date distributable code after any changes on `main`.
+> [!NOTE]  
+> The [subrepo-push-release](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) action will also update the reference in your `./release/.gitrepo` file on `main` to point to the new commit on the `release` branch. Therefore, you will need to pull from `main` before pushing further changes.
 - **Avoid direct commits to the release branch.** Under normal circumstances, you should not need to work on the release branch directly. All changes should flow from `main` → `release` via the automated workflow. The only time you'd interact with release manually is if something went wrong and you need to fix merge conflicts (which should be rare).
-- **Handle external contributions via PRs.** As mentioned above in the [Modifying section](#modifying-ie-pushing), users that consume your dependency can also push changes to its release branch via `git subrepo push ...` (assuming their account has write access to your repository). This will trigger the [subrepo-pull-into-main action](./templates/dependency/release/.github/workflows/subrepo-pull-into-main.yml) which will create a pull request to update the content of the `./release` folder on `main` based on the state of the `release` branch. As a maintainer, you should review these PRs and merge them after appropriate testing. This way, contributions from others get incorporated into your `main` branch (the source of truth) in a controlled manner, even though they've already landed on release (see more in [Understanding Direct Pushes to `release`](#understanding-direct-pushes-to-release)).
+- **Handle external contributions via PRs.** As mentioned above in the [Modifying section](#modifying-ie-pushing), users that consume your dependency can also push changes to its release branch via `git subrepo push ...` (assuming they have write access to your repository). This will trigger the [subrepo-pull-into-main action](./templates/dependency/release/.github/workflows/subrepo-pull-into-main.yml) which will create a pull request to update the content of the `./release` folder on `main` based on the state of the `release` branch. As a maintainer, you should review these PRs and merge them after appropriate testing. This way, contributions from others get incorporated into your `main` branch (the source of truth) in a controlled manner, even though they've already landed on release (see more in [Understanding Direct Pushes to `release`](#understanding-direct-pushes-to-release)).
 
 In summary, do your day-to-day development on `main`, keep the `./release` folder up-to-date with the code you want to distribute, and let the automation handle syncing that code to the `release` branch.
 
@@ -178,14 +179,9 @@ What if your dependency itself relies on other libraries or modules? The suede w
 
 ... todo: ...
 
-basically:
-
-```
-```
-
 ## Understanding Direct Pushes to `release`
 
-When using `git subrepo push` to publish dependency changes, it's important to understand that these changes bypass the normal review process and become immediately available to other users. This section explains how this works and how to manage it.
+When using `git subrepo push` to publish dependency changes (as documented in the [modifying](#modifying-ie-pushing) section), it's important to understand that these changes bypass the normal review process and become immediately available to other users. This section explains how this works and how to manage it.
 
 ### The Scenario
 
@@ -194,7 +190,7 @@ When a user follows the [modifying](#modifying-ie-pushing) guidance and pushes c
 This creates a temporary mismatch: the `release` branch contains changes that aren't yet reflected in `./release/` on `main`. The changes won't be incorporated into `main` until a maintainer reviews and merges the pull request created by the [subrepo-pull-into-main](./templates/dependency/release/.github/workflows/subrepo-pull-into-main.yml) GitHub Action.
 
 > [!IMPORTANT]  
-> Users who _newly install_ the dependency are not affected by this mismatch. The [install script](./scripts/install-release.sh) reads `./release/.gitrepo` on the `main` branch to determine which commit of the `release` branch to install. This ensures new installations use a version that's been vetted through the `main` branch workflow.
+> Users who _newly install_ the dependency are <ins>**not**</ins> affected by this mismatch. The [install script](./scripts/install-release.sh) reads `./release/.gitrepo` on the `main` branch to determine which commit of the `release` branch to install. This ensures new installations use a version that's been vetted through the `main` branch workflow.
 
 ### Design Rationale
 
