@@ -106,9 +106,6 @@ jobs:
           # Update the commit line to point to revert-commit
           sed -i "s/^\(\s*commit = \).*/\1${{ steps.revert-release.outputs.revert-commit }}/" ./release/.gitrepo
           
-          # Update the parent line to point to trigger-commit
-          sed -i "s/^\(\s*parent = \).*/\1${{ steps.revert-release.outputs.trigger-commit }}/" ./release/.gitrepo
-          
           echo "Updated .gitrepo file:"
           cat ./release/.gitrepo
 
