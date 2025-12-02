@@ -23,9 +23,6 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
-      - name: Ensure jq is installed (optional)
-        run: sudo apt-get update && sudo apt-get install -y jq
-
       - name: Populate dependency artifacts
         shell: bash
         run: |
@@ -46,10 +43,9 @@ jobs:
           source ~/.git-subrepo/.rc
           git subrepo --version
 
-      - name: Pull (to integrate) then push
+      - name: Push changes (without first pulling, so this should fail if release has changes not reflected in main)
         run: |
           set -e
           source ~/.git-subrepo/.rc
-          git subrepo pull release || true
           git subrepo push release
           git push
