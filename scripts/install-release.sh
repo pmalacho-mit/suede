@@ -174,6 +174,17 @@ bash <(curl -fsSL "$EXTERNAL_SCRIPT_DEGIT") \
     exit 1
   }
 
+# Get the current commit SHA of the parent repository.
+PARENT_COMMIT=$(git rev-parse HEAD 2>/dev/null) || {
+  printf "Warning: could not determine current commit SHA (not in a git repository?)\n" >&2
+  PARENT_COMMIT=""
+}
+
+# Update the parent line in the .gitrepo content if we have a parent commit.
+if [[ -n "$PARENT_COMMIT" ]]; then
+  GITREPO_CONTENT=$(echo "$GITREPO_CONTENT" | sed "s/^\(\s*parent\s*=\s*\).*/\1$PARENT_COMMIT/")
+fi
+
 # Save the .gitrepo content into the destination as `.gitrepo`.
 echo "$GITREPO_CONTENT" > "$DEST/.gitrepo"
 
