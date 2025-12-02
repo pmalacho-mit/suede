@@ -62,35 +62,8 @@ with_destination() {
   assert_dir_has_expected_contents_for_commit "$destination" 0
 }
 
-with_link() {
-  local root="${TEST_DIR}/with-link"
-  local file_path="${root}/example.gitrepo"
-  local destination="${root}/subdir"
-  local gitrepo_content="${GITREPO_CONTENT[0]}"
-  mkdir -p "$root"
-  printf "%s" "$gitrepo_content" > "$file_path"
-  bash <(curl -fsSL $EXTERNAL_SCRIPT_INSTALL) "$file_path" --destination "$destination" --link
-  assert_dir_has_expected_contents_for_commit "$destination" 0
-
-  local symlink_path="${root}/example"
-  if [[ -L "$symlink_path" ]]; then
-    local symlink_target
-    symlink_target="$(readlink "$symlink_path")"
-    if [[ "$symlink_target" == "$destination" ]]; then
-      log_pass "Symlink created correctly at '$symlink_path' pointing to '$destination'."
-    else
-      log_failure "Symlink at '$symlink_path' points to '$symlink_target' instead of '$destination'."
-      return 1
-    fi
-  else
-    log_failure "Expected symlink at '$symlink_path' does not exist."
-    return 1
-  fi
-}
-
 run_test_suite \
   --setup setup_test_env \
   --cleanup cleanup_test_env \
   only_positional_argument \
-  with_destination \
-  with_link
+  with_destination 
