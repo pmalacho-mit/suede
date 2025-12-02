@@ -5,12 +5,12 @@ usage() {
   cmd="$(basename "$0")"
   cat >&2 <<USAGE
 Usage:
-  $cmd --repo OWNER/REPO [--branch BRANCH] [--commit SHA] [--directory DIR] [--include PATH...]
+  $cmd --repo OWNER/REPO [--branch BRANCH] [--commit SHA] [--destination DIR] [--include PATH...]
 Options:
   -r, --repo OWNER/REPO     (required) repository in OWNER/REPO form
   -b, --branch BRANCH       branch or tag to fetch if --commit not supplied
   -c, --commit SHA          specific commit SHA to fetch (takes precedence)
-  -d, --directory DIR       destination directory (default: repo name)
+  -d, --destination DIR     destination directory (default: repo name)
   -i, --include PATH...     only extract files matching these path patterns
   -h, --help                show this help
 
@@ -35,7 +35,7 @@ while [[ $# -gt 0 ]]; do
     -r|--repo)      REPO="${2-}"; shift 2 || usage ;;
     -b|--branch)    BRANCH="${2-}"; shift 2 || usage ;;
     -c|--commit)    COMMIT="${2-}"; shift 2 || usage ;;
-    -d|--directory) DEST="${2-}"; shift 2 || usage ;;
+    -d|--destination) DEST="${2-}"; shift 2 || usage ;;
     -i|--include)   
       shift
       while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do

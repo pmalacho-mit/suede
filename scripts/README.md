@@ -1,24 +1,73 @@
-# install-subrepo-dependency.sh
+# Scripts
+
+## `extract-subrepo-config.sh`
+
+Parses a git-subrepo `.gitrepo` file from stdin and outputs `OWNER`, `REPO`, and `COMMIT` as `KEY=VALUE` pairs.
 
 ```bash
-bash <(curl --fail --silent --show-error --location https://suede.sh/install-subrepo-dependency)
+cat .gitrepo | bash <(curl https://suede.sh/extract-subrepo-config)
 ```
+
+## `install-release.sh`
+
+Fetches a `release/.gitrepo` file from a remote repository and downloads the referenced release archive.
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install-subrepo-dependency.sh) 
+bash <(curl https://suede.sh/install-release) --repo OWNER/REPO [--branch BRANCH] [--destination DIR]
+# Defaults: --branch=main, --destination=./<repo-name>
 ```
 
-# utils
+## `install-subrepo-dependency.sh`
 
-## degit
+Downloads and extracts a repository referenced in a `.gitrepo` file.
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/utils/degit.sh) 
+bash <(curl https://suede.sh/install-subrepo-dependency) <file.gitrepo> [--dest DIR]
 ```
 
-# `curl` flags
+## `populate-dependencies.sh`
 
-- `-f` / `--fail` - Fail silently on HTTP errors (don't output error page)
-- `-s` / `--silent` - Silent mode (don't show progress bar or errors)
-- `-S` / `--show-error` - Show errors even in silent mode (used with -s)
+```bash
+./populate-dependencies.sh
+```
+
+> [!NOTE]  
+> Used in [subrepo-push-release](../templates/dependency/main/.github/workflows/subrepo-push-release.yml) Github Action
+
+Collects dependency metadata into `release/.dependencies/`: copies `.gitrepo` files from child folders, extracts package.json dependencies, and copies requirements.txt.
+
+### `populate-readme-after-init.sh`
+
+```bash
+./populate-readme-after-init.sh
+```
+
+> [!NOTE]  
+> Used in [initialize](../templates/dependency/main/.github/workflows/initialize.yml) Github Action
+
+Generates installation instructions in README.md by parsing the git remote origin URL.
+
+## `utils/degit.sh`
+
+Downloads a GitHub repository archive at a specific commit/branch without cloning.
+
+```bash
+bash <(curl https://suede.sh/utils/degit) --repo OWNER/REPO [--commit SHA] [--branch BRANCH] [--directory DIR] [--include PATH...]
+# Defaults: --branch=<default-branch>, --directory=./<repo-name>
+```
+
+## `utils/git-raw.sh`
+
+Fetches a single raw file from a GitHub repository at a specific ref.
+
+```bash
+bash <(curl https://suede.sh/utils/git-raw) --repo OWNER/REPO --file PATH [--branch BRANCH] [--commit SHA]
+# Defaults: --branch=HEAD
+```
+
+## curl flags reference
+
+- `-f` / `--fail` - Fail silently on HTTP errors
+- `-s` / `--silent` - Silent mode
+- `-S` / `--show-error` - Show errors even in silent mode
 - `-L` / `--location` - Follow redirects

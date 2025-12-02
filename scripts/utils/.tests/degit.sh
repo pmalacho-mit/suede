@@ -40,14 +40,14 @@ cleanup_test_env() {
 basic_first_commit_test() {
   local destination="${TEST_DIR}/first-basic"
   mkdir -p "$destination"
-  bash <(curl -fsSL $EXTERNAL_SCRIPT_DEGIT) --repo "${OWNER}/${REPO}" --commit "${COMMITS[0]}" --directory "$destination"
+  bash <(curl -fsSL $EXTERNAL_SCRIPT_DEGIT) --repo "${OWNER}/${REPO}" --commit "${COMMITS[0]}" --destination "$destination"
   assert_dir_has_expected_contents_for_commit "$destination" 0
 }
 
 basic_second_commit_test() {
   local destination="${TEST_DIR}/second-basic"
   mkdir -p "$destination"
-  bash <(curl -fsSL $EXTERNAL_SCRIPT_DEGIT) --repo "${OWNER}/${REPO}" --commit "${COMMITS[1]}" --directory "$destination"
+  bash <(curl -fsSL $EXTERNAL_SCRIPT_DEGIT) --repo "${OWNER}/${REPO}" --commit "${COMMITS[1]}" --destination "$destination"
   assert_dir_has_expected_contents_for_commit "$destination" 1
 }
 
@@ -57,13 +57,13 @@ force_test() {
   mkdir -p "$destination"
   touch "${destination}/extra-file.txt"
 
-  $(bash <(curl -fsSL $EXTERNAL_SCRIPT_DEGIT) --repo "${OWNER}/${REPO}" --commit "$commit" --directory "$destination") || {
+  $(bash <(curl -fsSL $EXTERNAL_SCRIPT_DEGIT) --repo "${OWNER}/${REPO}" --commit "$commit" --destination "$destination") || {
     log_pass "Degit correctly failed when attempting to write to non-empty directory."
   }
 
   rm -f "${destination}/extra-file.txt"
 
-  bash <(curl -fsSL $EXTERNAL_SCRIPT_DEGIT) --repo "${OWNER}/${REPO}" --commit "$commit" --directory "$destination"
+  bash <(curl -fsSL $EXTERNAL_SCRIPT_DEGIT) --repo "${OWNER}/${REPO}" --commit "$commit" --destination "$destination"
 
   assert_dir_has_expected_contents_for_commit "$destination" 1
 }

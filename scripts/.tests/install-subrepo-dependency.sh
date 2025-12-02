@@ -58,7 +58,7 @@ with_destination() {
   local gitrepo_content="${GITREPO_CONTENT[0]}"
   mkdir -p "$root"
   printf "%s" "$gitrepo_content" > "$file_path"
-  bash <(curl -fsSL $EXTERNAL_SCRIPT_INSTALL) "$file_path" --dest "$destination"
+  bash <(curl -fsSL $EXTERNAL_SCRIPT_INSTALL) "$file_path" --destination "$destination"
   assert_dir_has_expected_contents_for_commit "$destination" 0
 }
 
@@ -69,7 +69,7 @@ with_link() {
   local gitrepo_content="${GITREPO_CONTENT[0]}"
   mkdir -p "$root"
   printf "%s" "$gitrepo_content" > "$file_path"
-  bash <(curl -fsSL $EXTERNAL_SCRIPT_INSTALL) "$file_path" --dest "$destination" --link
+  bash <(curl -fsSL $EXTERNAL_SCRIPT_INSTALL) "$file_path" --destination "$destination" --link
   assert_dir_has_expected_contents_for_commit "$destination" 0
 
   local symlink_path="${root}/example"

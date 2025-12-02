@@ -30,32 +30,24 @@ Usage: add-subrepo-dependency.sh [OPTIONS] <path/to/file.gitrepo>
 Fetch and extract the repository specified in a git subrepo .gitrepo file.
 
 Options:
-  -d, --dest DIR    Destination directory to write into.  If omitted,
-                    derive the destination from the given file.
-  -l, --link        After a successful extraction, create a symlink from the
-                    destination directory back into the location of the
-                    .gitrepo file.  The symlink is named after the base
-                    component (see notes below) and placed alongside the
-                    .gitrepo file.  Ignored when --dest is omitted.
-  -h, --help        Display this help and exit.
+  -d, --destination DIR Destination directory to write into.  If omitted,
+                        derive the destination from the given file.
+  -h, --help            Display this help and exit.
 
 Notes:
   • The positional argument <path/to/file.gitrepo> must reference a valid
     git subrepo metadata file.  It may be named `.gitrepo` (inside a
     subdirectory) or `<name>.gitrepo`.  The script uses the file name
     and/or its parent directory to determine a default destination when
-    --dest is not provided.
+    --destination is not provided.
   • When the destination is derived, if the given file is named
     `.gitrepo`, the destination defaults to the directory containing the
     file (i.e. the subrepo directory).  If the file name ends with
     `<name>.gitrepo`, the destination defaults to a sibling directory
     named `<name>` within the same directory as the file.
-  • Passing --link is only meaningful when an explicit --dest is used.
-    When the destination is derived from the file, no symlink is needed and
-    a warning will be printed if --link is specified.
 
 Example:
-  add-subrepo-dependency.sh -f -l ./first-consumer/.gitrepo
+  add-subrepo-dependency.sh ./first-consumer/.gitrepo
 USAGE
 }
 
@@ -76,13 +68,12 @@ is_dir_populated() {
 FILE=""
 DEST=""
 DEST_PROVIDED=false
-LINK=false
 
 # Process command line arguments.  We intentionally do not allow
 # positional arguments after the file path to minimise ambiguity.
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -d|--dest)
+    -d|--destination)
       DEST="${2-}"
       DEST_PROVIDED=true
       if [[ -z "$DEST" ]]; then
@@ -91,10 +82,6 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       shift 2
-      ;;
-    -l|--link)
-      LINK=true
-      shift
       ;;
     -h|--help)
       usage
@@ -171,38 +158,12 @@ mkdir -p "$DEST"
 bash <(curl -fsSL "$EXTERNAL_SCRIPT_DEGIT") \
   --repo     "${OWNER}/${REPO}" \
   --commit   "${COMMIT}" \
-  --directory "${DEST}"
+  --destination "${DEST}"
 
 # Copy the .gitrepo file into the destination as `.gitrepo`.  Always
 # overwrite any existing copy.  Use cp -p to preserve timestamps and
 # permissions.
 cp -p "$FILE" "$DEST/.gitrepo"
-
-# Create optional symlink.  Only do this when the destination was
-# explicitly provided; for derived destinations we warn but do not link.
-if $LINK; then
-  if [[ "$DEST" == "$(dirname "$FILE")" ]] && [[ "$DEST_PROVIDED" != true ]]; then
-    printf "Warning: --link ignored because destination was derived from the .gitrepo file\n" >&2
-  else
-    # Determine the symlink name.  If the given file was `.gitrepo` then the
-    # symlink name is the parent directory name.  Otherwise use the base
-    # component without the .gitrepo suffix.
-    symlink_dir=$(dirname "$FILE")
-    file_base=$(basename "$FILE")
-    if [[ "$file_base" == ".gitrepo" ]]; then
-      link_name="$(basename "$symlink_dir")"
-    else
-      link_name="${file_base%.gitrepo}"
-    fi
-    link_path="${symlink_dir}/${link_name}"
-    # Remove any existing file at the link path (could be a stale symlink).
-    if [[ -e "$link_path" || -L "$link_path" ]]; then
-      rm -rf "$link_path"
-    fi
-    ln -s "$DEST" "$link_path"
-    printf "Created symlink: %s -> %s\n" "$link_path" "$DEST" >&2
-  fi
-fi
 
 printf "Extracted %s/%s@%s into %s\nAdd and commit the changes to your repository, for example:\n" "${OWNER}" "${REPO}" "${COMMIT}" "${DEST}" >&2
 printf "  git add %s\n  git commit -m 'Add subrepo %s/%s@%s'\n" "${DEST}" "${OWNER}" "${REPO}" "${COMMIT}" >&2

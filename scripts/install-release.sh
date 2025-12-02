@@ -26,21 +26,21 @@ Fetch and extract the repository specified in a remote repository's release/.git
 Options:
   -r, --repo OWNER/REPO (required) source repository containing release/.gitrepo
   -b, --branch BRANCH   branch to fetch release/.gitrepo from (default: main)
-  -d, --dest DIR        destination directory to extract into (default: repo name)
+  -d, --destination DIR destination directory to extract into (default: repo name)
   -h, --help            display this help and exit
 
 Notes:
   • The script fetches the release/.gitrepo file from the specified repository
     and branch, parses it to determine the actual release repository and commit,
     then downloads that release into the destination directory.
-  • If --dest is not provided, the destination will be derived from the release
+  • If --destination is not provided, the destination will be derived from the release
     repository name (the REPO value from release/.gitrepo, not the source repo).
   • The destination directory must be empty or nonexistent.
 
 Examples:
   install-release.sh -r pmalacho-mit/zoom-sdk-suede
-  install-release.sh -r pmalacho-mit/zoom-sdk-suede -b main -d ./sdk-release
-  install-release.sh -r owner/repo -b develop -d ./my-release
+  install-release.sh -r pmalacho-mit/zoom-sdk-suede -b main --destination ./sdk-release
+  install-release.sh -r owner/repo -b develop --destination ./my-release
 USAGE
 }
 
@@ -84,7 +84,7 @@ while [[ $# -gt 0 ]]; do
       fi
       shift 2
       ;;
-    -d|--dest)
+    -d|--destination)
       DEST="${2-}"
       DEST_PROVIDED=true
       if [[ -z "$DEST" ]]; then
@@ -169,7 +169,7 @@ printf "Downloading %s/%s@%s into %s...\n" "$OWNER" "$REPO" "$COMMIT" "$DEST" >&
 bash <(curl -fsSL "$EXTERNAL_SCRIPT_DEGIT") \
   --repo     "${OWNER}/${REPO}" \
   --commit   "${COMMIT}" \
-  --directory "${DEST}" || {
+  --destination "${DEST}" || {
     printf "Error: failed to download and extract release\n" >&2
     exit 1
   }
