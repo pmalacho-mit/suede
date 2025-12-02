@@ -47,5 +47,6 @@ jobs:
         run: |
           set -e
           source ~/.git-subrepo/.rc
+          git subrepo pull release || true
           git subrepo push release
           git push
