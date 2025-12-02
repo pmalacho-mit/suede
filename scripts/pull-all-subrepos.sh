@@ -1,3 +1,8 @@
+#!/usr/bin/env bash
+#
+# Script to find and update all git-subrepo directories in the current repository.
+# Automatically discovers all .gitrepo files and runs `git subrepo pull` on each.
+
 set -e
 
 # Find all .gitrepo files and extract their parent directories

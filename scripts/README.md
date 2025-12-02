@@ -27,6 +27,8 @@ bash <(curl https://suede.sh/install-subrepo-dependency) <file.gitrepo> [--desti
 
 ## `populate-dependencies.sh`
 
+Collects dependency metadata into `release/.dependencies/`: copies `.gitrepo` files from child folders, extracts package.json dependencies, and copies requirements.txt.
+
 ```bash
 ./populate-dependencies.sh
 ```
@@ -34,9 +36,9 @@ bash <(curl https://suede.sh/install-subrepo-dependency) <file.gitrepo> [--desti
 > [!NOTE]  
 > Used in [subrepo-push-release](../templates/dependency/main/.github/workflows/subrepo-push-release.yml) Github Action
 
-Collects dependency metadata into `release/.dependencies/`: copies `.gitrepo` files from child folders, extracts package.json dependencies, and copies requirements.txt.
+## `populate-readme-after-init.sh`
 
-### `populate-readme-after-init.sh`
+Writes installation instructions to README.md by parsing the git remote origin URL.
 
 ```bash
 ./populate-readme-after-init.sh
@@ -45,7 +47,14 @@ Collects dependency metadata into `release/.dependencies/`: copies `.gitrepo` fi
 > [!NOTE]  
 > Used in [initialize](../templates/dependency/main/.github/workflows/initialize.yml) Github Action
 
-Generates installation instructions in README.md by parsing the git remote origin URL.
+
+## `pull-all-subrepos.sh`
+
+Finds all git-subrepo directories (by locating `.gitrepo` files) and runs `git subrepo pull` on each to update them to their latest tracked commits.
+
+```bash
+./pull-all-subrepos.sh
+```
 
 ## `utils/degit.sh`
 
@@ -65,7 +74,7 @@ bash <(curl https://suede.sh/utils/git-raw) --repo OWNER/REPO --file PATH [--bra
 # Defaults: --branch=HEAD
 ```
 
-## curl flags reference
+## `curl` Flags Reference
 
 - `-f` / `--fail` - Fail silently on HTTP errors
 - `-s` / `--silent` - Silent mode
