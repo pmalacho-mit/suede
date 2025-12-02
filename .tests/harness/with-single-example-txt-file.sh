@@ -3,16 +3,16 @@ source "$TESTS_HARNESS_DIR/normalize.sh"
 source "$TESTS_HARNESS_DIR/color-logging.sh"
 
 readonly OWNER="pmalacho-mit"
-readonly REPO="suede-scripts-test-harness"
+readonly REPO="suede"
 readonly FILE="example.txt"
 
 declare -a COMMITS=(
-  "98f6ba04cccd6d2f555bb5c5d11860d8b770b570"
-  "86176653f3c0b9263e92e9d8edafafefe98d5c99"
+  "c3cb1941a8a58a8bc9dc8d7cfb2f4ceb2af6bed5"
+  "8e82606a5ad65022ceebd2076fceaff927125f1c"
 )
 
 declare -a FILE_CONTENTS=(
-  ""
+  "first commit"
   "second commit"
 )
 
