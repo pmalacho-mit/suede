@@ -124,7 +124,7 @@ This will push your local changes to the dependency's remote `release` branch, w
 2. **Pull request into main:** A pull request is created into `main` that applies your changes to the `./release/` folder (and are seen by [git-subrepo](https://github.com/ingydotnet/git-subrepo) as happening _"on top"_ of the revert commit in step 1). That way, your changes can be easily reviewed and tested. See more in [maintaing a dependency](#maintaing-a-dependency).
    - When that PR is approved, your changes will flow back into the `release` branch via the [subrepo-push-release](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) action.
 
-> [!IMPORTANT]  
+> [!WARNING]
 > Be mindful when modifying any dependency code, since it might require resolving conflicts down the line if you decide to [pull](#upgrading-ie-pulling). Nevertheless, that process will merely be resolving [merge conflicts](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-using-the-command-line). 
 
 ### Creating a Dependency
