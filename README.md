@@ -46,12 +46,12 @@ When you push changes to `main`, the [subrepo-push-release](https://github.com/p
 
 The `release` branch is a clean, distribution-only branch that contains:
 
-- **Only distributable code:** Just the files from the `./release/` folder on `main`—no tests, examples, or development artifacts
+- **Only distributable code:** Just the files from the `./release/` folder on `main`
 - **`.gitrepo` file:** Tracks the subrepo metadata for consumers who install this dependency
 
 This branch is what consumers actually install. It's kept automatically synchronized with `./release/` on `main` via GitHub Actions, ensuring that the distributed code is always up-to-date.
 
-**Key principle:** Never commit directly to the `release` branch. All changes should flow from `main` → `release` automatically, except for external contributions pushed via `git subrepo push`, which trigger a PR back to `main` for review. See more in [Maintaining a Dependency](#maintaing-a-dependency) and [Understanding Direct Pushes to `release`](#understanding-direct-pushes-to-release).
+**Key principle:** Never commit directly to the `release` branch. All changes should flow from `main` → `release` automatically, except for external contributions pushed via `git subrepo push`, which trigger a PR back to `main` for review. See more in [Maintaining a Dependency](#maintaing-a-dependency).
 
 ## Workflow
 
@@ -105,9 +105,6 @@ git subrepo pull <path-to-dependency>
 > For example: `git subrepo pull ./my-dependency`
 
 This will fetch and merge the newest commits from the dependency’s `release` branch into your subrepo folder.
-
-> [!CAUTION]
-> It's important to understand that [direct pushes to `release`](#understanding-direct-pushes-to-release) (as made possible by [modifying](#modifying-ie-pushing) a depndency) can create a situation where the code on your dependency's `release` branch has not been verified in its `main` branch environment. If this a concern to you, please see [mitigation strategies](#mitigation-strategies).
  
 #### Modifying (i.e. `push`ing)
 
@@ -121,15 +118,14 @@ git subrepo push <path-to-dependency>
 
 > For example: `git subrepo push ./my-dependency`
 
-This will push your local changes to the dependency's remote `release` branch, which does two things:
+This will push your local changes to the dependency's remote `release` branch, which will trigger the [subrepo-pull-into-main](https://github.com/pmalacho-mit/subrepo-dependency-management/blob/main/templates/release/.github/workflows/subrepo-pull-into-main.yml) action and the following things will happen:
 
-1. **Immediate availability:** Your changes will be available to any consumer of the dependency that follows the [upgrading instructions](#upgrading-ie-pulling)
-2. **Pull request into main:** The [subrepo-pull-into-main](https://github.com/pmalacho-mit/subrepo-dependency-management/blob/main/templates/release/.github/workflows/subrepo-pull-into-main.yml) Github Action will kick off in your dependency's repository, which will create a pull request of your changes into its `main` branch. That way, your changes can be easily reviewed, tested, adjusted, and/or rolled-back, if necessary. See more in [maintaing a dependency](#maintaing-a-dependency).
+1. **Immediate revert:** Your changs will immediately be reverted on the remote `release` branch to so that any consumer who performs the [upgrading](#upgrading-ie-pulling) instructions won't received unvetted changes.
+2. **Pull request into main:** A pull request is created into `main` that applies your changes to the `./release/` folder (and are seen by [git-subrepo](https://github.com/ingydotnet/git-subrepo) as happening _"on top"_ of the revert commit in step 1). That way, your changes can be easily reviewed and tested. See more in [maintaing a dependency](#maintaing-a-dependency).
+   - When that PR is approved, your changes will flow back into the `release` branch via the [subrepo-push-release](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) action.
 
 > [!IMPORTANT]  
 > Be mindful when modifying any dependency code, since it might require resolving conflicts down the line if you decide to [pull](#upgrading-ie-pulling). Nevertheless, that process will merely be resolving [merge conflicts](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-using-the-command-line). 
-
-Because these changes are immediately available, any large and/or breaking changes should instead be accomplished via the [maintaing a dependency](#maintaing-a-dependency) guidance. See [Understanding Direct Pushes to `release`](#understanding-direct-pushes-to-release) for important details about this workflow.
 
 ### Creating a Dependency
 
@@ -158,7 +154,7 @@ After your dependency repository is set up, you can maintain and develop it as y
 > [!NOTE]  
 > The [subrepo-push-release](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) action will also update the reference in your `./release/.gitrepo` file on `main` to point to the new commit on the `release` branch. Therefore, you will need to pull from `main` before pushing further changes.
 - **Avoid direct commits to the release branch.** Under normal circumstances, you should not need to work on the release branch directly. All changes should flow from `main` → `release` via the automated workflow. The only time you'd interact with release manually is if something went wrong and you need to fix merge conflicts (which should be rare).
-- **Handle external contributions via PRs.** As mentioned above in the [Modifying section](#modifying-ie-pushing), users that consume your dependency can also push changes to its release branch via `git subrepo push ...` (assuming they have write access to your repository). This will trigger the [subrepo-pull-into-main action](./templates/dependency/release/.github/workflows/subrepo-pull-into-main.yml) which will create a pull request to update the content of the `./release` folder on `main` based on the state of the `release` branch. As a maintainer, you should review these PRs and merge them after appropriate testing. This way, contributions from others get incorporated into your `main` branch (the source of truth) in a controlled manner, even though they've already landed on release (see more in [Understanding Direct Pushes to `release`](#understanding-direct-pushes-to-release)).
+- **Handle external contributions via PRs.** As mentioned above in the [Modifying section](#modifying-ie-pushing), users that consume your dependency can also push changes to its `release` branch via `git subrepo push ...` (assuming they have write access to your repository). This will trigger the [subrepo-pull-into-main action](./templates/dependency/release/.github/workflows/subrepo-pull-into-main.yml) which will create a pull request to update the content of the `./release` folder on `main` based on the commit to the `release` branch (which will be reverted, to preserve the state of the `./release` branch). As a maintainer, you should review these PRs and merge them after appropriate testing. This way, contributions from others get incorporated into your `main` branch (the source of truth) in a controlled manner.
 
 In summary, do your day-to-day development on `main`, keep the `./release` folder up-to-date with the code you want to distribute, and let the automation handle syncing that code to the `release` branch.
 
@@ -179,47 +175,7 @@ What if your dependency itself relies on other libraries or modules? The suede w
 
 ... todo: ...
 
-## Understanding Direct Pushes to `release`
-
-When using `git subrepo push` to publish dependency changes (as documented in the [modifying](#modifying-ie-pushing) section), it's important to understand that these changes bypass the normal review process and become immediately available to other users. This section explains how this works and how to manage it.
-
-### The Scenario
-
-When a user follows the [modifying](#modifying-ie-pushing) guidance and pushes changes directly to the `release` branch (via `git subrepo push`), those changes become immediately available to anyone who runs `git subrepo pull` to upgrade their dependency (see more in [Upgrading](#upgrading-ie-pulling)). However, these changes have not yet been vetted or tested in the `main` branch environment and thus bypass the normal development workflow.
-
-This creates a temporary mismatch: the `release` branch contains changes that aren't yet reflected in `./release/` on `main`. The changes won't be incorporated into `main` until a maintainer reviews and merges the pull request created by the [subrepo-pull-into-main](./templates/dependency/release/.github/workflows/subrepo-pull-into-main.yml) GitHub Action.
-
-> [!IMPORTANT]  
-> Users who _newly install_ the dependency are <ins>**not**</ins> affected by this mismatch. The [install script](./scripts/install-release.sh) reads `./release/.gitrepo` on the `main` branch to determine which commit of the `release` branch to install. This ensures new installations use a version that's been vetted through the `main` branch workflow.
-
-### Design Rationale
-
-This behavior is a (_mostly_) intentional design decision, as it enables rapid iteration on dependencies within the context of the codebases that consume them. By allowing direct pushes to `release` that take effect immediately, developers can:
-
-1. Make a change to a dependency while working in a consumer codebase (effectively testing it in a real-world context)
-2. Push it to `release` to share with other consumers
-3. Continue development without waiting for a review cycle (while preserving the ability do a review later on)
-
-This minimizes friction and accelerates the development feedback loop, especially when working across multiple related repositories that you maintain.
-
-### Mitigation Strategies
-
-If you're concerned about unvetted changes reaching users who upgrade their dependencies, you have several options:
-
-1. **Restrict write access:** Only users with write permissions can successfully execute `git subrepo push`. Limit this to trusted maintainers to ensure only reviewed changes reach the `release` branch.
-
-2. **Use the standard workflow for major changes:** For larger or breaking changes, follow the [maintaining a dependency](#maintaing-a-dependency) workflow: make changes on `main` in the `./release/` folder and let the automation sync them to the `release` branch after review.
-
-3. **Check for unvetted changes before upgrading:** Before running `git subrepo pull`, verify that the dependency's `release` branch hasn't diverged from what's reflected in `main`:
-   - Compare the commit hash in `./release/.gitrepo` on the `main` branch with the latest commit on the `release` branch
-   - Look for open pull requests in the dependency repository with names matching `chore/update-release-*` — these indicate changes on `release` that haven't been reviewed and merged into `main` yet
-   - If there's a mismatch or pending PR, wait for the maintainer to review and merge it before upgrading (if you are concerned about using unvetted code).
-
-4. **Communicate with your team:** If you have multiple consumers of a dependency, establish conventions about when to use `git subrepo push` (quick fixes, minor improvements) versus the standard workflow (breaking changes, major features).
-
-### One headache: Changes to `main` after `release` is updated
-
-... todo: when `main` and `release` are out of sync ...
+... essentially: (1) copy ./.github/workflow/subrepo-push-release.yml of main branch of template to main branch, (2) create release branch as orphan, delete everything, copy over ./.github/workflow/subrepo-pull-into-main.yml and ./.gitingore from release branch of template, (3) on main, do a git subrepo clone of the release branch into the release folder ...
 
 ## [suede.sh](https://suede.sh)
 
@@ -290,15 +246,15 @@ Managing dependencies for code you control presents unique challenges that tradi
 
 **Package Managers (npm, pip, etc.)**: While package managers serve a purpose for stable, third-party dependencies from trusted sources, they're poorly suited for code you control and actively develop (and are increasingly becoming a liability due to supply chain attacks).
 - **Opaque dependencies:** Most packages deliver pre-built, minified code that's difficult to inspect or understand. You have to trust (and reason about) black-box code in your project.
-- **Supply chain vulnerabilities:** The centralized registry model creates attack vectors, which seem to be exploited with increasing frequency.
+- **Supply chain vulnerabilities:** The centralized registry model creates attack vectors, which seem to be exploited more and more.
 - **Development friction:** The publish-test-fix-republish cycle adds significant overhead when you're actively maintaining a dependency and need to iterate quickly.
-- **Version coordination:** Maintaining perfect version alignment across multiple related projects or a monorepo requires constant attention and manual updates. The technologies developed to support these usecases (especially monorepos) are complex pieces of software, which require their own learning maintenance. 
+- **Version coordination:** Maintaining perfect version alignment across multiple related projects or a monorepo requires constant attention and manual updates. The technologies developed to support these usecases (especially monorepos) are complex pieces of software, which require their own learning and maintenance. 
 
 **Git Submodules** seem like the natural solution for code you control, but they introduce their own problems:
-- **State mismatches:** It's easy to push code that depends on submodule changes without also pushing and updating those submodule references, leading to broken builds for other developers
-- **Branch complexity:** Feature development often requires creating matching branches in both the parent repo and submodule(s), then carefully coordinating merges
-- **Checkout friction:** New contributors must remember to run `git submodule update --init --recursive`, and the submodules don't automatically update when switching branches
-- **Detached HEAD states:** Submodules frequently end up in detached HEAD state, confusing developers who aren't experts in git
+- **State mismatches:** It's easy to push code that depends on submodule changes without also pushing and updating those submodule references, leading to broken builds for other developers.
+- **Branch complexity:** Feature development often requires creating matching branches in both the parent repo and submodule(s), whuch then require carefully coordinating merges.
+- **Checkout friction:** New contributors must remember to run `git submodule update --init --recursive`, and the submodules don't automatically update when switching branches.
+- **Detached HEAD states:** Submodules frequently end up in detached HEAD state, confusing developers who aren't experts in git.
 
 **Git Subtrees** improve on submodules by embedding dependency code directly into the parent repository, but they make bidirectional updates complex and can pollute your git history.
 
@@ -321,13 +277,12 @@ Suede uses git-subrepo to vendor dependency code directly into your repository w
 - Every commit in your repository contains all the code needed to build and run
 - No hidden state in submodule pointers or external dependencies
 - `git clone` gives you a working repository immediately, no additional steps
-- Full, un-minified source code for all dependencies is present in your repo, making it easy to understand what your project depends on—especially valuable when using LLMs to help explore and understand your codebase
+- Full, un-minified source code for all dependencies is present in your repo, making it easy to understand what your project depends on 
 
-**4. Optional Review Process**
+**4. Review Process**
 - Changes pushed via `git subrepo push` can trigger pull requests for review
 - Maintainers can vet changes before they're merged into the dependency's `main` branch
 - New installations always use the vetted version from `main`
-- See [Understanding Direct Pushes to `release`](#understanding-direct-pushes-to-release) for details
 
 **5. Clean Separation**
 - The two-branch structure keeps development artifacts (tests, examples, docs) separate from distributed code
@@ -337,6 +292,8 @@ Suede uses git-subrepo to vendor dependency code directly into your repository w
 Suede tries to get the best of both worlds: **vendored dependencies** (complete repository state, no external coordination) with **source control and bidirectional updates** (version tracking, easy syncing, git-based workflows).
 
 ## Environment-specific Tips 
+
+... work in progress...
 
 - **Use symlinks or folder references:** If your build or runtime expects dependencies in a certain location (e.g., a libs directory or within node_modules), you can create a symlink from that expected location to the ./my-dependency folder. This way, your project can import/require the dependency as if it were installed normally.
    > [!TIP]
