@@ -60,7 +60,6 @@ is_dir_populated() {
 REPO=""
 BRANCH="main"
 DEST=""
-DEST_PROVIDED=false
 
 # Process command line arguments.
 while [[ $# -gt 0 ]]; do
@@ -85,7 +84,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     -d|--destination)
       DEST="${2-}"
-      DEST_PROVIDED=true
       if [[ -z "$DEST" ]]; then
         printf "Error: missing argument to %s\n" "$1" >&2
         usage
@@ -136,6 +134,12 @@ GITREPO_CONTENT=$(bash <(curl -fsSL "$EXTERNAL_SCRIPT_GIT_RAW") \
     printf "Error: failed to fetch release/.gitrepo from %s (branch: %s)\n" "$REPO" "$BRANCH" >&2
     exit 1
   }
+
+# Determine destination if not provided.
+if [[ -z "$DEST" ]]; then
+  DEST="$REPO"
+  printf "Auto-derived destination: %s\n" "$DEST" >&2
+fi
 
 # Delegate installation to the hosted `install-gitrepo` script by piping the
 # fetched release/.gitrepo content into it.  This centralizes parsing,
