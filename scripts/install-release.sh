@@ -13,7 +13,7 @@ set -euo pipefail
 # These scripts are downloaded and executed at runtime.
 readonly EXTERNAL_SCRIPT_BASE="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts"
 readonly EXTERNAL_SCRIPT_GIT_RAW="${EXTERNAL_SCRIPT_BASE}/utils/git-raw.sh"
-readonly EXTERNAL_SCRIPT_INSTALL="${EXTERNAL_SCRIPT_BASE}/install-gitrepo"
+readonly EXTERNAL_SCRIPT_INSTALL="${EXTERNAL_SCRIPT_BASE}/install-gitrepo.sh"
 
 # Print usage information to stderr.
 usage() {
