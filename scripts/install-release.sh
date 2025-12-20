@@ -13,8 +13,7 @@ set -euo pipefail
 # These scripts are downloaded and executed at runtime.
 readonly EXTERNAL_SCRIPT_BASE="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts"
 readonly EXTERNAL_SCRIPT_GIT_RAW="${EXTERNAL_SCRIPT_BASE}/utils/git-raw.sh"
-readonly EXTERNAL_SCRIPT_DEGIT="${EXTERNAL_SCRIPT_BASE}/utils/degit.sh"
-readonly EXTERNAL_SCRIPT_EXTRACT="${EXTERNAL_SCRIPT_BASE}/extract-subrepo-config.sh"
+readonly EXTERNAL_SCRIPT_INSTALL="${EXTERNAL_SCRIPT_BASE}/install-gitrepo"
 
 # Print usage information to stderr.
 usage() {
@@ -138,56 +137,13 @@ GITREPO_CONTENT=$(bash <(curl -fsSL "$EXTERNAL_SCRIPT_GIT_RAW") \
     exit 1
   }
 
-# Parse the .gitrepo content to extract OWNER, REPO, and COMMIT.
-eval "$(echo "$GITREPO_CONTENT" | bash <(curl -fsSL "$EXTERNAL_SCRIPT_EXTRACT"))" || {
-  printf "Error: failed to parse release/.gitrepo content\n" >&2
-  exit 1
-}
-
-printf "Determined release ref: %s/%s@%s\n" "$OWNER" "$REPO" "$COMMIT" >&2
-
-# Determine destination if not provided.
-if [[ -z "$DEST" ]]; then
-  DEST="$REPO"
-  printf "Auto-derived destination: %s\n" "$DEST" >&2
-fi
-
-# Canonicalise DEST to remove any trailing slashes.
-DEST="${DEST%/}"
-
-# Check whether destination exists and is non-empty.
-if is_dir_populated "$DEST"; then
-  printf "Error: destination '%s' already exists and is not empty.\n" "$DEST" >&2
+# Delegate installation to the hosted `install-gitrepo` script by piping the
+# fetched release/.gitrepo content into it.  This centralizes parsing,
+# extraction and any extra dependency handling in a single place.
+if ! echo "$GITREPO_CONTENT" | bash <(curl -fsSL "$EXTERNAL_SCRIPT_INSTALL") -d "$DEST" -; then
+  printf "Error: install-gitrepo failed to install the release into %s\n" "$DEST" >&2
   exit 1
 fi
 
-# Ensure destination directory exists and is empty now.
-mkdir -p "$DEST"
-
-# Download and extract repository archive.
-printf "Downloading %s/%s@%s into %s...\n" "$OWNER" "$REPO" "$COMMIT" "$DEST" >&2
-bash <(curl -fsSL "$EXTERNAL_SCRIPT_DEGIT") \
-  --repo     "${OWNER}/${REPO}" \
-  --commit   "${COMMIT}" \
-  --destination "${DEST}" || {
-    printf "Error: failed to download and extract release\n" >&2
-    exit 1
-  }
-
-# Get the current commit SHA of the parent repository.
-PARENT_COMMIT=$(git rev-parse HEAD 2>/dev/null) || {
-  printf "Warning: could not determine current commit SHA (not in a git repository?)\n" >&2
-  PARENT_COMMIT=""
-}
-
-# Update the parent line in the .gitrepo content if we have a parent commit.
-if [[ -n "$PARENT_COMMIT" ]]; then
-  GITREPO_CONTENT=$(echo "$GITREPO_CONTENT" | sed "s/^\(\s*parent\s*=\s*\).*/\1$PARENT_COMMIT/")
-fi
-
-# Save the .gitrepo content into the destination as `.gitrepo`.
-echo "$GITREPO_CONTENT" > "$DEST/.gitrepo"
-
-printf "✓ Successfully extracted %s/%s@%s into %s\n" "$OWNER" "$REPO" "$COMMIT" "$DEST" >&2
-printf "Add and commit the changes to your repository, for example:\n" >&2
-printf "  git add %s\n  git commit -m 'Add release %s/%s@%s'\n" "$DEST" "$OWNER" "$REPO" "$COMMIT" >&2
+# `install-gitrepo` prints success and next steps; mirror its success exit.
+exit 0
