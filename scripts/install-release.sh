@@ -135,9 +135,9 @@ GITREPO_CONTENT=$(bash <(curl -fsSL "$EXTERNAL_SCRIPT_GIT_RAW") \
     exit 1
   }
 
-# Determine destination if not provided.
+# Determine destination if not provided (use only the repo name part of OWNER/REPO).
 if [[ -z "$DEST" ]]; then
-  DEST="$REPO"
+  DEST="${REPO#*/}"
   printf "Auto-derived destination: %s\n" "$DEST" >&2
 fi
 
