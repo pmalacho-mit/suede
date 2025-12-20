@@ -17,10 +17,26 @@ readonly EXTERNAL_SCRIPT_EXTRACT="${EXTERNAL_SCRIPT_BASE}/extract-subrepo-config
 
 readonly INVOKE_INSTALL_GITREPO="bash <(curl https://suede.sh/install-gitrepo)"
 
+# Color and formatting (only enable when stderr is a TTY)
+if [[ -t 2 ]]; then
+  # Use actual escape sequences (bash $'...') so printf %b works correctly
+  BOLD=$'\033[1m'
+  GREEN=$'\033[32m'
+  YELLOW=$'\033[33m'
+  CYAN=$'\033[36m'
+  RESET=$'\033[0m'
+else
+  BOLD=''
+  GREEN=''
+  YELLOW=''
+  CYAN=''
+  RESET=''
+fi
+
 # Print usage information to stderr.
 usage() {
-  cat >&2 <<'USAGE'
-Usage: $(basename "$0") -d <destination> [<path>|-]
+  cat >&2 <<USAGE
+Usage: $INVOKE_INSTALL_GITREPO -d <destination> [<path>|-]
 
 Reads the content of a .gitrepo file and installs the referenced repository
 archive at the specified commit into <destination>.
@@ -34,13 +50,13 @@ Positional arguments:
 
 Examples:
   # Read from a local file by piping it in:
-  cat release/.gitrepo | $(basename "$0") -d vendor/release -
+  cat release/.gitrepo | $INVOKE_INSTALL_GITREPO -d vendor/release -
 
   # Or pass the filename directly:
-  $(basename "$0") -d vendor/release release/.gitrepo
+  $INVOKE_INSTALL_GITREPO -d vendor/release release/.gitrepo
 
   # Read content from a remote URL:
-  curl -fsSL https://example.com/release/.gitrepo | $(basename "$0") -d vendor/release -
+  curl -fsSL https://example.com/release/.gitrepo | $INVOKE_INSTALL_GITREPO -d vendor/release -
 USAGE
 }
 
@@ -81,6 +97,11 @@ while [[ $# -gt 0 ]]; do
     --)
       shift
       break
+      ;;
+    -)
+      # '-' is commonly used to indicate reading from STDIN; treat it as a positional argument.
+      CONTENT_SOURCE="-"
+      shift
       ;;
     -*)
       printf "Unknown option: %s\n" "$1" >&2
@@ -175,40 +196,77 @@ fi
 # Save the .gitrepo content into the destination as `.gitrepo`.
 echo "$GITREPO_CONTENT" > "$DEST/.gitrepo"
 
+printf "%s✓ Successfully extracted %s/%s@%s into %s%s\n" "$BOLD$GREEN" "$OWNER" "$REPO" "$COMMIT" "$DEST" "$RESET" >&2
+
 # If $DEST/.dependencies exists, summarize any npm dependencies and list nested .gitrepo files.
 DEPS_DIR="$DEST/.dependencies"
+NEXT_STEPS_PRINTED=false
 if [[ -d "$DEPS_DIR" ]]; then
   PKG_JSON="$DEPS_DIR/package.json"
+  deps_block=""
+  deps_list=""
 
-  # If a package.json exists, extract the "dependencies" object and suggest an npm install.
+  # If a package.json exists, extract the "dependencies" object (simple heuristic) and build an install list.
   if [[ -f "$PKG_JSON" ]]; then
-    # Extract the dependencies block (simple heuristic: assumes a top-level "dependencies" object).
     deps_block=$(sed -n '/"dependencies"[[:space:]]*:/,/^[[:space:]]*}/p' "$PKG_JSON" || true)
     if [[ -n "${deps_block//[[:space:]]/}" ]]; then
-      printf "The installed gitrepo has the following npm dependencies:\n%s\n" "$deps_block" >&2
-
-      # Build an npm install list of the form "name@version" (sed-based parsing, tolerant of trailing commas).
       deps_list=$(sed -n '/"dependencies"[[:space:]]*:/,/^[[:space:]]*}/p' "$PKG_JSON" | sed '1d;$d' | sed -e 's/^[[:space:]]*"//;s/"[[:space:]]*:[[:space:]]*"/@/;s/",\?$//;s/"$//' | tr '\n' ' ' | sed 's/  */ /g' | sed 's/^ //;s/ $//')
-
-      if [[ -n "$deps_list" ]]; then
-        printf "Please add these to your project's package.json and re-run 'npm install' or install them explicitly by running the following:\n    npm install %s\n" "$deps_list" >&2
-      fi
     fi
   fi
 
-  # Find any nested .gitrepo files and instruct the user how to install them using this script.
+  # Find any nested .gitrepo files and collect commands to run them.
   mapfile -t subrepos < <(find "$DEPS_DIR" -type f -name '*.gitrepo' -print 2>/dev/null || true)
+
+  # Print NEXT STEPS header if we have anything to show.
+  if [[ -n "$deps_list" ]] || (( ${#subrepos[@]} )); then
+    printf "\n%sNEXT STEPS:%s\n\n" "${BOLD}${YELLOW}" "$RESET" >&2
+    NEXT_STEPS_PRINTED=true
+  fi
+
+  # Now print the dependencies block (if any)
+  if [[ -n "${deps_block//[[:space:]]/}" ]]; then
+    printf "%bThe installed gitrepo has the following npm dependencies:%b\n\n" "$BOLD" "$RESET" >&2
+    while IFS= read -r _line; do
+      printf "%b  %s%b\n" "$CYAN" "$_line" "$RESET" >&2
+    done <<< "$deps_block"
+    printf "\n" >&2
+  fi
+
+  if [[ -n "$deps_list" ]]; then
+    printf "  %sAdd these to your project's package.json and run 'npm install' or install them with the following command:%s\n" "$BOLD" "$RESET" >&2
+    printf "    %b%s%b\n\n" "$GREEN" "npm install $deps_list" "$RESET" >&2
+  fi
+
   if (( ${#subrepos[@]} )); then
-    printf "This project depends on other suede dependencies. Install them by running:\n" >&2
+    printf "  %sInstall nested suede dependencies:%s\n" "$BOLD" "$RESET" >&2
     for path in "${subrepos[@]}"; do
       base=$(basename "$path" .gitrepo)
       target="$DEST/../$base"
-      printf "    %s -d %s %s\n" "$INVOKE_INSTALL_GITREPO" "$target" "$path" >&2
+      printf "    %b%s -d %s %s%b\n" "$CYAN" "$INVOKE_INSTALL_GITREPO" "$target" "$path" "$RESET" >&2
     done
+    printf "\n" >&2
   fi
 fi
 
-printf "✓ Successfully extracted %s/%s@%s into %s\n" "$OWNER" "$REPO" "$COMMIT" "$DEST" >&2
-printf "Add and commit the changes to your repository, for example:\n" >&2
-printf "  git add %s\n  git commit -m 'Add release %s/%s@%s'\n" "$DEST" "$OWNER" "$REPO" "$COMMIT" >&2
+# Always print commit instructions under NEXT STEPS (ensure header exists)
+if [[ "$NEXT_STEPS_PRINTED" != true ]]; then
+  printf "\n%sNEXT STEPS:%s\n\n" "${BOLD}${YELLOW}" "$RESET" >&2
+fi
 
+# Build git add targets (DEST first, then package.json if deps exist, then nested targets)
+add_targets=("$DEST")
+if [[ -n "${deps_list-}" ]]; then
+  add_targets+=("package.json")
+fi
+if (( ${#subrepos[@]} )); then
+  for path in "${subrepos[@]}"; do
+    base=$(basename "$path" .gitrepo)
+    target="$DEST/../$base"
+    add_targets+=("$target")
+  done
+fi
+
+printf "  %sCommit the changes to your repository:%s\n" "$BOLD" "$RESET" >&2
+# Print the git add line with all targets (joined by spaces)
+printf "    %s%s%s\n" "$GREEN" "git add ${add_targets[*]}" "$RESET" >&2
+printf "    %s%s%s\n\n" "$GREEN" "git commit -m 'Add suede dependency (release) $OWNER/$REPO@$COMMIT'" "$RESET" >&2
