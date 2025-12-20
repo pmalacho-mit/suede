@@ -137,7 +137,7 @@ if [[ -z "$DEST" ]]; then
     DEST="$file_dir"
   else
     name_no_ext="${file_base%.gitrepo}"
-    DEST="${file_dir}/${name_no_ext}"
+    DEST="${file_dir}/../${name_no_ext}"
   fi
   printf "Auto-derived destination: %s\n" "$DEST" >&2
 fi
