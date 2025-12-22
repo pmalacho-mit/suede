@@ -201,6 +201,8 @@ printf "%s✓ Successfully extracted %s/%s@%s into %s%s\n" "$BOLD$GREEN" "$OWNER
 # If $DEST/.dependencies exists, summarize any npm dependencies and list nested .gitrepo files.
 DEPS_DIR="$DEST/.dependencies"
 NEXT_STEPS_PRINTED=false
+# Ensure arrays are initialized so 'set -u' won't complain when referenced later
+subrepos=()
 if [[ -d "$DEPS_DIR" ]]; then
   PKG_JSON="$DEPS_DIR/package.json"
   deps_block=""

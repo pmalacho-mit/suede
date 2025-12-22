@@ -3,8 +3,8 @@ set -euo pipefail
 SCRIPTS_TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEST_HARNESS_DIR="$(cd "$SCRIPTS_TESTS_DIR/../../.tests/harness" && pwd)"
 
-readonly EXTERNAL_SCRIPT_INSTALL="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install-subrepo-dependency.sh"
-readonly LOCAL_SCRIPT_INSTALL="$SCRIPTS_TESTS_DIR/../install-subrepo-dependency.sh"
+readonly EXTERNAL_SCRIPT_INSTALL="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install-gitrepo.sh"
+readonly LOCAL_SCRIPT_INSTALL="$SCRIPTS_TESTS_DIR/../install-gitrepo.sh"
 
 readonly EXTERNAL_SCRIPT_EXTRACT="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/extract-subrepo-config.sh"
 readonly LOCAL_SCRIPT_EXTRACT="$SCRIPTS_TESTS_DIR/../extract-subrepo-config.sh"
@@ -46,7 +46,8 @@ only_positional_argument() {
   local gitrepo_content="${GITREPO_CONTENT[0]}"
   mkdir -p "$destination"
   printf "%s" "$gitrepo_content" > "$file_path"
-  bash <(curl -fsSL $EXTERNAL_SCRIPT_INSTALL) "$file_path"
+  # install-gitrepo requires an explicit destination; pass the expected target
+  bash <(curl -fsSL $EXTERNAL_SCRIPT_INSTALL) -d "$destination/example" "$file_path"
   assert_dir_has_expected_contents_for_commit "$destination/example" 0
   assert_file_has_expected_gitrepo_contents_for_commit "$file_path" 0
 }
