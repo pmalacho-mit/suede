@@ -123,11 +123,8 @@ This will push your local changes to the dependency's remote `release` branch, w
 1. **Immediate revert:** Your changs will immediately be reverted on the remote `release` branch so that any consumer who performs the [upgrading](#upgrading-ie-pulling) instructions won't receive unvetted changes.
 > [!WARNING]
 > Because your changes are immediately reverted, avoid performing a `git subrepo pull` (i.e., [upgrading](#upgrading-ie-pulling)) until your changes are approved and incorporated. Otherwise, you risk "stomping" over your changes.  
-2. **Pull request into main:** A pull request is created into `main` that applies your changes to the `./release/` folder (and are seen by [git-subrepo](https://github.com/ingydotnet/git-subrepo) as happening _"on top"_ of the revert commit in step 1). That way, your changes can be easily reviewed and tested. See more in [maintaing a dependency](#maintaing-a-dependency).
+2. **Pull request into main:** A pull request is created into `main` that applies your changes to the `./release/` folder (and are seen by [git-subrepo](https://github.com/ingydotnet/git-subrepo) as happening _"on top"_ of the revert commit in step 1). That way, your changes can be reviewed and tested. See more in [maintaing a dependency](#maintaing-a-dependency).
    - When that PR is approved, your changes will flow back into the `release` branch via the [subrepo-push-release](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) action.
-
-> [!WARNING]
-> Be mindful when modifying any dependency code, since it might require resolving conflicts down the line if you decide to [pull](#upgrading-ie-pulling). Nevertheless, that process will merely be resolving [merge conflicts](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-using-the-command-line). 
 
 ### Creating a Dependency
 
@@ -156,13 +153,20 @@ After your dependency repository is set up, you can maintain and develop it as y
 > [!NOTE]  
 > The [subrepo-push-release](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) action will also update the reference in your `./release/.gitrepo` file on `main` to point to the new commit on the `release` branch. Therefore, you will need to pull from `main` before pushing further changes.
 - **Avoid direct commits to the `release` branch.** Under normal circumstances, you should not need to work on the `release` branch directly. All changes should flow from `main` → `release` via the automated workflow. The only time you'd interact with release manually is if something went wrong and you need to fix merge conflicts (which should be rare).
-- **Handle external contributions via PRs.** As mentioned above in the [Modifying section](#modifying-ie-pushing), users that consume your dependency can also push changes to its `release` branch via `git subrepo push ...` (assuming they have write access to your repository). This will trigger the [subrepo-pull-into-main action](./templates/dependency/release/.github/workflows/subrepo-pull-into-main.yml) which will create a pull request to update the content of the `./release` folder on `main` based on their commit to the `release` branch (which will be immediately be reverted, to preserve the state of the remote `./release` branch). As a maintainer, you should review these PRs and merge them after appropriate testing. This way, contributions from others get incorporated into your `main` branch (the source of truth) in a controlled manner, and then flow back into `release`.
+- **Handle external contributions via PRs.** As mentioned above in the [Modifying section](#modifying-ie-pushing), users that consume your dependency can also push changes to its `release` branch via `git subrepo push ...` (assuming they have write access to your repository). This will trigger the [subrepo-pull-into-main action](./templates/dependency/release/.github/workflows/subrepo-pull-into-main.yml) which will create a pull request to update the content of the `./release` folder on `main` based on their commit to the `release` branch (which will be immediately be reverted, to preserve the state of the remote `release` branch). As a maintainer, you should review these PRs and merge them after appropriate testing. This way, contributions from others get incorporated into your `main` branch (the source of truth) in a controlled manner, and then flow back into `release`.
 
-In summary, do your day-to-day development on `main`, keep the `./release` folder up-to-date with the code you want to distribute, and let the automation handle syncing that code to the `release` branch.
+In summary, do your day-to-day development on `main` (or a sub-branch), keep the `./release` folder up-to-date with the code you want to distribute, and let the automation handle syncing that code to the `release` branch.
 
 ### Dependencies of Dependencies
 
 ... todo: revise this section for clarity (AI generated) ...
+
+If your suede dependency relies on other libraries or modules, the [subrepo-push-release](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) Github Action will automatically capture these dependencies with the following conventions:
+
+- A `./package.json` file at the root of the `main` branch will have it's [`"dependencies"`](https://docs.npmjs.com/cli/v7/configuring-npm/package-json#dependencies) object copied to `./release/.dependencies/package.json`
+   - Therefore, packages should be include in [`"dependencies"`](https://docs.npmjs.com/cli/v7/configuring-npm/package-json#dependencies) if and only if they are required by your `release` code. All other dependencies should be installed as [`"devdependencies"`](https://docs.npmjs.com/cli/v7/configuring-npm/package-json#dependencies).
+- A `requirements.txt` file at the root of the `main` branch will automatically be copied to `./release/.dependencies/requirements.txt`
+- Any folders at the root of the `main` branch that contain a `.gitrepo` file (indicating it's a [subrepo](https://github.com/ingydotnet/git-subrepo)) will have the contents of the `.gitrepo` file copied to `./release/.dependencies/<folder-name>.gitrepo` (e.g., if your `main` branch included `./some-dependency/.gitrepo`, the [subrepo-push-release](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) action will copy it's contents to `./release/.dependencies/some-dependency.gitrepo`)  
 
 What if your dependency itself relies on other libraries or modules? The suede workflow can handle this scenario by recording those secondary dependencies so that consumers of your project know what additional pieces to install:
 

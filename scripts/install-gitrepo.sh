@@ -13,7 +13,8 @@ set -euo pipefail
 # These scripts are downloaded and executed at runtime.
 readonly EXTERNAL_SCRIPT_BASE="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts"
 readonly EXTERNAL_SCRIPT_DEGIT="${EXTERNAL_SCRIPT_BASE}/utils/degit.sh"
-readonly EXTERNAL_SCRIPT_EXTRACT="${EXTERNAL_SCRIPT_BASE}/extract-subrepo-config.sh"
+readonly EXTERNAL_SCRIPT_EXTRACT_CONFIG="${EXTERNAL_SCRIPT_BASE}/extract-subrepo-config.sh"
+readonly EXTERNAL_SCRIPT_EXTRACT_DEPS="${EXTERNAL_SCRIPT_BASE}/check-dependencies.sh"
 
 readonly INVOKE_INSTALL_GITREPO="bash <(curl https://suede.sh/install-gitrepo)"
 
@@ -167,7 +168,7 @@ fi
 mkdir -p "$DEST"
 
 # Parse the .gitrepo content to extract OWNER, REPO, and COMMIT.
-eval "$(echo "$GITREPO_CONTENT" | bash <(curl -fsSL "$EXTERNAL_SCRIPT_EXTRACT"))" || {
+eval "$(echo "$GITREPO_CONTENT" | bash <(curl -fsSL "$EXTERNAL_SCRIPT_EXTRACT_CONFIG"))" || {
   printf "Error: failed to parse .gitrepo content\n" >&2
   exit 1
 }
@@ -198,77 +199,25 @@ echo "$GITREPO_CONTENT" > "$DEST/.gitrepo"
 
 printf "%s✓ Successfully extracted %s/%s@%s into %s%s\n" "$BOLD$GREEN" "$OWNER" "$REPO" "$COMMIT" "$DEST" "$RESET" >&2
 
-# If $DEST/.dependencies exists, summarize any npm dependencies and list nested .gitrepo files.
-DEPS_DIR="$DEST/.dependencies"
-NEXT_STEPS_PRINTED=false
-# Ensure arrays are initialized so 'set -u' won't complain when referenced later
-subrepos=()
-if [[ -d "$DEPS_DIR" ]]; then
-  PKG_JSON="$DEPS_DIR/package.json"
-  deps_block=""
-  deps_list=""
-
-  # If a package.json exists, extract the "dependencies" object (simple heuristic) and build an install list.
-  if [[ -f "$PKG_JSON" ]]; then
-    deps_block=$(sed -n '/"dependencies"[[:space:]]*:/,/^[[:space:]]*}/p' "$PKG_JSON" || true)
-    if [[ -n "${deps_block//[[:space:]]/}" ]]; then
-      deps_list=$(sed -n '/"dependencies"[[:space:]]*:/,/^[[:space:]]*}/p' "$PKG_JSON" | sed '1d;$d' | sed -e 's/^[[:space:]]*"//;s/"[[:space:]]*:[[:space:]]*"/@/;s/",\?$//;s/"$//' | tr '\n' ' ' | sed 's/  */ /g' | sed 's/^ //;s/ $//')
-    fi
-  fi
-
-  # Find any nested .gitrepo files and collect commands to run them.
-  mapfile -t subrepos < <(find "$DEPS_DIR" -type f -name '*.gitrepo' -print 2>/dev/null || true)
-
-  # Print NEXT STEPS header if we have anything to show.
-  if [[ -n "$deps_list" ]] || (( ${#subrepos[@]} )); then
-    printf "\n%sNEXT STEPS:%s\n\n" "${BOLD}${YELLOW}" "$RESET" >&2
-    NEXT_STEPS_PRINTED=true
-  fi
-
-  # Now print the dependencies block (if any)
-  if [[ -n "${deps_block//[[:space:]]/}" ]]; then
-    printf "%bThe installed gitrepo has the following npm dependencies:%b\n\n" "$BOLD" "$RESET" >&2
-    while IFS= read -r _line; do
-      printf "%b  %s%b\n" "$CYAN" "$_line" "$RESET" >&2
-    done <<< "$deps_block"
-    printf "\n" >&2
-  fi
-
-  if [[ -n "$deps_list" ]]; then
-    printf "  %sAdd these to your project's package.json and run 'npm install' or install them with the following command:%s\n" "$BOLD" "$RESET" >&2
-    printf "    %b%s%b\n\n" "$GREEN" "npm install $deps_list" "$RESET" >&2
-  fi
-
-  if (( ${#subrepos[@]} )); then
-    printf "  %sInstall nested suede dependencies:%s\n" "$BOLD" "$RESET" >&2
-    for path in "${subrepos[@]}"; do
-      base=$(basename "$path" .gitrepo)
-      target="$DEST/../$base"
-      printf "    %b%s -d %s %s%b\n" "$CYAN" "$INVOKE_INSTALL_GITREPO" "$target" "$path" "$RESET" >&2
-    done
-    printf "\n" >&2
-  fi
+if ! mapfile -t add_targets < <(bash <(curl -fsSL "$EXTERNAL_SCRIPT_EXTRACT_DEPS") "$DEST" --message "NEXT STEPS" --emit-add-targets); then
+  printf "Error: failed to generate NEXT STEPS\n" >&2
+  exit 1
 fi
 
-# Always print commit instructions under NEXT STEPS (ensure header exists)
-if [[ "$NEXT_STEPS_PRINTED" != true ]]; then
-  printf "\n%sNEXT STEPS:%s\n\n" "${BOLD}${YELLOW}" "$RESET" >&2
-fi
-
-# Build git add targets (DEST first, then package.json if deps exist, then nested targets)
-add_targets=("$DEST")
-if [[ -n "${deps_list-}" ]]; then
-  add_targets+=("package.json")
-fi
-if (( ${#subrepos[@]} )); then
-  for path in "${subrepos[@]}"; do
-    base=$(basename "$path" .gitrepo)
-    target="$DEST/../$base"
-    add_targets+=("$target")
-  done
+# Ensure at least DEST is present
+if (( ${#add_targets[@]} == 0 )); then
+  add_targets=("$DEST")
 fi
 
 printf "  %sCommit the changes to your repository:%s\n" "$BOLD" "$RESET" >&2
 # Print the git add line with all targets (joined by spaces)
 printf "    %s%s%s\n" "$GREEN" "git add ${add_targets[*]}" "$RESET" >&2
-printf "    %s%s%s\n\n" "$GREEN" "git commit -m 'Add suede dependency (release) $OWNER/$REPO@$COMMIT'" "$RESET" >&2
+
+# Construct a commit message similar to the original if owner/repo/commit were provided
+if [[ -n "$OWNER" ]] && [[ -n "$REPO" ]] && [[ -n "$COMMIT" ]]; then
+  commit_msg="Add suede dependency (release) $OWNER/$REPO@$COMMIT"
+else
+  commit_msg="Add suede dependency (release)"
+fi
+
+printf "    %s%s%s\n\n" "$GREEN" "git commit -m '$commit_msg'" "$RESET" >&2
