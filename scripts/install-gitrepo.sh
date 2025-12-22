@@ -209,9 +209,9 @@ if (( ${#add_targets[@]} == 0 )); then
   add_targets=("$DEST")
 fi
 
-printf "  %sCommit the changes to your repository:%s\n" "$BOLD" "$RESET" >&2
+printf "%sCommit the changes to your repository:%s\n" "$BOLD" "$RESET" >&2
 # Print the git add line with all targets (joined by spaces)
-printf "    %s%s%s\n" "$GREEN" "git add ${add_targets[*]}" "$RESET" >&2
+printf "  %s%s%s\n" "$GREEN" "git add ${add_targets[*]}" "$RESET" >&2
 
 # Construct a commit message similar to the original if owner/repo/commit were provided
 if [[ -n "$OWNER" ]] && [[ -n "$REPO" ]] && [[ -n "$COMMIT" ]]; then

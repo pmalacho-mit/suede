@@ -165,8 +165,13 @@ If your suede dependency relies on other libraries or modules, the [subrepo-push
    - Therefore, npm packages should be include in [`"dependencies"`](https://docs.npmjs.com/cli/v7/configuring-npm/package-json#dependencies) if and only if they are required by your `release` code. All other dependencies should be installed as [`"devDependencies"`](https://docs.npmjs.com/cli/v7/configuring-npm/package-json#devdependencies).
 - Any folders at the root of the `main` branch that contain a `.gitrepo` file (indicating it's a [subrepo](https://github.com/ingydotnet/git-subrepo)) will have the `.gitrepo`  contents copied to `./release/.dependencies/<folder-name>.gitrepo` (e.g., if your `main` branch included `./some-dependency/.gitrepo`, the [subrepo-push-release](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) action will copy it's contents to `./release/.dependencies/some-dependency.gitrepo`)  
 
-This 
+These dependencies are then analyzed upon [install](#consuming-a-dependency) and printed to the terminal. 
 
+To see the depenencies of an already installed dependency, run `bash (< https://suede.sh/extract-dependencies)` and provide the dependencies location as a positional argument, for example:
+
+```bash
+bash (< https://suede.sh/extract-dependencies) ./example-depepdency/
+```
 
 > [!IMPORTANT]  
 > The `./release/.dependencies` folder is maintained by the automation and you typically won’t edit it by hand. In fact, as a dependency maintainer, you might not interact with this folder at all — it's generated on the release branch for the benefit of those using your dependency. This intentional manual step for consumers (to review and install sub-dependencies) is seen as a feature: it promotes awareness of exactly what your project is using under the hood, rather than nesting hidden dependencies. It ensures that nothing gets added to a consumer's project without them explicitly opting in.
