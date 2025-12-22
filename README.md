@@ -164,8 +164,9 @@ In summary, do your day-to-day development on `main` (or a sub-branch), keep the
 If your suede dependency relies on other libraries or modules, the [subrepo-push-release](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) Github Action will automatically capture these dependencies with the following conventions:
 
 - A `./package.json` file at the root of the `main` branch will have it's [`"dependencies"`](https://docs.npmjs.com/cli/v7/configuring-npm/package-json#dependencies) object copied to `./release/.dependencies/package.json`
-   - Therefore, npm packages should be include in [`"dependencies"`](https://docs.npmjs.com/cli/v7/configuring-npm/package-json#dependencies) if and only if they are required by your `release` code. All other dependencies should be installed as [`"devDependencies"`](https://docs.npmjs.com/cli/v7/configuring-npm/package-json#devdependencies).
+  - Therefore, npm packages should be included in [`"dependencies"`](https://docs.npmjs.com/cli/v7/configuring-npm/package-json#dependencies) if and only if they are required by your `release` code. All other dependencies should be installed as [`"devDependencies"`](https://docs.npmjs.com/cli/v7/configuring-npm/package-json#devdependencies).
 - Any folders at the root of the `main` branch that contain a `.gitrepo` file (indicating it's a [subrepo](https://github.com/ingydotnet/git-subrepo)) will have the `.gitrepo`  contents copied to `./release/.dependencies/<folder-name>.gitrepo` (e.g., if your `main` branch included `./some-dependency/.gitrepo`, the [subrepo-push-release](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) action will copy it's contents to `./release/.dependencies/some-dependency.gitrepo`)  
+  - Therefore, suede dependencies should only be installed in the root of your `main` branch if and only if they are required by your `release` code. If instead you're `main` branch depends on other suede dependencies (say for testing or documentation), simply install those into a subfolder.
 
 > [!IMPORTANT]  
 > The `./release/.dependencies` folder is maintained by the automation and you shouldn't need to edit it by hand. 
