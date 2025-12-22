@@ -12,54 +12,95 @@ jobs:
     if: ${{ github.run_number > 1 }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: release
-      
       - name: Set up Git user
         run: |
           git config --global user.email "action@github.com"
           git config --global user.name "GitHub Action"
-      
-      - name: Revert most recent commit on release branch
+
+      - name: Install git-subrepo
+        run: |
+          git clone https://github.com/ingydotnet/git-subrepo ~/.git-subrepo
+          source ~/.git-subrepo/.rc
+          git subrepo --version
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: release
+
+      - name: Revert (non-merge) commits from this push
         id: revert-release
         run: |
           set -e
-          # Capture the trigger commit (the commit that triggered this workflow)
+
+          # Commit at the tip of release when this workflow runs (i.e., AFTER)
           TRIGGER_COMMIT=$(git rev-parse HEAD)
-          echo "trigger-commit=$TRIGGER_COMMIT" >> $GITHUB_OUTPUT
           echo "Trigger commit: $TRIGGER_COMMIT"
-          
-          # Capture the trigger commit message
-          TRIGGER_COMMIT_MSG=$(git log -1 --format=%B HEAD)
-          echo "trigger-commit-message<<EOF" >> $GITHUB_OUTPUT
-          echo "$TRIGGER_COMMIT_MSG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          
-          # Revert the most recent commit
-          git revert --no-edit HEAD
-          
-          # Capture the revert commit SHA
+          echo "trigger-commit=$TRIGGER_COMMIT" >> "$GITHUB_OUTPUT"
+
+          # Get BEFORE and AFTER from the push event
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.sha }}"
+          echo "Before: $BEFORE"
+          echo "After:  $AFTER"
+
+          # List non-merge commits introduced by this push (newest-first)
+          COMMITS=$(git rev-list --no-merges "$BEFORE..$AFTER" || true)
+
+          if [ -z "$COMMITS" ]; then
+            echo "No non-merge commits to revert between $BEFORE and $AFTER."
+          fi
+
+          echo "Non-merge commits found:"
+          echo "$COMMITS"
+
+          # ---- Collect all commit messages (newest → oldest) ----
+          ALL_MSGS=""
+          for c in $COMMITS; do
+            MSG=$(git log -1 --format=%B "$c")
+            ALL_MSGS="$ALL_MSGS
+            
+            ---
+            Commit: $c
+            $MSG
+            "
+          done
+
+          echo "all-commit-messages<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$ALL_MSGS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+          # ---- Revert the commits (newest-first) ----
+          for c in $COMMITS; do
+            echo "Reverting $c"
+            git revert --no-edit "$c"
+          done
+
+          # Capture the commit that represents the final revert state
           REVERT_COMMIT=$(git rev-parse HEAD)
-          echo "revert-commit=$REVERT_COMMIT" >> $GITHUB_OUTPUT
-          echo "Revert commit: $REVERT_COMMIT"
-          
-          # Push the revert to the release branch
+          echo "revert-commit=$REVERT_COMMIT" >> "$GITHUB_OUTPUT"
+
+          # Push the revert(s) back to release
           git push origin release
-      
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: main
-          
+
       - name: Check for release/ folder
         run: |
           if [ ! -d "release" ]; then
             echo "release/ folder not found on main branch. Exiting early."
             exit 0
           fi
-      
+
+      - name: Update ./release to latest
+        run: |
+          set -e
+          source ~/.git-subrepo/.rc
+          git subrepo pull ./release
+
       - name: Capture .gitrepo content
         id: capture-gitrepo
         run: |
@@ -69,7 +110,7 @@ jobs:
           echo "gitrepo-content<<EOF" >> $GITHUB_OUTPUT
           echo "$GITREPO_CONTENT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-      
+
       - name: Determine repository owner and name
         id: repo-info
         run: |
@@ -79,12 +120,12 @@ jobs:
           echo "owner=$OWNER" >> $GITHUB_OUTPUT
           echo "name=$NAME" >> $GITHUB_OUTPUT
           echo "Repository: $OWNER/$NAME"
-      
+
       - name: Delete release folder
         run: |
           rm -rf ./release
           echo "Deleted release/ folder"
-      
+
       - name: Install trigger commit using degit.sh
         run: |
           set -e
@@ -94,18 +135,15 @@ jobs:
             --commit "${{ steps.revert-release.outputs.trigger-commit }}" \
             --destination release
           echo "Installed trigger commit into release/ folder"
-      
-      - name: Recreate .gitrepo file with updated values
+
+      - name: Recreate .gitrepo file
         run: |
           set -e
           # Write the original .gitrepo content
           cat > ./release/.gitrepo << 'EOF'
           ${{ steps.capture-gitrepo.outputs.gitrepo-content }}
           EOF
-          
-          # Update the commit line to point to revert-commit
-          sed -i "s/^\(\s*commit = \).*/\1${{ steps.revert-release.outputs.revert-commit }}/" ./release/.gitrepo
-          
+
           echo "Updated .gitrepo file:"
           cat ./release/.gitrepo
 
@@ -122,10 +160,10 @@ jobs:
           set -e
           git switch -c "${{ steps.generate-branch-name.outputs.branch-name }}"
           git add release/
-          git commit -m "chore(suede): update release to trigger commit ${{ steps.revert-release.outputs.trigger-commit }}
-          
-          Original commit message:
-          ${{ steps.revert-release.outputs.trigger-commit-message }}"
+          git commit -m "chore(suede): update release to trigger commits:\n ${{ steps.revert-release.outputs.trigger-commit }}
+
+          Original commit messages:
+          ${{ steps.revert-release.outputs.all-commit-messages }}"
           git push -u origin HEAD
 
       - name: Create PR
@@ -137,10 +175,10 @@ jobs:
             --head "${{ steps.generate-branch-name.outputs.branch-name }}" \
             --title "chore(suede): pull latest upstream release into main" \
             --body "Automated subrepo pull of origin:release into ./release
-          
+
           **Trigger commit:** ${{ steps.revert-release.outputs.trigger-commit }}
-          
-          **Original commit message:**
+
+          **Original commit messages:**
           \`\`\`
-          ${{ steps.revert-release.outputs.trigger-commit-message }}
+          ${{ steps.revert-release.outputs.all-commit-messages }}
           \`\`\`"
