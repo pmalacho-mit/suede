@@ -14,7 +14,7 @@ set -euo pipefail
 readonly EXTERNAL_SCRIPT_BASE="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts"
 readonly EXTERNAL_SCRIPT_DEGIT="${EXTERNAL_SCRIPT_BASE}/utils/degit.sh"
 readonly EXTERNAL_SCRIPT_EXTRACT_CONFIG="${EXTERNAL_SCRIPT_BASE}/extract-subrepo-config.sh"
-readonly EXTERNAL_SCRIPT_EXTRACT_DEPS="${EXTERNAL_SCRIPT_BASE}/check-dependencies.sh"
+readonly EXTERNAL_SCRIPT_EXTRACT_DEPS="${EXTERNAL_SCRIPT_BASE}/extract-dependencies.sh"
 
 readonly INVOKE_INSTALL_GITREPO="bash <(curl https://suede.sh/install-gitrepo)"
 
