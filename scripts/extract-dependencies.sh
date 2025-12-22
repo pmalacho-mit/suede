@@ -55,7 +55,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "${MESSAGE-}" ]]; then
-  MESSAGE="Dependencies"
+  MESSAGE="SUEDE DEPENDENCIES OF DEPENDENCY"
 fi
 
 if [[ -z "${INVOKE_INSTALL_GITREPO-}" ]]; then
