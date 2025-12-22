@@ -43,7 +43,7 @@ jobs:
           source ~/.git-subrepo/.rc
           git subrepo --version
 
-      - name: Push changes (without first pulling, so this should fail if release has changes not reflected in main)
+      - name: Push changes (first pull, to ensure changes are applied on top of current release)
         run: |
           set -e
           source ~/.git-subrepo/.rc
