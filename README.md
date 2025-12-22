@@ -118,9 +118,11 @@ git subrepo push <path-to-dependency>
 
 > For example: `git subrepo push ./my-dependency`
 
-This will push your local changes to the dependency's remote `release` branch, which will trigger the [subrepo-pull-into-main](https://github.com/pmalacho-mit/subrepo-dependency-management/blob/main/templates/release/.github/workflows/subrepo-pull-into-main.yml) action and the following things will happen:
+This will push your local changes to the dependency's remote `release` branch, which will trigger the [subrepo-pull-into-main](https://github.com/pmalacho-mit/subrepo-dependency-management/blob/main/templates/dependency/release/.github/workflows/subrepo-pull-into-main.yml) action and the following things will happen:
 
-1. **Immediate revert:** Your changs will immediately be reverted on the remote `release` branch to so that any consumer who performs the [upgrading](#upgrading-ie-pulling) instructions won't received unvetted changes.
+1. **Immediate revert:** Your changs will immediately be reverted on the remote `release` branch so that any consumer who performs the [upgrading](#upgrading-ie-pulling) instructions won't receive unvetted changes.
+> [!WARNING]
+> Because your changes are immediately reverted, avoid performing a `git subrepo pull` (i.e., [upgrading](#upgrading-ie-pulling)) until your changes are approved and incorporated. Otherwise, you risk "stomping" over your changes.  
 2. **Pull request into main:** A pull request is created into `main` that applies your changes to the `./release/` folder (and are seen by [git-subrepo](https://github.com/ingydotnet/git-subrepo) as happening _"on top"_ of the revert commit in step 1). That way, your changes can be easily reviewed and tested. See more in [maintaing a dependency](#maintaing-a-dependency).
    - When that PR is approved, your changes will flow back into the `release` branch via the [subrepo-push-release](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) action.
 
