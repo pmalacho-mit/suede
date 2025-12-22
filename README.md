@@ -80,7 +80,9 @@ bash <(curl https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main
 
 The [install script](./scripts/install-release.sh) will inspect the `./release/.gitrepo` file of the dependency's `main` branch to determine the appropriate commit of its `release` branch to install (see more in [Anatomy of a Suede Dependency](#anatomy-of-a-suede-dependency)). 
 
-It then will extract the `release` branch's content (along with the `./release/.gitrepo` file) to a folder named the same as the dendency's repository (or use the `--dest` flag / `-d` shorthand to install the depenency to a different location).
+It then will extract the `release` branch's content to a folder named the same as the dendency's repository (or use the `--dest` flag / `-d` shorthand to install the depenency to a different location).
+
+If the installed dependency depends on other resources (e.g., an [npm](https://www.npmjs.com/) package or another suede dependency), install instructions will be printed to the console (see more in [Dependencies of Dependencies](#dependencies-of-dependencies)).
 
 Finally, `git add` & `git commit` the new files.
 
@@ -98,7 +100,7 @@ git subrepo --version
 
 Then, simply run the `git subrepo pull` command, with the final argument being the location of your dependency.
 
-```
+```bash
 git subrepo pull <path-to-dependency>
 ```
 
@@ -112,7 +114,7 @@ One of the advantages of this workflow is that you can treat your dependency's c
 
 If you then want to make those changes available to all consumers of the dependency (and you have permissions to push to its repository), you can simply run the `git subrepo push` command, with the final argument being the location of your dependency.
 
-```
+```bash
 git subrepo push <path-to-dependency>
 ```
 
@@ -166,7 +168,7 @@ If your suede dependency relies on other libraries or modules, the [subrepo-push
 - Any folders at the root of the `main` branch that contain a `.gitrepo` file (indicating it's a [subrepo](https://github.com/ingydotnet/git-subrepo)) will have the `.gitrepo`  contents copied to `./release/.dependencies/<folder-name>.gitrepo` (e.g., if your `main` branch included `./some-dependency/.gitrepo`, the [subrepo-push-release](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) action will copy it's contents to `./release/.dependencies/some-dependency.gitrepo`)  
 
 > [!IMPORTANT]  
-> The `./release/.dependencies` folder is maintained by the automation and you likely will never edit it by hand. 
+> The `./release/.dependencies` folder is maintained by the automation and you shouldn't need to edit it by hand. 
 
 These dependencies are then analyzed upon [install](#consuming-a-dependency) and instructions for resolving them are printed to the terminal. 
 
