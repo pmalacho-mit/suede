@@ -24,6 +24,19 @@ In addition to [git](https://git-scm.com/)...
 It is also highly ***recommended*** to use:
 - [devcontainers](https://containers.dev/): Enables us to easily spin up a (typically [linux-based](https://mcr.microsoft.com/en-us/artifact/mar/devcontainers/base/about)) development environment that has [git-subrepo installed as a feature](https://github.com/pmalacho-mit/devcontainer-features/tree/main/src/git-subrepo).
 
+## Dependency Registry
+
+| Repo | Description |
+| --- | ----------- |
+| [pmalacho-mit/dockview-svelte-suede](https://github.com/pmalacho-mit/dockview-svelte-suede) | svelte port of the [dockview](https://dockview.dev/) layout management library |
+| [pmalacho-mit/sweater-vest-suede](https://github.com/pmalacho-mit/sweater-vest-suede) | svelte testing library |
+| [pmalacho-mit/serialized-renderer-suede](https://github.com/pmalacho-mit/serialized-renderer-suede) | [pixijs](https://pixijs.com/)-based renderer that enables data-driven (as opposed to logic-driven) rendering | 
+| [pmalacho-mit/svelte-url-parameterizer-suede](https://github.com/pmalacho-mit/svelte-url-parameterizer-suede) | utility to automatically track svelte runes in the URL bar|
+| [pmalacho-mit/with-events-suede](https://github.com/pmalacho-mit/with-events-suede) | |
+| [pmalacho-mit/mixin-suede](https://github.com/pmalacho-mit/mixin-suede) | Robust & typesafe mixin library that supports conflict resolution |
+| [pmalacho-mit/svelte-snippet-renderer-suede](https://github.com/pmalacho-mit/svelte-snippet-renderer-suede) | Robust mechanism for passing renderable content as props to svelte components |
+
+
 ## Anatomy of a Suede Dependency
 
 A suede dependency repository has a two-branch structure that separates development from distribution:
