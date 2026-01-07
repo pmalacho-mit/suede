@@ -11,6 +11,7 @@ Options:
   -b, --branch BRANCH       branch or tag to fetch if --commit not supplied
   -c, --commit SHA          specific commit SHA to fetch (takes precedence)
   -d, --destination DIR     destination directory (default: repo name)
+  -f, --force               allow writing into a non-empty destination
   -i, --include PATH...     only extract files matching these path patterns
   -h, --help                show this help
 
@@ -29,6 +30,7 @@ BRANCH=""
 COMMIT=""
 DEST=""
 INCLUDE_PATHS=()
+FORCE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -36,6 +38,7 @@ while [[ $# -gt 0 ]]; do
     -b|--branch)    BRANCH="${2-}"; shift 2 || usage ;;
     -c|--commit)    COMMIT="${2-}"; shift 2 || usage ;;
     -d|--destination) DEST="${2-}"; shift 2 || usage ;;
+    -f|--force)     FORCE=1; shift ;;
     -i|--include)   
       shift
       while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
@@ -135,9 +138,11 @@ URL="$BASE_URL"
 
 # ---- Destination checks ----
 mkdir -p "$DEST"
-if [ -n "$(ls -A "$DEST" 2>/dev/null)" ]; then
-  echo "Error: destination '$DEST' is not empty. Choose an empty dir or remove it." >&2
-  exit 4
+if [[ $FORCE -eq 0 ]]; then
+  if [ -n "$(ls -A "$DEST" 2>/dev/null)" ]; then
+    echo "Error: destination '$DEST' is not empty. Choose an empty dir or remove it, or pass --force." >&2
+    exit 4
+  fi
 fi
 
 echo "Fetching from $URL ..."
