@@ -145,9 +145,30 @@ fi
 is_omitted() {
   local dir="$1" base
   base=$(basename "$dir")
+
+  # Normalize discovered dir so omit rules can be expressed as either
+  # repo-relative paths (preferred) or absolute paths under REPO_ROOT.
+  local dir_rel="$dir"
+  if [[ "$dir_rel" == "$REPO_ROOT"/* ]]; then
+    dir_rel="${dir_rel#"$REPO_ROOT"/}"
+  fi
+
   for omit in "${OMIT_LIST[@]}"; do
-    # Match by basename or by suffix of the full path
-    if [[ "$base" == "$omit" || "$dir" == *"$omit" ]]; then
+    local rule="$omit"
+    rule="${rule%/}"
+    rule="${rule#./}"
+
+    # Allow absolute omit paths as long as they are inside this repo.
+    if [[ "$rule" == "$REPO_ROOT"/* ]]; then
+      rule="${rule#"$REPO_ROOT"/}"
+    fi
+
+    # Match by basename, exact path, suffix path, or directory-tree prefix.
+    if [[ "$base" == "$rule" \
+       || "$dir_rel" == "$rule" \
+       || "$dir_rel" == "$rule"/* \
+       || "$dir_rel" == */"$rule" \
+       || "$dir_rel" == */"$rule"/* ]]; then
       return 0
     fi
   done
