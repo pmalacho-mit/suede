@@ -10,9 +10,13 @@
 #   - A directory path (e.g. "libs/")    — recursively searched for .gitrepo files
 #   - Omitted                            — searches from the repo root
 #
+# Path rules:
+#   - Non-absolute TARGET and --omit paths are resolved relative to the repo root
+#   - Absolute TARGET paths are used as-is
+#
 # Options:
 #   --dry, --dry-run          Print the commands that would run without executing them
-#   --omit <name|path>        Skip a subrepo by name or path (repeatable)
+#   --omit <name|path>        Skip a subrepo by name, repo-relative path, or absolute path (repeatable)
 #   -h, --help                Show this help message
 
 set -euo pipefail
@@ -98,10 +102,14 @@ REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
 
 find_subrepos() {
   local search_root="$1"
-  find "$search_root" -name ".gitrepo" -type f \
-    | sed 's|/\.gitrepo$||' \
-    | sed "s|^\./||" \
-    | sort -u
+  while IFS= read -r gitrepo_path; do
+    local dir="${gitrepo_path%/.gitrepo}"
+    if [[ "$dir" == "$REPO_ROOT"/* ]]; then
+      dir="${dir#"$REPO_ROOT"/}"
+    fi
+    dir="${dir#./}"
+    printf '%s\n' "$dir"
+  done < <(find "$search_root" -name ".gitrepo" -type f)
 }
 
 resolve_dirs() {
@@ -120,7 +128,13 @@ resolve_dirs() {
       while IFS= read -r d; do _out+=("$d"); done <<< "$by_name"
     else
       # Treat TARGET as a directory path and search recursively within it
-      local search_path="$REPO_ROOT/$TARGET"
+      local search_path
+      if [[ "$TARGET" == /* ]]; then
+        search_path="$TARGET"
+      else
+        search_path="$REPO_ROOT/$TARGET"
+      fi
+
       if [[ ! -d "$search_path" ]]; then
         err "No subrepo named '$TARGET' found, and '$TARGET' is not a directory."
         exit 1
