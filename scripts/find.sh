@@ -58,6 +58,9 @@ while IFS= read -r gitrepo_file; do
   # Resolve to the absolute path of the directory that owns this .gitrepo
   dir="$(cd "$(dirname "$gitrepo_file")" && pwd)"
 
+  echo $dir
+  echo $abs_pattern
+
   # No filter — always emit; otherwise only emit when the path matches
   if [[ "$dir" == $abs_pattern ]]; then
     printf '%s\n' "$dir"
