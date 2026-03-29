@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# Push git-subrepo directories (after delegating pull to pull.sh).
+# Pull git-subrepo directories.
 #
 # Usage:
-#   ./push.sh [OPTIONS] [TARGET ...]
+#   ./pull.sh [OPTIONS] [TARGET ...]
 #
 # TARGET is forwarded directly to find.sh and follows find.sh semantics.
 # If omitted, find.sh default behavior is used.
@@ -17,7 +17,6 @@ set -euo pipefail
 # ----- External Script Dependencies -----
 readonly EXTERNAL_SCRIPT_BASE="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts"
 readonly EXTERNAL_SCRIPT_FIND="${EXTERNAL_SCRIPT_BASE}/find.sh"
-readonly EXTERNAL_SCRIPT_PULL="${EXTERNAL_SCRIPT_BASE}/pull.sh"
 
 usage() {
   grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \?//'
@@ -72,22 +71,9 @@ run_cmd() {
   fi
 }
 
-declare -a PULL_ARGS=()
-$DRY_RUN && PULL_ARGS+=("--dry-run")
-PULL_ARGS+=("${TARGET_ARGS[@]}")
-
-if $DRY_RUN; then
-  printf '[dry-run] bash <(curl -fsSL %s) %s\n' "$EXTERNAL_SCRIPT_PULL" "${PULL_ARGS[*]-}" >&2
-else
-  if ! bash <(curl -fsSL "$EXTERNAL_SCRIPT_PULL") "${PULL_ARGS[@]}"; then
-    printf 'Pull phase failed; not continuing to push phase.\n' >&2
-    exit 1
-  fi
-fi
-
 for dir in "${ALL_DIRS[@]}"; do
-  run_cmd git subrepo push "$dir" || {
-    printf 'Push failed for %s\n' "$dir" >&2
+  run_cmd git subrepo pull "$dir" || {
+    printf 'Pull failed for %s\n' "$dir" >&2
     exit 1
   }
 done
@@ -95,5 +81,5 @@ done
 if $DRY_RUN; then
   printf 'Dry run complete: %d subrepo(s).\n' "${#ALL_DIRS[@]}" >&2
 else
-  printf 'Pushed %d subrepo(s).\n' "${#ALL_DIRS[@]}" >&2
+  printf 'Pulled %d subrepo(s).\n' "${#ALL_DIRS[@]}" >&2
 fi
