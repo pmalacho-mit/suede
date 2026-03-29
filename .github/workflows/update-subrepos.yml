@@ -30,7 +30,7 @@ jobs:
       - name: Update all subrepos
         run: |
           source ~/.git-subrepo/.rc
-          ./scripts/pull-all-subrepos.sh
+          ./scripts/pull.sh
 
       - name: Commit and push changes
         run: |
