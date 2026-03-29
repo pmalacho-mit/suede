@@ -41,14 +41,14 @@ CWD="$PWD"
 # ---------------------------------------------------------------------------
 # Resolve the glob to an absolute pattern anchored at CWD
 # ---------------------------------------------------------------------------
-abs_pattern=""
-if [[ -n "$GLOB" ]]; then
-  if [[ "$GLOB" == /* ]]; then
-    abs_pattern="$GLOB"
-  else
-    # Strip a leading ./ and prepend the absolute CWD
-    abs_pattern="$CWD/${GLOB#./}"
-  fi
+if [[ -z "$GLOB" ]]; then
+  # No glob — default to everything under the current working directory
+  abs_pattern="$CWD/**"
+elif [[ "$GLOB" == /* ]]; then
+  abs_pattern="$GLOB"
+else
+  # Strip a leading ./ and prepend the absolute CWD
+  abs_pattern="$CWD/${GLOB#./}"
 fi
 
 # ---------------------------------------------------------------------------
@@ -59,7 +59,7 @@ while IFS= read -r gitrepo_file; do
   dir="$(cd "$(dirname "$gitrepo_file")" && pwd)"
 
   # No filter — always emit; otherwise only emit when the path matches
-  if [[ -z "$abs_pattern" || "$dir" == $abs_pattern ]]; then
+  if [[ "$dir" == $abs_pattern ]]; then
     printf '%s\n' "$dir"
   fi
 done < <(find "$REPO_ROOT" -name ".gitrepo" -type f | sort)
