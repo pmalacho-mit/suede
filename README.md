@@ -119,7 +119,13 @@ git subrepo pull <path-to-dependency>
 
 > For example: `git subrepo pull ./my-dependency`
 
-This will fetch and merge the newest commits from the dependency’s `release` branch into your subrepo folder.
+This will fetch and merge the newest commits from the dependency’s `release` branch into your subrepo folder and apply them as a single commit. 
+
+To view the changes that were committed, run:
+
+```bash
+git diff HEAD~1 HEAD
+```
  
 #### Modifying (i.e. `push`ing)
 
