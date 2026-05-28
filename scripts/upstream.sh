@@ -21,9 +21,8 @@
 
 set -euo pipefail
 
-# Keep in sync with the action's  on.push.branches: ["submit/**"].
-# Rename here + there together if you prefer e.g. "upstream/**".
-BRANCH_PREFIX="submit"
+# Keep in sync with the action's  on.push.branches: ["downstream/**"].
+BRANCH_PREFIX="downstream"
 
 die() { echo "error: $*" >&2; exit 1; }
 usage() {
