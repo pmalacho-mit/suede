@@ -69,5 +69,5 @@ for subrepo in "${SUBREPOS[@]}"; do
 		(cd "$REPO_ROOT" && git subrepo branch "$subrepo")
 	fi
 
-	(cd "$REPO_ROOT" && git diff "$subrepo/fetch" "$subrepo")
+	(cd "$REPO_ROOT" && git diff "subrepo/$subrepo/fetch" "subrepo/$subrepo")
 done
