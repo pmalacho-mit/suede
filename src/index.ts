@@ -1,7 +1,8 @@
-const base = 'https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts';
+const base =
+  "https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts";
 const cache = {
-	cacheTtl: 60,
-	cacheEverything: true,
+  cacheTtl: 60,
+  cacheEverything: true,
 } satisfies RequestInitCfProperties;
 
 const index = `<!DOCTYPE html>
@@ -36,36 +37,36 @@ const index = `<!DOCTYPE html>
 		
 		<p>
 			Source code for this worker: 
-			<a href="https://github.com/pmalacho-mit/suede-cloudflare-worker/blob/main/src/index.ts">github.com/pmalacho-mit/suede-cloudflare-worker</a>
+			<a href="https://github.com/pmalacho-mit/suede/blob/sites/suede.sh/src/index.ts">github.com/pmalacho-mit/suede/tree/sites/suede.sh</a>
 		</p>
 	</main>
 </body>
-</html>`
+</html>`;
 
 export default {
-	async fetch(request, env, ctx): Promise<Response> {
-		const url = new URL(request.url);
-		let { pathname } = url;
+  async fetch(request, env, ctx): Promise<Response> {
+    const url = new URL(request.url);
+    let { pathname } = url;
 
-		if (pathname === '/')
-			return new Response(index, {
-				headers: { 'Content-Type': 'text/html' },
-			});
+    if (pathname === "/")
+      return new Response(index, {
+        headers: { "Content-Type": "text/html" },
+      });
 
-		if (!pathname.endsWith('.sh')) pathname += '.sh';
+    if (!pathname.endsWith(".sh")) pathname += ".sh";
 
-		const upstream = new URL(base + pathname);
+    const upstream = new URL(base + pathname);
 
-		const resp = await fetch(upstream.toString(), {
-			method: request.method,
-			headers: request.headers,
-			cf: cache,
-		});
+    const resp = await fetch(upstream.toString(), {
+      method: request.method,
+      headers: request.headers,
+      cf: cache,
+    });
 
-		return new Response(resp.body, {
-			status: resp.status,
-			statusText: resp.statusText,
-			headers: resp.headers,
-		});
-	},
+    return new Response(resp.body, {
+      status: resp.status,
+      statusText: resp.statusText,
+      headers: resp.headers,
+    });
+  },
 } satisfies ExportedHandler<Env>;
