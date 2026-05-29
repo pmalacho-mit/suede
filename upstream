@@ -8,9 +8,9 @@
 #     bash dependencies/<dep>/.suede/upstream
 #
 # Thin bootstrapper: the real logic is hosted so it can evolve without
-# re-shipping dependencies. It locates the dependency root (the nearest ancestor
-# holding a .gitrepo) and hands it to the hosted script. Override the host for
-# forks/testing with SUEDE_UPSTREAM_URL.
+# re-shipping dependencies. It locates the dependency root (exactly one level up,
+# i.e. SELF_DIR/../.gitrepo) and hands it to the hosted script. Override the host
+# for forks/testing with SUEDE_UPSTREAM_URL.
 
 set -euo pipefail
 
@@ -19,14 +19,12 @@ err() { echo "error: $*" >&2; exit 1; }
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)" \
   || err "cannot resolve script location"
 
-# Walk up to the dependency root (folder containing .gitrepo). Works whether
-# this lives at <dep>/.suede/upstream or directly at <dep>/upstream.
-DEP_DIR="$SELF_DIR"
-while [ "$DEP_DIR" != "/" ] && [ ! -f "$DEP_DIR/.gitrepo" ]; do
-  DEP_DIR="$(dirname "$DEP_DIR")"
-done
+# The dependency root is exactly one level up from this script
+# (<dep>/.gitrepo, with this script at <dep>/.suede/upstream).
+DEP_DIR="$(cd "$SELF_DIR/.." >/dev/null 2>&1 && pwd)" \
+  || err "cannot resolve dependency root above $SELF_DIR"
 [ -f "$DEP_DIR/.gitrepo" ] \
-  || err "no .gitrepo found above $SELF_DIR — is this inside a vendored suede dependency?"
+  || err "no .gitrepo found at $DEP_DIR/.gitrepo — is this inside a vendored suede dependency?"
 
 command -v curl >/dev/null || err "curl not found"
 HOST="${SUEDE_UPSTREAM_URL:-https://suede.sh/upstream}"
