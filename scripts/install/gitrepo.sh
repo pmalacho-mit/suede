@@ -4,7 +4,7 @@
 # extract the referenced repository information (OWNER/REPO/COMMIT),
 # and download the repository archive at that commit into a local destination.
 #
-# This script uses remote hosted utilities (extract-subrepo-config.sh and utils/degit.sh) 
+# This script uses remote hosted utilities (extract/subrepo-config.sh and utils/degit.sh)
 # to accomplish its task without requiring a full git clone.
 
 set -euo pipefail
@@ -13,10 +13,10 @@ set -euo pipefail
 # These scripts are downloaded and executed at runtime.
 readonly EXTERNAL_SCRIPT_BASE="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts"
 readonly EXTERNAL_SCRIPT_DEGIT="${EXTERNAL_SCRIPT_BASE}/utils/degit.sh"
-readonly EXTERNAL_SCRIPT_EXTRACT_CONFIG="${EXTERNAL_SCRIPT_BASE}/extract-subrepo-config.sh"
-readonly EXTERNAL_SCRIPT_EXTRACT_DEPS="${EXTERNAL_SCRIPT_BASE}/extract-dependencies.sh"
+readonly EXTERNAL_SCRIPT_EXTRACT_CONFIG="${EXTERNAL_SCRIPT_BASE}/extract/subrepo-config.sh"
+readonly EXTERNAL_SCRIPT_EXTRACT_DEPS="${EXTERNAL_SCRIPT_BASE}/extract/dependencies.sh"
 
-readonly INVOKE_INSTALL_GITREPO="bash <(curl https://suede.sh/install-gitrepo)"
+readonly INVOKE_INSTALL_GITREPO="bash <(curl https://suede.sh/install/gitrepo)"
 
 # Color and formatting (only enable when stderr is a TTY)
 if [[ -t 2 ]]; then

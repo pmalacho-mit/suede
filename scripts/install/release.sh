@@ -4,8 +4,8 @@
 # to extract the referenced repository information (OWNER/REPO/COMMIT), and
 # download the repository archive at that commit into a local destination.
 #
-# This script uses remote hosted utilities (git-raw.sh, extract-subrepo-config.sh,
-# and degit.sh) to accomplish its task without requiring a full git clone.
+# This script uses remote hosted utilities (utils/git-raw.sh, extract/subrepo-config.sh,
+# and utils/degit.sh) to accomplish its task without requiring a full git clone.
 
 set -euo pipefail
 
@@ -13,12 +13,12 @@ set -euo pipefail
 # These scripts are downloaded and executed at runtime.
 readonly EXTERNAL_SCRIPT_BASE="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts"
 readonly EXTERNAL_SCRIPT_GIT_RAW="${EXTERNAL_SCRIPT_BASE}/utils/git-raw.sh"
-readonly EXTERNAL_SCRIPT_INSTALL="${EXTERNAL_SCRIPT_BASE}/install-gitrepo.sh"
+readonly EXTERNAL_SCRIPT_INSTALL="${EXTERNAL_SCRIPT_BASE}/install/gitrepo.sh"
 
 # Print usage information to stderr.
 usage() {
   cat >&2 <<'USAGE'
-Usage: install-release.sh [OPTIONS] --repo OWNER/REPO
+Usage: bash <(curl https://suede.sh/install/release) [OPTIONS] --repo OWNER/REPO
 
 Fetch and extract the repository specified in a remote repository's release/.gitrepo file.
 
@@ -37,9 +37,9 @@ Notes:
   • The destination directory must be empty or nonexistent.
 
 Examples:
-  install-release.sh -r pmalacho-mit/zoom-sdk-suede
-  install-release.sh -r pmalacho-mit/zoom-sdk-suede -b main --destination ./sdk-release
-  install-release.sh -r owner/repo -b develop --destination ./my-release
+  bash <(curl https://suede.sh/install/release) -r pmalacho-mit/zoom-sdk-suede
+  bash <(curl https://suede.sh/install/release) -r pmalacho-mit/zoom-sdk-suede -b main --destination ./sdk-release
+  bash <(curl https://suede.sh/install/release) -r owner/repo -b develop --destination ./my-release
 USAGE
 }
 

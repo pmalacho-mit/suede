@@ -1,62 +1,117 @@
 # Scripts
 
-## `extract-subrepo-config.sh`
+Scripts that share a common prefix are grouped into a folder named after that
+prefix, with the prefix stripped from the filename. The hosted URL mirrors the
+on-disk path, so `scripts/install/release.sh` is served at both
+`https://suede.sh/install/release` and
+`https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install/release.sh`.
+
+## `extract/`
+
+### `extract/subrepo-config.sh`
 
 Parses a git-subrepo `.gitrepo` file from stdin and outputs `OWNER`, `REPO`, and `COMMIT` as `KEY=VALUE` pairs.
 
 ```bash
-cat .gitrepo | bash <(curl https://suede.sh/extract-subrepo-config)
+cat .gitrepo | bash <(curl https://suede.sh/extract/subrepo-config)
 ```
 
-## `install-release.sh`
+### `extract/dependencies.sh`
+
+Summarizes the `.dependencies` of an installed gitrepo and prints NEXT STEPS (npm install line + nested suede dependencies to install).
+
+```bash
+bash <(curl https://suede.sh/extract/dependencies) <dest> [--message TEXT] [--emit-add-targets]
+```
+
+## `install/`
+
+### `install/release.sh`
 
 Fetches a `release/.gitrepo` file from a remote repository and downloads the referenced release archive.
 
 ```bash
-bash <(curl https://suede.sh/install-release) --repo OWNER/REPO [--branch BRANCH] [--destination DIR]
+bash <(curl https://suede.sh/install/release) --repo OWNER/REPO [--branch BRANCH] [--destination DIR]
 # Defaults: --branch=main, --destination=./<repo-name>
 ```
 
-## `install-subrepo-dependency.sh`
+### `install/gitrepo.sh`
 
-Downloads and extracts a repository referenced in a `.gitrepo` file.
+Reads the content of a `.gitrepo` file and downloads/extracts the referenced repository archive into a destination.
 
 ```bash
-bash <(curl https://suede.sh/install-subrepo-dependency) <file.gitrepo> [--destination DIR]
+bash <(curl https://suede.sh/install/gitrepo) -d <destination> [<file.gitrepo>|-]
 ```
 
-## `populate-dependencies.sh`
+## `populate/`
+
+### `populate/dependencies.sh`
 
 Collects dependency metadata into `release/.dependencies/`: copies `.gitrepo` files from child folders, extracts package.json dependencies, and copies requirements.txt.
 
 ```bash
-./populate-dependencies.sh
+./populate/dependencies.sh
 ```
 
 > [!NOTE]  
 > Used in [subrepo-push-release](../templates/dependency/main/.github/workflows/subrepo-push-release.yml) Github Action
 
-## `populate-readme-after-init.sh`
+### `populate/readme-after-init.sh`
 
 Writes installation instructions to README.md by parsing the git remote origin URL.
 
 ```bash
-./populate-readme-after-init.sh
+./populate/readme-after-init.sh
 ```
 
 > [!NOTE]  
 > Used in [initialize](../templates/dependency/main/.github/workflows/initialize.yml) Github Action
 
+## Subrepo helpers
 
-## `pull-all-subrepos.sh`
+### `find.sh`
 
-Finds all git-subrepo directories (by locating `.gitrepo` files) and runs `git subrepo pull` on each to update them to their latest tracked commits.
+Finds git-subrepo directories (by locating `.gitrepo` files) in the current repository, with optional glob filtering.
 
 ```bash
-./pull-all-subrepos.sh
+./find.sh [GLOB ...]
 ```
 
-## `utils/degit.sh`
+### `diff.sh`
+
+Shows diffs for the git-subrepo directories discovered via `find.sh`.
+
+```bash
+./diff.sh [--force] [TARGET ...]
+```
+
+### `pull.sh`
+
+Runs `git subrepo pull` on each discovered subrepo to update it to its latest tracked commit.
+
+```bash
+./pull.sh [--dry-run] [TARGET ...]
+```
+
+### `push.sh`
+
+Delegates to `pull.sh`, then runs `git subrepo push` on each discovered subrepo.
+
+```bash
+./push.sh [--dry-run] [TARGET ...]
+```
+
+### `upstream.sh`
+
+Proposes a vendored dependency's local changes upstream as a reviewable PR, without touching the consumed `release` branch.
+
+```bash
+bash <(curl https://suede.sh/upstream) <path-to-dependency> [-r|--remote NAME]
+```
+
+## `utils/`
+
+### `utils/degit.sh`
 
 Downloads a GitHub repository archive at a specific commit/branch without cloning.
 
@@ -65,7 +120,7 @@ bash <(curl https://suede.sh/utils/degit) --repo OWNER/REPO [--commit SHA] [--br
 # Defaults: --branch=<default-branch>, --destination=./<repo-name>
 ```
 
-## `utils/git-raw.sh`
+### `utils/git-raw.sh`
 
 Fetches a single raw file from a GitHub repository at a specific ref.
 
