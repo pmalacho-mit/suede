@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Populates ./release/.dependencies with:
+# Populates ./release/.suede/.dependencies with:
 #  - one <folder>.gitrepo file for each immediate child folder that contains a .gitrepo
 #  - a minimal package.json containing only { "dependencies": { ... } } if package.json exists
 #  - a requirements.txt copy if requirements.txt exists
@@ -9,7 +9,7 @@ set -euo pipefail
 # Safe to run on GitHub runners and locally. Existing files are overwritten.
 
 ROOT="$PWD"
-DEST_DIR="$ROOT/release/.dependencies"
+DEST_DIR="$ROOT/release/.suede/.dependencies"
 
 log() { printf '[populate-deps] %s\n' "$*"; }
 
@@ -50,10 +50,10 @@ copy_gitrepo_files() {
   shopt -u nullglob dotglob
 }
 
-# Copy .gitrepo files from release/.dependencies if it exists
+# Copy .gitrepo files from release/.suede/.dependencies if it exists
 copy_gitrepo_files "$ROOT"
 
-# Extract only "dependencies" from package.json, write to release/.dependencies/package.json
+# Extract only "dependencies" from package.json, write to release/.suede/.dependencies/package.json
 pkg_src="$ROOT/package.json"
 pkg_dst="$DEST_DIR/package.json"
 if [[ -f "$pkg_src" ]]; then
