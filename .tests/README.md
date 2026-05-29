@@ -1,30 +1,45 @@
 # Test suite
 
 Colocated tests (`**/.tests/*.sh`, where `.tests` is the immediate parent) are
-discovered and run by `.tests/scripts/find-and-run-all.sh` on top of the shared
-harness in `.tests/harness/`. The whole suite is **offline and deterministic** —
-no GitHub, no network.
+discovered and run by `.tests/harness/run-all.sh` on top of the shared harness
+in `.tests/harness/`. The whole suite is **offline and deterministic** — no
+GitHub, no network.
 
 ## Run everything in a container (recommended)
 ```
-.tests/scripts/run.sh            # tests your working tree (repo mounted)
-.tests/scripts/run.sh --baked    # tests the snapshot copied into the image
+.tests/run.sh                    # run the whole suite
+.tests/run.sh --verbose          # full output for every test
+.tests/run.sh degit.sh ...       # run only the named test file(s)
 ```
 `run.sh` builds `.tests/Dockerfile` (git + curl + git-subrepo + identity) and
 runs the suite with `--network none`, so the run is provably hermetic; its exit
-code mirrors the suite. CI does the same in `.github/workflows/test.yml`.
+code mirrors the suite. All arguments are forwarded to `run-all.sh` inside the
+container.
+
+The suite always runs against the image's own baked-in copy of the files (what
+`.tests/Dockerfile` `COPY`s in), never a live mount of the working tree. The
+image is rebuilt every run, so that copy reflects your current files — it's
+simpler and provably self-contained.
+
+The suite writes its results to `.tests/.last-run/` (gitignored): a
+`transcript.log` plus one `<test>.log` per file, all plain text. `run.sh` prints
+the transcript **after** the container exits and treats that file as the source
+of truth — Docker can silently drop a container's final buffered stdout on exit
+(no TTY), so the streamed output is never relied upon.
 
 > The image *build* fetches git-subrepo once over the network; the test *run*
 > needs none. Vendor git-subrepo into the repo if you want an air-gapped build too.
 
 ## Run directly (if git-subrepo is on PATH)
 ```
-bash .tests/scripts/find-and-run-all.sh
+bash .tests/harness/run-all.sh           # all tests
+bash .tests/harness/run-all.sh --verbose degit.sh
 ```
 
 ## The report
-A per-test pass/fail log plus a summary box (Total / Passed / Failed and the
-names of any failures); non-zero exit on failure, so CI fails automatically.
+One pass/fail line per test file (with a passed/total count) plus a summary box
+(Total / Passed / Failed and the names of any failures); non-zero exit on
+failure, so CI fails automatically.
 
 ## Harness
 - `runner.sh` — `run_test_suite [--setup fn] [--cleanup fn] fn...`
