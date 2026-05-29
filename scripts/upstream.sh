@@ -1,23 +1,18 @@
 #!/usr/bin/env bash
-# suede upstream — publish a vendored dependency's local changes for REVIEW,
-# without ever touching the consumed `release` branch.
+# suede upstream — propose a vendored dependency's local changes to the library
+# upstream as a reviewable PR, without ever touching the consumed `release` branch.
 #
-# HOSTED implementation (serve at e.g. https://suede.sh/upstream). Normally
-# invoked by the `.upstream` stub shipped inside a dependency, which passes its
-# own folder as the dependency to submit. Power users can call it directly:
-#
+# HOSTED implementation (serve at https://suede.sh/upstream). Normally invoked
+# by the `.suede/upstream` stub shipped inside a dependency, which passes the
+# dependency root as the argument. Direct use:
 #     bash <(curl -fsSL https://suede.sh/upstream) <path-to-dependency>
 #
-# What it does:
-#   1. Splits the dependency's local changes via git-subrepo and pushes them to
-#      a DETERMINISTIC branch:  submit/<consumer-repo>-<consumer-HEAD>
-#      Deterministic => re-running on the same commit re-pushes the same branch
-#      (a no-op) instead of creating duplicates.
-#   2. Restores local subrepo tracking state so a later `git subrepo pull` is
-#      completely safe (no clobber).
-#
-# A GitHub Action on the dependency turns that branch into a PR to `main`.
-# `release` is never modified.
+# It splits the dependency's local changes via git-subrepo and pushes them to a
+# deterministic branch  downstream/<consumer-repo>-<consumer-HEAD>  on the
+# dependency's remote. A GitHub Action on the dependency then rebuilds that
+# branch in place as a main-shaped PR head for the maintainers to test & merge.
+# `release` is never modified, and local subrepo tracking is restored so a later
+# `git subrepo pull` is safe.
 
 set -euo pipefail
 
@@ -28,7 +23,7 @@ die() { echo "error: $*" >&2; exit 1; }
 usage() {
   cat <<'USAGE'
 usage: upstream <path-to-dependency> [-r|--remote <name>]
-  Publishes the dependency's local changes for review via a PR to its `main`.
+  Proposes the dependency's local changes upstream via a PR to its `main`.
   The dependency's `release` branch is left untouched.
 USAGE
 }
@@ -58,7 +53,7 @@ RELDIR="${DIRABS#"$TOP"/}"
 [ "$RELDIR" != "$DIRABS" ] || die "the dependency must live inside the repo, not at its root"
 [ -f "$RELDIR/.gitrepo" ] || die "'$RELDIR' is not a subrepo (no .gitrepo file)"
 
-# Clean tree makes the restore (git reset --hard) a safe, total undo, AND keeps
+# Clean tree => the restore (git reset --hard) is a safe total undo, AND keeps
 # consumer-HEAD <-> dependency-state 1:1 (git subrepo push also refuses a dirty tree).
 git diff --quiet && git diff --cached --quiet \
   || die "you have uncommitted changes — commit or stash them, then re-run"
@@ -66,22 +61,24 @@ git diff --quiet && git diff --cached --quiet \
 # ---- deterministic branch name: <consumer repo>-<consumer HEAD> -------------
 remote_url="$(git config --get remote.origin.url 2>/dev/null || true)"
 if [ -n "$remote_url" ]; then
-  slug="${remote_url%.git}"   # drop trailing .git
-  slug="${slug#*://}"         # drop scheme://
-  slug="${slug#*@}"           # drop user@  (ssh form)
-  slug="${slug#*[:/]}"        # drop host:  or  host/
+  slug="${remote_url%.git}"; slug="${slug#*://}"; slug="${slug#*@}"; slug="${slug#*[:/]}"
 else
-  slug="$(basename "$TOP")"   # no remote -> fall back to repo folder name
+  slug="$(basename "$TOP")"
 fi
-# sanitize into a single safe ref segment (owner/name -> owner-name)
 slug="$(printf '%s' "$slug" | tr '/' '-' | tr -c 'A-Za-z0-9_.-' '-' \
         | sed -E 's/-+/-/g; s/^[-.]+//; s/[-.]+$//')"
 slug="${slug:-repo}"
 
-PRE="$(git rev-parse HEAD)"          # full hash; swap for `--short=12 HEAD` if you want shorter branches
+PRE="$(git rev-parse HEAD)"        # full hash; use `--short=12 HEAD` for shorter branch names
 BRANCH="${BRANCH_PREFIX}/${slug}-${PRE}"
 
-echo "Upstreaming '$RELDIR' -> branch '$BRANCH' ..."
+# ---- pre-flight: already proposed this exact snapshot? ----------------------
+dep_remote="${REMOTE_OVERRIDE:-$(git config -f "$RELDIR/.gitrepo" subrepo.remote 2>/dev/null || true)}"
+if [ -n "$dep_remote" ] && git ls-remote --heads --exit-code "$dep_remote" "$BRANCH" >/dev/null 2>&1; then
+  die "this exact snapshot (commit ${PRE}) is already proposed — see the open PR for '$BRANCH'"
+fi
+
+echo "Proposing '$RELDIR' upstream -> branch '$BRANCH' ..."
 
 # ---- push the split to the branch -------------------------------------------
 # No --update: the tracked (pull) branch in .gitrepo stays = release. subrepo
@@ -97,9 +94,10 @@ git reset --hard "$PRE" >/dev/null
 
 cat <<MSG
 
-OK Upstreamed. Local state restored — safe to 'git subrepo pull' anytime.
+OK Proposed upstream. Local state restored — safe to 'git subrepo pull' anytime.
 
-  - A PR against the dependency's 'main' will open automatically (branch: $BRANCH).
-  - Re-running on this same commit just re-pushes the same branch (no duplicates).
+  - A PR against the dependency's 'main' opens automatically (branch: $BRANCH).
+  - The maintainers own that branch from here: they may test and push to it.
+  - Further local changes become a NEW snapshot/branch/PR (one-off per commit).
   - The 'release' branch was NOT modified; other consumers are unaffected.
 MSG
