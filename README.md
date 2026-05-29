@@ -70,14 +70,14 @@ This branch is what consumers actually install. It's kept automatically synchron
 
 ### Consuming a Dependency
 
-To consume a dependency, make use of [./scripts/install-release.sh](./scripts/install-release.sh) and specify the `--repo` flag (or `-r` shortahand) in the form `<repo owner>/<repo name>` (e.g., `pmalacho-mit/suede`).
+To consume a dependency, make use of [./scripts/install/release.sh](./scripts/install/release.sh) and specify the `--repo` flag (or `-r` shortahand) in the form `<repo owner>/<repo name>` (e.g., `pmalacho-mit/suede`).
 
 ```bash
-bash <(curl https://suede.sh/install-release) --repo <owner/name> 
+bash <(curl https://suede.sh/install/release) --repo <owner/name> 
 ```
 
 > [!NOTE]  
-> The above leverages [`curl`](https://curl.se/), [process substition (`bash <(...)`)](https://tldp.org/LDP/abs/html/process-sub.html), and our [suede.sh script proxy](#suedesh) to download and execute the [install script](./scripts/install-release.sh) in a single, concise line.
+> The above leverages [`curl`](https://curl.se/), [process substition (`bash <(...)`)](https://tldp.org/LDP/abs/html/process-sub.html), and our [suede.sh script proxy](#suedesh) to download and execute the [install script](./scripts/install/release.sh) in a single, concise line.
 
 
 <details>
@@ -86,12 +86,12 @@ See alternative to using <a href="#suedesh">suede.sh</a> script proxy
 </summary>
 
 ```bash
-bash <(curl https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install-release.sh) --repo <owner/name> 
+bash <(curl https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install/release.sh) --repo <owner/name> 
 ```
 
 </details>
 
-The [install script](./scripts/install-release.sh) will inspect the `./release/.gitrepo` file of the dependency's `main` branch to determine the appropriate commit of its `release` branch to install (see more in [Anatomy of a Suede Dependency](#anatomy-of-a-suede-dependency)). 
+The [install script](./scripts/install/release.sh) will inspect the `./release/.gitrepo` file of the dependency's `main` branch to determine the appropriate commit of its `release` branch to install (see more in [Anatomy of a Suede Dependency](#anatomy-of-a-suede-dependency)). 
 
 It then will extract the `release` branch's content to a folder named the same as the dendency's repository (or use the `--dest` flag / `-d` shorthand to install the depenency to a different location).
 
@@ -162,7 +162,7 @@ Follow the below steps when setting up a codebase that will behave as a dependen
    - Enabling certain Github Action workflow permissions
    - Dispatching the [initialization workflow](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/initialize.yml)
 3. **Share your dependency.** Once you complete the setup steps, your repository can now be distributed as a suede dependency. The [initialization workflow](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/initialize.yml) will automatically update your repo's `README.md` to instruct users on how to install your dependency, which will follow the format:
-   > `bash <(curl https://suede.sh/install-release) --repo owner/name`
+   > `bash <(curl https://suede.sh/install/release) --repo owner/name`
 
 ### Maintaing a Dependency
 
@@ -215,7 +215,7 @@ The installed gitrepo has the following npm dependencies:
     npm install @storybook/test@^8.6.14 html-to-image@^1.11.13 svelte@^5.41.0 typescript@^5.9.3
 
 Install nested suede dependencies:
-  bash <(curl https://suede.sh/install-gitrepo) -d sweater-vest-suede/../dockview-svelte-suede sweater-vest-suede/.dependencies/dockview-svelte-suede.gitrepo
+  bash <(curl https://suede.sh/install/gitrepo) -d sweater-vest-suede/../dockview-svelte-suede sweater-vest-suede/.dependencies/dockview-svelte-suede.gitrepo
 
 Commit the changes to your repository:
   git add sweater-vest-suede package.json sweater-vest-suede/../dockview-svelte-suede
@@ -224,10 +224,10 @@ Commit the changes to your repository:
 
 </details>
 
-To see the depenencies of an already installed dependency, run `bash (< https://suede.sh/extract-dependencies)` and provide the dependencies location as a positional argument, for example:
+To see the depenencies of an already installed dependency, run `bash (< https://suede.sh/extract/dependencies)` and provide the dependencies location as a positional argument, for example:
 
 ```bash
-bash (< https://suede.sh/extract-dependencies) ./example-depepdency/
+bash (< https://suede.sh/extract/dependencies) ./example-depepdency/
 ```
 
 <details>
@@ -251,7 +251,7 @@ The installed gitrepo has the following npm dependencies:
     npm install @storybook/test@^8.6.14 html-to-image@^1.11.13 svelte@^5.41.0 typescript@^5.9.3
 
 Install nested suede dependencies:
-  bash <(curl https://suede.sh/install-gitrepo) -d sweater-vest-suede/../dockview-svelte-suede sweater-vest-suede/.dependencies/dockview-svelte-suede.gitrepo
+  bash <(curl https://suede.sh/install/gitrepo) -d sweater-vest-suede/../dockview-svelte-suede sweater-vest-suede/.dependencies/dockview-svelte-suede.gitrepo
 ```
 
 </details>
@@ -266,7 +266,7 @@ Install nested suede dependencies:
 
 [suede.sh](https://suede.sh) is a Cloudflare Worker that provides cached, convenient access to the scripts in this repository. It serves as a proxy to the GitHub raw content URLs, with two key benefits:
 
-1. **Simplified URLs:** Instead of typing the full GitHub raw content URL, you can use shorter URLs like `https://suede.sh/install-release`
+1. **Simplified URLs:** Instead of typing the full GitHub raw content URL, you can use shorter URLs like `https://suede.sh/install/release`
 2. **Optional file extensions:** The `.sh` extension can be omitted from requests (e.g., `https://suede.sh/utils/degit` instead of `https://suede.sh/utils/degit.sh`)
 3. **Caching:** Responses are cached via Cloudflare's CDN for faster access
 
@@ -293,12 +293,12 @@ If you have concerns about executing scripts through a third-party proxy, you ca
 
 For example, replace:
 ```bash
-curl https://suede.sh/install-release
+curl https://suede.sh/install/release
 ```
 
 With:
 ```bash
-curl https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install-release.sh
+curl https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install/release.sh
 ```
 
 The source code for the suede.sh worker is available at [github.com/pmalacho-mit/suede-cloudflare-worker](https://github.com/pmalacho-mit/suede-cloudflare-worker) for review.

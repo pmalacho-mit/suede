@@ -90,7 +90,7 @@ To see the installable source code, please checkout the [release branch]($RELEAS
 ## Installation
 
 \`\`\`bash
-bash <(curl https://suede.sh/install-release) --repo $_repo_id
+bash <(curl https://suede.sh/install/release) --repo $_repo_id
 \`\`\`
 
 <details>
@@ -99,7 +99,7 @@ See alternative to using <a href="https://github.com/pmalacho-mit/suede#suedesh"
 </summary>
 
 \`\`\`bash
-bash <(curl https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install-release.sh) --repo $_repo_id
+bash <(curl https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install/release.sh) --repo $_repo_id
 \`\`\`
 
 </details>

@@ -70,7 +70,7 @@ jobs:
       - name: Populate README with installation details
         shell: bash
         run: |
-          bash -c "$(curl -fsSL https://raw.githubusercontent.com/pmalacho-mit/subrepo-dependency-management/refs/heads/main/scripts/populate-readme-after-init.sh)"
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/pmalacho-mit/subrepo-dependency-management/refs/heads/main/scripts/populate/readme-after-init.sh)"
       - name: Commit and push updated README
         shell: bash
         run: |

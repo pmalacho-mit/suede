@@ -3,11 +3,11 @@ set -euo pipefail
 SCRIPTS_TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEST_HARNESS_DIR="$(cd "$SCRIPTS_TESTS_DIR/../../.tests/harness" && pwd)"
 
-readonly EXTERNAL_SCRIPT_INSTALL="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install-gitrepo.sh"
-readonly LOCAL_SCRIPT_INSTALL="$SCRIPTS_TESTS_DIR/../install-gitrepo.sh"
+readonly EXTERNAL_SCRIPT_INSTALL="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install/gitrepo.sh"
+readonly LOCAL_SCRIPT_INSTALL="$SCRIPTS_TESTS_DIR/../install/gitrepo.sh"
 
-readonly EXTERNAL_SCRIPT_EXTRACT="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/extract-subrepo-config.sh"
-readonly LOCAL_SCRIPT_EXTRACT="$SCRIPTS_TESTS_DIR/../extract-subrepo-config.sh"
+readonly EXTERNAL_SCRIPT_EXTRACT="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/extract/subrepo-config.sh"
+readonly LOCAL_SCRIPT_EXTRACT="$SCRIPTS_TESTS_DIR/../extract/subrepo-config.sh"
 
 readonly EXTERNAL_SCRIPT_DEGIT="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/utils/degit.sh"
 readonly LOCAL_SCRIPT_DEGIT="$SCRIPTS_TESTS_DIR/../utils/degit.sh"

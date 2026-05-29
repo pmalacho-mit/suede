@@ -15,7 +15,7 @@ Arguments:
 
 Options:
   --message <text>                  Header message to print (defaults to "Dependencies")
-  --invoke-install-command <cmd>    Command to show how to install nested subrepos (default: bash <(curl https://suede.sh/install-gitrepo))
+  --invoke-install-command <cmd>    Command to show how to install nested subrepos (default: bash <(curl https://suede.sh/install/gitrepo))
   --emit-add-targets                Emit a newline-separated list of add targets to stdout (for machine consumption)
 USAGE
   exit 1
@@ -59,7 +59,7 @@ if [[ -z "${MESSAGE-}" ]]; then
 fi
 
 if [[ -z "${INVOKE_INSTALL_GITREPO-}" ]]; then
-  INVOKE_INSTALL_GITREPO="bash <(curl https://suede.sh/install-gitrepo)"
+  INVOKE_INSTALL_GITREPO="bash <(curl https://suede.sh/install/gitrepo)"
 fi
 
 # Color and formatting (only enable when stderr is a TTY)
