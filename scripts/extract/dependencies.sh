@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Helper to summarize .dependencies for an installed gitrepo and print NEXT STEPS.
+# Helper to summarize .suede/.dependencies for an installed gitrepo and print NEXT STEPS.
 # Usage: check-dependencies.sh <dest> <message> [invoke_install_command] [owner] [repo] [commit]
 
 set -euo pipefail
@@ -11,7 +11,7 @@ if [[ $# -lt 1 ]]; then
 Usage: $0 <dest> [options]
 
 Arguments:
-  <dest>                   Destination directory where the .dependencies folder (if any) resides
+  <dest>                   Destination directory where the .suede/.dependencies folder (if any) resides
 
 Options:
   --message <text>                  Header message to print (defaults to "Dependencies")
@@ -78,7 +78,7 @@ else
 fi
 
 DEST="${DEST%/}"
-DEPS_DIR="$DEST/.dependencies"
+DEPS_DIR="$DEST/.suede/.dependencies"
 NEXT_STEPS_PRINTED=false
 subrepos=()
 deps_block=""

@@ -88,12 +88,16 @@ fi
 UA_HEADER=( -H "User-Agent: ghdegit-bash" )
 ACCEPT_HEADER=( -H "Accept: application/vnd.github+json" )
 
+# Origin for the GitHub REST API. Override (e.g. a GitHub Enterprise host, a
+# mirror, or a local file:// tree in tests) to point fetches elsewhere.
+GITHUB_API_ORIGIN="${GITHUB_API_ORIGIN:-https://api.github.com}"
+
 # ---- Helpers for lightweight existence checks ----
 api_get() {
   # $1: path like /repos/OWNER/REPO/branches/main
   curl -fsSL --connect-timeout 10 \
     "${UA_HEADER[@]}" "${ACCEPT_HEADER[@]}" ${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"} \
-    "https://api.github.com$1"
+    "${GITHUB_API_ORIGIN}$1"
 }
 
 assert_branch_exists() {
@@ -126,7 +130,7 @@ if [[ -n "$COMMIT" ]]; then
 fi
 
 # ---- URL construction ----
-BASE_URL="https://api.github.com/repos/${REPO}/tarball"
+BASE_URL="${GITHUB_API_ORIGIN}/repos/${REPO}/tarball"
 REF=""
 if   [[ -n "$COMMIT" ]]; then REF="$COMMIT"
 elif [[ -n "$BRANCH" ]]; then REF="$BRANCH"

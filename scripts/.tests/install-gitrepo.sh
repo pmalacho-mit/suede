@@ -1,70 +1,50 @@
+#!/usr/bin/env bash
+# Offline test for install/gitrepo.sh — no network. Its sibling scripts are
+# served from the local working copy (SUEDE_SCRIPT_BASE=file://.../scripts) and
+# degit's tarball comes from the file:// mirror (GITHUB_API_ORIGIN).
 set -euo pipefail
-
-SCRIPTS_TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TEST_HARNESS_DIR="$(cd "$SCRIPTS_TESTS_DIR/../../.tests/harness" && pwd)"
-
-readonly EXTERNAL_SCRIPT_INSTALL="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install/gitrepo.sh"
-readonly LOCAL_SCRIPT_INSTALL="$SCRIPTS_TESTS_DIR/../install/gitrepo.sh"
-
-readonly EXTERNAL_SCRIPT_EXTRACT="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/extract/subrepo-config.sh"
-readonly LOCAL_SCRIPT_EXTRACT="$SCRIPTS_TESTS_DIR/../extract/subrepo-config.sh"
-
-readonly EXTERNAL_SCRIPT_DEGIT="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/utils/degit.sh"
-readonly LOCAL_SCRIPT_DEGIT="$SCRIPTS_TESTS_DIR/../utils/degit.sh"
-
-source "$TEST_HARNESS_DIR/runner.sh"
-source "$TEST_HARNESS_DIR/color-logging.sh"
-source "$TEST_HARNESS_DIR/mock-curl.sh"
-source "$TEST_HARNESS_DIR/normalize.sh"
-source "$TEST_HARNESS_DIR/with-single-example-txt-file.sh"
+TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPTS_DIR="$(cd "$TESTS_DIR/.." && pwd)"
+HARNESS="$(cd "$TESTS_DIR/../../.tests/harness" && pwd)"
+readonly EXTERNAL_INSTALL="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install/gitrepo.sh"
+readonly LOCAL_INSTALL="$SCRIPTS_DIR/install/gitrepo.sh"
+source "$HARNESS/runner.sh"; source "$HARNESS/color-logging.sh"
+source "$HARNESS/mock-curl.sh"; source "$HARNESS/with-local-suede-chain.sh"
 
 TEST_DIR=""
-
-setup_test_env() {
+setup() {
   TEST_DIR="$(mktemp -d)"
-  log_info "Created test directory: $TEST_DIR"
-
-  mock_curl_url "$EXTERNAL_SCRIPT_INSTALL" "$LOCAL_SCRIPT_INSTALL"
-  mock_curl_url "$EXTERNAL_SCRIPT_EXTRACT" "$LOCAL_SCRIPT_EXTRACT"
-  mock_curl_url "$EXTERNAL_SCRIPT_DEGIT" "$LOCAL_SCRIPT_DEGIT"
-
+  chain_make_offline_origin "$TEST_DIR/origin"
+  export SUEDE_SCRIPT_BASE="file://$SCRIPTS_DIR"   # subrepo-config / degit / dependencies, local
+  export GITHUB_API_ORIGIN="$CHAIN_API_ORIGIN"     # degit's tarball, local
+  mock_curl_url "$EXTERNAL_INSTALL" "$LOCAL_INSTALL"
   enable_url_mocking
-  log_success "Test environment set up"
+}
+cleanup() {
+  [[ -n "${TEST_DIR:-}" && -d "$TEST_DIR" ]] && rm -rf "$TEST_DIR"
+  unset SUEDE_SCRIPT_BASE GITHUB_API_ORIGIN; disable_url_mocking
 }
 
-cleanup_test_env() {
-  if [[ -n "${TEST_DIR:-}" && -d "$TEST_DIR" ]]; then
-    rm -rf "$TEST_DIR"
-    log_info "Cleaned up test directory"
-  fi
-  disable_url_mocking
+installs_referenced_commit_into_destination() {
+  local root="$TEST_DIR/case1"; mkdir -p "$root"; cd "$root"   # not a git repo -> empty parent
+  local gitrepo="$root/example.gitrepo"; chain_gitrepo_for 0 > "$gitrepo"
+  local dest="$root/vendor"
+  bash <(curl -fsSL "$EXTERNAL_INSTALL") -d "$dest" "$gitrepo"
+  assert_offline_contents "$dest" 0
+  assert_file_matches "$dest/.gitrepo" "commit = ${CHAIN_COMMITS[0]}" "installed .gitrepo records the commit"
 }
 
-only_positional_argument() {
-  local destination="${TEST_DIR}/only-positional-argument"
-  local file_path="${destination}/example.gitrepo"
-  local gitrepo_content="${GITREPO_CONTENT[0]}"
-  mkdir -p "$destination"
-  printf "%s" "$gitrepo_content" > "$file_path"
-  # install-gitrepo requires an explicit destination; pass the expected target
-  bash <(curl -fsSL $EXTERNAL_SCRIPT_INSTALL) -d "$destination/example" "$file_path"
-  assert_dir_has_expected_contents_for_commit "$destination/example" 0
-  assert_file_has_expected_gitrepo_contents_for_commit "$file_path" 0
+records_parent_when_run_inside_a_repo() {
+  local root="$TEST_DIR/case2"; mkdir -p "$root"
+  ( cd "$root"; git init --quiet; printf 'x\n' > seed; git add .; git commit --quiet -m seed )
+  local parent; parent="$(git -C "$root" rev-parse HEAD)"
+  local gitrepo="$root/example.gitrepo"; chain_gitrepo_for 1 > "$gitrepo"
+  cd "$root"
+  bash <(curl -fsSL "$EXTERNAL_INSTALL") -d "$root/vendor" "$gitrepo"
+  assert_offline_contents "$root/vendor" 1
+  assert_file_matches "$root/vendor/.gitrepo" "parent = $parent" "installed .gitrepo records the parent HEAD"
 }
 
-with_destination() {
-  local root="${TEST_DIR}/with-destination"
-  local file_path="${root}/example.gitrepo"
-  local destination="${root}/subdir"
-  local gitrepo_content="${GITREPO_CONTENT[0]}"
-  mkdir -p "$root"
-  printf "%s" "$gitrepo_content" > "$file_path"
-  bash <(curl -fsSL $EXTERNAL_SCRIPT_INSTALL) "$file_path" --destination "$destination"
-  assert_dir_has_expected_contents_for_commit "$destination" 0
-}
-
-run_test_suite \
-  --setup setup_test_env \
-  --cleanup cleanup_test_env \
-  only_positional_argument \
-  with_destination 
+run_test_suite --setup setup --cleanup cleanup \
+  installs_referenced_commit_into_destination \
+  records_parent_when_run_inside_a_repo

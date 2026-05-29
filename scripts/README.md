@@ -18,7 +18,7 @@ cat .gitrepo | bash <(curl https://suede.sh/extract/subrepo-config)
 
 ### `extract/dependencies.sh`
 
-Summarizes the `.dependencies` of an installed gitrepo and prints NEXT STEPS (npm install line + nested suede dependencies to install).
+Summarizes the `.suede/.dependencies` of an installed gitrepo and prints NEXT STEPS (npm install line + nested suede dependencies to install).
 
 ```bash
 bash <(curl https://suede.sh/extract/dependencies) <dest> [--message TEXT] [--emit-add-targets]
@@ -47,7 +47,7 @@ bash <(curl https://suede.sh/install/gitrepo) -d <destination> [<file.gitrepo>|-
 
 ### `populate/dependencies.sh`
 
-Collects dependency metadata into `release/.dependencies/`: copies `.gitrepo` files from child folders, extracts package.json dependencies, and copies requirements.txt.
+Collects dependency metadata into `release/.suede/.dependencies/`: copies `.gitrepo` files from child folders, extracts package.json dependencies, and copies requirements.txt.
 
 ```bash
 ./populate/dependencies.sh
