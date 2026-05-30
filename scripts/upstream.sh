@@ -8,7 +8,7 @@
 #     bash <(curl -fsSL https://suede.sh/upstream) <path-to-dependency>
 #
 # It splits the dependency's local changes via git-subrepo and pushes them to a
-# deterministic branch  downstream/<consumer-repo>-<consumer-HEAD>  on the
+# deterministic branch  downstream/<owner>/<repo>-<consumer-HEAD>  on the
 # dependency's remote. A GitHub Action on the dependency then rebuilds that
 # branch in place as a main-shaped PR head for the maintainers to test & merge.
 # `release` is never modified, and local subrepo tracking is restored so a later
@@ -58,16 +58,26 @@ RELDIR="${DIRABS#"$TOP"/}"
 git diff --quiet && git diff --cached --quiet \
   || die "you have uncommitted changes — commit or stash them, then re-run"
 
-# ---- deterministic branch name: <consumer repo>-<consumer HEAD> -------------
+# ---- deterministic branch name: <owner>/<repo>-<consumer HEAD> --------------
+# Owner and repo are kept as SEPARATE, slash-separated segments (never joined
+# with a dash) so the upstream workflow can recover the exact `owner/repo`: both
+# segments may legitimately contain dashes, which a dash-join would make
+# ambiguous. Each segment is still sanitized to stay ref- and filename-safe.
+sanitize_seg() {
+  printf '%s' "$1" | tr -c 'A-Za-z0-9_.-' '-' | sed -E 's/-+/-/g; s/^[-.]+//; s/[-.]+$//'
+}
 remote_url="$(git config --get remote.origin.url 2>/dev/null || true)"
+owner=""
 if [ -n "$remote_url" ]; then
-  slug="${remote_url%.git}"; slug="${slug#*://}"; slug="${slug#*@}"; slug="${slug#*[:/]}"
+  # Strip scheme / userinfo / host, leaving the owner/repo path.
+  path="${remote_url%.git}"; path="${path#*://}"; path="${path#*@}"; path="${path#*[:/]}"
+  repo="$(sanitize_seg "${path##*/}")"                                # last path segment
+  [ "$path" = "${path#*/}" ] || owner="$(sanitize_seg "${path%%/*}")" # first segment, if a slash exists
 else
-  slug="$(basename "$TOP")"
+  repo="$(sanitize_seg "$(basename "$TOP")")"
 fi
-slug="$(printf '%s' "$slug" | tr '/' '-' | tr -c 'A-Za-z0-9_.-' '-' \
-        | sed -E 's/-+/-/g; s/^[-.]+//; s/[-.]+$//')"
-slug="${slug:-repo}"
+repo="${repo:-repo}"
+[ -n "$owner" ] && slug="${owner}/${repo}" || slug="$repo"
 
 PRE="$(git rev-parse HEAD)"        # full hash; use `--short=12 HEAD` for shorter branch names
 BRANCH="${BRANCH_PREFIX}/${slug}-${PRE}"
