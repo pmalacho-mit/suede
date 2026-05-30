@@ -132,6 +132,19 @@ checkout "$MAIN_BRANCH"
 git subrepo pull "$RELEASE_DIR"          # bring main's release/ folder up to the rebuilt release
 replace_dir ".github/workflows" "dependency/main/-dot-github/workflows" "subrepo-push-release.yml" "initialize.yml"
 replace_dir ".suede"            "dependency/main/-dot-suede"            ""                          ""
+
+# The release install script moved from scripts/install-release.sh to the nested
+# scripts/install/release.sh; repoint the install instructions in the README.
+README="README.md"
+if [ -f "$README" ] && grep -q 'install-release' "$README"; then
+  tmp="$(mktemp)"
+  sed -e 's#suede\.sh/install-release#suede.sh/install/release#g' \
+      -e 's#scripts/install-release\.sh#scripts/install/release.sh#g' \
+      "$README" > "$tmp"
+  mv "$tmp" "$README"
+  commit_if_changes "suede upgrade: point README at install/release"
+fi
+
 git push "$REMOTE" "$MAIN_BRANCH"
 
 cat <<MSG
