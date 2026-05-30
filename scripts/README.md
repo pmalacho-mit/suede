@@ -67,6 +67,16 @@ Writes installation instructions to README.md by parsing the git remote origin U
 > [!NOTE]  
 > Used in [initialize](../templates/dependency/main/.github/workflows/initialize.yml) Github Action
 
+## `upgrade/`
+
+### `upgrade/latest.sh`
+
+Migrates a repository created with an earlier version of the suede workflow onto the current subrepo layout, where `.suede` and `.github/workflows` are vendored from dedicated suede library branches. Rewires both `release` and `main`, drops obsolete generated files (the old per-branch workflow on each side, plus `initialize.yml` on main), preserves consumer-authored files, and pushes both branches.
+
+```bash
+bash <(curl https://suede.sh/upgrade/latest)
+```
+
 ## Subrepo helpers
 
 ### `find.sh`
