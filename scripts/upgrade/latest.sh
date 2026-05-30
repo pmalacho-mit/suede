@@ -121,6 +121,7 @@ git pull "$REMOTE" "$MAIN_BRANCH"
 # ---- release branch ---------------------------------------------------------
 echo "Upgrading '$RELEASE_BRANCH' ..."
 checkout "$RELEASE_BRANCH"
+git pull
 replace_dir ".github/workflows" "dependency/release/-dot-github/workflows" "subrepo-pull-into-main.yml" ""
 replace_dir ".suede"            "dependency/release/-dot-suede"            ""                            ""
 git push "$REMOTE" "$RELEASE_BRANCH"
