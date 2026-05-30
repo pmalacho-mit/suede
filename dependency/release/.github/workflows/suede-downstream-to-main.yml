@@ -42,7 +42,7 @@ jobs:
     if: ${{ github.event.created }}
     runs-on: ubuntu-latest
     env:
-      SUBMISSION_REF: ${{ github.ref_name }}                       # downstream/<slug>-<consumer HEAD>
+      SUBMISSION_REF: ${{ github.ref_name }}                       # downstream/<owner>/<repo>-<consumer HEAD>
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
@@ -85,14 +85,27 @@ jobs:
           CONFLICTED: ${{ steps.rebuild.outputs.conflicted }}
         run: |
           set -euo pipefail
+
+          # SUBMISSION_REF is downstream/<owner>/<repo>-<consumer HEAD>. upstream.sh
+          # keeps owner and repo slash-separated (either may contain dashes), so the
+          # unambiguous split is: drop the prefix, take the trailing token as the
+          # consumer commit, and the remainder is the literal `owner/repo`.
+          rest="${SUBMISSION_REF#downstream/}"
+          consumer_commit="${rest##*-}"
+          repo_path="${rest%-*}"
+          if printf '%s' "$repo_path" | grep -q '/'; then
+            repo_md="[${repo_path}](https://github.com/${repo_path})"
+          else
+            repo_md="\`${repo_path}\`"   # no owner encoded (consumer had no remote) — name only
+          fi
+
           submitted_messages="$(git log --no-merges --format='- %s (%h)' \
             "${BASE_COMMIT}..${SUBMISSION_COMMIT}" || true)"
 
           body_path="${RUNNER_TEMP}/pr-body.md"
           {
-            echo "Snapshot proposed by a downstream consumer via \`git subrepo\`."
-            echo
-            echo "- **Branch / provenance:** \`${SUBMISSION_REF}\`  (consumer repo + commit)"
+            echo "- **Repo:** ${repo_md}"
+            echo "- **Consumer commit:** \`${consumer_commit}\`"
             echo "- **Consumer base (release):** \`${BASE_COMMIT}\`"
             echo "- This branch is now \`main\`-shaped: check it out, test, push fixes, merge."
             echo
@@ -105,12 +118,16 @@ jobs:
             echo "${submitted_messages}"
           } > "$body_path"
 
-          echo "body_path=$body_path" >> "$GITHUB_OUTPUT"
+          {
+            echo "body_path=$body_path"
+            echo "repo_path=$repo_path"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Open the pull request
         if: ${{ steps.rebuild.outputs.has_changes == 'true' }}
         env:
           BODY_PATH: ${{ steps.description.outputs.body_path }}
+          REPO_PATH: ${{ steps.description.outputs.repo_path }}
           CONFLICTED: ${{ steps.rebuild.outputs.conflicted }}
         run: |
           set -euo pipefail
@@ -123,7 +140,7 @@ jobs:
             --base main \
             --head "$SUBMISSION_REF" \
             $draft_flag \
-            --title "chore(suede): proposed change from ${SUBMISSION_REF}" \
+            --title "Proposed change(s) from downstream: ${REPO_PATH}" \
             --body-file "$BODY_PATH"
 
       - name: Flag conflicts for the maintainer
