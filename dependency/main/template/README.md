@@ -12,6 +12,10 @@ Now that you have a git repository that will behave as a [suede dependency](http
 - [ ] Dispatch initialization workflow (_▶️ Actions > Initialization procedure > Run Workflow_)
   > <img width="1496" height="611" alt="Screenshot 2025-11-04 at 11 38 51 PM" src="https://github.com/user-attachments/assets/a32bcbc7-4ec3-492e-bf7a-1cc86db79f36" />
   - The action will:
-    1. Clone a subrepo of the `release` branch into the `./release` folder within the `main` branch (so that changes within the `./release` folder of the `main` branch can be automatically synced to the `release` branch via [.github/workflows/subrepo-push-release.yml](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/subrepo-push-release.yml))
-    2. Replaces the content of this README with specifics around installing this repository as a subrepo dependency
-    3. 💥<em>SELF-DESTRUCT</em>💥 (meaning it will delete [.github/workflows/initialize.yml](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/initialize.yml))
+    1. On the `release` branch, clone the suede `core` dependency into `.suede/core` (from the `dependency/release/core` branch) and push
+    2. On the `main` branch, clone the suede `core` dependency into `.suede/core` (from the `dependency/main/core` branch), install [devcontainers-suede](https://github.com/pmalacho-mit/devcontainers-suede) into `.suede/devcontainers-suede`, link `.devcontainer/devcontainer.json`, then commit and push
+    3. Clone a subrepo of the `release` branch into the `./release` folder within the `main` branch (so that changes within the `./release` folder of the `main` branch can be automatically synced to the `release` branch via [.github/workflows/subrepo-push-release.yml](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/subrepo-push-release.yml))
+    4. Replaces the content of this README with specifics around installing this repository as a subrepo dependency
+    5. 💥<em>SELF-DESTRUCT</em>💥 (meaning it will delete [.github/workflows/initialize.yml](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/initialize.yml))
+  > [!NOTE]
+  > **Why does init clone `core`/`devcontainers` in instead of the template shipping them directly?** So that each dependency's `.gitrepo` file points at a real commit of its actual source repository — a baked-in copy would have no valid subrepo link to pull/push against. The GitHub Actions **workflow** files (under `.github/workflows`), by contrast, *are* baked into the template: GitHub refuses to let an action create or modify workflow files using the default `GITHUB_TOKEN` (it would require a higher-privileged PAT, which this setup intentionally avoids).

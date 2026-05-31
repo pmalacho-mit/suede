@@ -1,11 +1,17 @@
 name: Initialize
 #
 # Lives on `main`. Run once, manually, right after creating a repo from the
-# dependency template. Connects main's ./release folder to the repo's own
-# `release` branch via git-subrepo, then publishes main. The validation +
-# subrepo clone + push lives in the hosted, unit-tested script
-# scripts/actions/init-release-subrepo.sh; README population and self-deletion
-# stay here in the action.
+# dependency template. In order:
+#   1. On `release`: clone the `core` dependency into .suede/core and push
+#      (scripts/actions/init-release-core.sh).
+#   2. On `main`: clone the `core` dependency into .suede/core, install
+#      devcontainers-suede, link .devcontainer/devcontainer.json, then commit +
+#      push (scripts/actions/init-main-core-devcontainers.sh).
+#   3. Connect main's ./release folder to the repo's own `release` branch via
+#      git-subrepo, then publish main (scripts/actions/init-release-subrepo.sh).
+# core/devcontainers are subrepo-cloned at init time (rather than baked into the
+# template) so their .gitrepo links point at real commits. The hosted scripts
+# are unit-tested; README population and self-deletion stay here in the action.
 
 on:
   workflow_dispatch:
@@ -41,6 +47,21 @@ jobs:
         run: |
           git config user.name "GitHub Action"
           git config user.email "action@github.com"
+
+      - name: Clone core dependency into .suede/core on the release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin release
+          git checkout -B release origin/release
+          bash -c "$(curl -fsSL "$SUEDE_SCRIPTS/actions/init-release-core.sh")"
+
+      - name: Clone core + install devcontainers on the main branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout main
+          bash -c "$(curl -fsSL "$SUEDE_SCRIPTS/actions/init-main-core-devcontainers.sh")"
 
       - name: Connect ./release to the release branch
         shell: bash
