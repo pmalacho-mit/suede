@@ -8,16 +8,17 @@
 #     bash <(curl -fsSL https://suede.sh/upgrade/latest)
 #
 # It rewires two branches:
-#   release  -> .github/workflows  from dependency/release/-dot-github/workflows
-#               .suede             from dependency/release/-dot-suede
-#   main     -> .github/workflows  from dependency/main/-dot-github/workflows
-#               .suede             from dependency/main/-dot-suede
+#   release  -> .github/workflows  from dependency/release/workflows
+#               .suede/core        from dependency/release/core
+#   main     -> .github/workflows  from dependency/main/workflows
+#               .suede/core        from dependency/main/core
 #
 # Obsolete generated files are dropped (the old per-branch workflow on each side,
 # plus the one-shot initialize.yml on main). Any consumer-authored files that
-# lived under those folders are preserved: each existing folder is set aside,
+# lived under .github/workflows are preserved: the existing folder is set aside,
 # the new subrepo is cloned in its place, and the saved files are merged back
-# WITHOUT overwriting anything the new subrepo ships.
+# WITHOUT overwriting anything the new subrepo ships. The new .suede/core subrepo
+# is cloned alongside any pre-existing .suede/ files, which are left in place.
 #
 # Inputs (env):
 #   SUEDE_REPO_URL default: https://github.com/pmalacho-mit/suede.git
@@ -122,16 +123,16 @@ git pull "$REMOTE" "$MAIN_BRANCH"
 echo "Upgrading '$RELEASE_BRANCH' ..."
 checkout "$RELEASE_BRANCH"
 git pull
-replace_dir ".github/workflows" "dependency/release/-dot-github/workflows" "subrepo-pull-into-main.yml" ""
-replace_dir ".suede"            "dependency/release/-dot-suede"            ""                            ""
+replace_dir ".github/workflows" "dependency/release/workflows" "subrepo-pull-into-main.yml" ""
+replace_dir ".suede/core"       "dependency/release/core"      ""                            ""
 git push "$REMOTE" "$RELEASE_BRANCH"
 
 # ---- main branch ------------------------------------------------------------
 echo "Upgrading '$MAIN_BRANCH' ..."
 checkout "$MAIN_BRANCH"
 git subrepo pull "$RELEASE_DIR"          # bring main's release/ folder up to the rebuilt release
-replace_dir ".github/workflows" "dependency/main/-dot-github/workflows" "subrepo-push-release.yml" "initialize.yml"
-replace_dir ".suede"            "dependency/main/-dot-suede"            ""                          ""
+replace_dir ".github/workflows" "dependency/main/workflows" "subrepo-push-release.yml" "initialize.yml"
+replace_dir ".suede/core"       "dependency/main/core"      ""                          ""
 
 # The release install script moved from scripts/install-release.sh to the nested
 # scripts/install/release.sh; repoint the install instructions in the README.

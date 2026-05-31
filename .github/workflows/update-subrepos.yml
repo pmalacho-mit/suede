@@ -2,6 +2,15 @@ name: update-subrepos
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'dependency/main/core/**'
+      - 'dependency/main/workflows/**'
+      - 'dependency/release/core/**'
+      - 'dependency/release/workflows/**'
+      - 'sites/suede.sh/**'
 
 permissions:
   contents: write
@@ -27,6 +36,53 @@ jobs:
           source ~/.git-subrepo/.rc
           git subrepo --version
 
+      - name: Push changed subrepos
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          source ~/.git-subrepo/.rc
+          set -euo pipefail
+
+          DIRS=(
+            "dependency/main/core"
+            "dependency/main/workflows"
+            "dependency/release/core"
+            "dependency/release/workflows"
+            "sites/suede.sh"
+          )
+
+          targets=()
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "Manual dispatch: pushing all subrepos"
+            targets=("${DIRS[@]}")
+          else
+            echo "Push event: detecting changed subrepos between $BEFORE_SHA and $AFTER_SHA"
+            if ! git rev-parse --quiet --verify "${BEFORE_SHA}^{commit}" >/dev/null 2>&1; then
+              BEFORE_SHA=$(git rev-parse "${AFTER_SHA}^") || BEFORE_SHA=""
+            fi
+            if [ -n "$BEFORE_SHA" ]; then
+              changed=$(git diff --name-only "$BEFORE_SHA" "$AFTER_SHA")
+            else
+              changed=$(git show --name-only --pretty=format: "$AFTER_SHA")
+            fi
+            for dir in "${DIRS[@]}"; do
+              if echo "$changed" | grep -q "^${dir}/"; then
+                targets+=("$dir")
+              fi
+            done
+          fi
+
+          if [ ${#targets[@]} -eq 0 ]; then
+            echo "No matching subrepo changes detected"
+          else
+            for dir in "${targets[@]}"; do
+              echo "Pushing subrepo: $dir"
+              git subrepo push "$dir"
+            done
+          fi
+
       - name: Update all subrepos
         run: |
           source ~/.git-subrepo/.rc
@@ -41,4 +97,37 @@ jobs:
             echo "Changes committed and pushed"
           else
             echo "No changes to commit"
+          fi
+
+      - name: Verify templates are in sync with workflows dependency
+        run: |
+          set -euo pipefail
+
+          commit_of() {
+            git config --file "$1" subrepo.commit
+          }
+
+          status=0
+          for variant in main release; do
+            workflows_gitrepo="dependency/${variant}/workflows/.gitrepo"
+            template_gitrepo="dependency/${variant}/template/.github/workflows/.gitrepo"
+
+            workflows_commit=$(commit_of "$workflows_gitrepo")
+            template_commit=$(commit_of "$template_gitrepo")
+
+            if [ "$workflows_commit" = "$template_commit" ]; then
+              echo "✓ ${variant}: template is in sync with workflows dependency ($workflows_commit)"
+            else
+              echo "✗ ${variant}: template is OUT OF SYNC with workflows dependency"
+              echo "    $workflows_gitrepo => $workflows_commit"
+              echo "    $template_gitrepo => $template_commit"
+              status=1
+            fi
+          done
+
+          if [ "$status" -ne 0 ]; then
+            echo ""
+            echo "One or more templates are not up to date with their workflows dependency."
+            echo "The suede maintainer must manually update the affected template(s)."
+            exit 1
           fi
