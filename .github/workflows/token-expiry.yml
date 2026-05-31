@@ -32,10 +32,10 @@ jobs:
           else
             expiry_ts=$(date -u -d "$EXPIRY" +%s 2>/dev/null) || { echo "Bad PAT_EXPIRY: $EXPIRY"; exit 1; }
             days_left=$(( (expiry_ts - $(date -u +%s)) / 86400 ))
-            if   [ "$days_left" -lt 0 ];  then LEVEL=CAUTION; LINE="🔴 The deploy token (\`REPO_B_PAT\`) **has expired** (was $EXPIRY)."
-            elif [ "$days_left" -le 7 ];  then LEVEL=CAUTION; LINE="🔴 The deploy token (\`REPO_B_PAT\`) expires in **$days_left day(s)** ($EXPIRY)."
-            elif [ "$days_left" -le 30 ]; then LEVEL=WARNING; LINE="🟡 The deploy token (\`REPO_B_PAT\`) expires in **$days_left days** ($EXPIRY)."
-            else                               LEVEL=TIP;     LINE="🟢 The deploy token (\`REPO_B_PAT\`) is good for **$days_left more days** ($EXPIRY)."
+            if   [ "$days_left" -lt 0 ];  then LEVEL=CAUTION; LINE="🔴 The deploy token (\`SUEDE_DEPENDENCY_TEMPLATE_PAT\`) **has expired** (was $EXPIRY)."
+            elif [ "$days_left" -le 7 ];  then LEVEL=CAUTION; LINE="🔴 The deploy token (\`SUEDE_DEPENDENCY_TEMPLATE_PAT\`) expires in **$days_left day(s)** ($EXPIRY)."
+            elif [ "$days_left" -le 30 ]; then LEVEL=WARNING; LINE="🟡 The deploy token (\`SUEDE_DEPENDENCY_TEMPLATE_PAT\`) expires in **$days_left days** ($EXPIRY)."
+            else                               LEVEL=TIP;     LINE="🟢 The deploy token (\`SUEDE_DEPENDENCY_TEMPLATE_PAT\`) is good for **$days_left more days** ($EXPIRY)."
             fi
           fi
 
