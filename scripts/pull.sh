@@ -8,6 +8,13 @@
 # TARGET is forwarded directly to find.sh and follows find.sh semantics.
 # If omitted, find.sh default behavior is used.
 #
+# Only top-level subrepos are pulled: find.sh is invoked with --top-level, so a
+# .gitrepo nested (at any depth) inside a folder that itself contains a .gitrepo
+# is excluded. Nested subrepos were cloned in a different repository, so the git
+# history their .gitrepo references does not belong to this consuming repo and
+# `git subrepo pull` cannot resolve it. (The first .gitrepo on a path stops the
+# chain of nesting.)
+#
 # Options:
 #   --dry, --dry-run          Print the commands that would run without executing them
 #   -h, --help                Show this help message
@@ -51,15 +58,16 @@ REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
   exit 1
 }
 
-declare -a ALL_DIRS=()
+# --top-level excludes subrepos nested inside another subrepo (see find.sh).
+declare -a DIRS=()
 while IFS= read -r abs_dir; do
   [[ -z "$abs_dir" ]] && continue
   [[ "$abs_dir" == "$REPO_ROOT"/* ]] || continue
-  ALL_DIRS+=("${abs_dir#"$REPO_ROOT"/}")
-done < <(bash <(curl -fsSL "$EXTERNAL_SCRIPT_FIND") "${TARGET_ARGS[@]}")
+  DIRS+=("${abs_dir#"$REPO_ROOT"/}")
+done < <(bash <(curl -fsSL "$EXTERNAL_SCRIPT_FIND") --top-level ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"})
 
-if [[ ${#ALL_DIRS[@]} -eq 0 ]]; then
-  printf 'No subrepos found.\n' >&2
+if [[ ${#DIRS[@]} -eq 0 ]]; then
+  printf 'No top-level subrepos found.\n' >&2
   exit 0
 fi
 
@@ -71,7 +79,7 @@ run_cmd() {
   fi
 }
 
-for dir in "${ALL_DIRS[@]}"; do
+for dir in "${DIRS[@]}"; do
   run_cmd git subrepo pull "$dir" || {
     printf 'Pull failed for %s\n' "$dir" >&2
     exit 1
@@ -79,7 +87,7 @@ for dir in "${ALL_DIRS[@]}"; do
 done
 
 if $DRY_RUN; then
-  printf 'Dry run complete: %d subrepo(s).\n' "${#ALL_DIRS[@]}" >&2
+  printf 'Dry run complete: %d subrepo(s).\n' "${#DIRS[@]}" >&2
 else
-  printf 'Pulled %d subrepo(s).\n' "${#ALL_DIRS[@]}" >&2
+  printf 'Pulled %d subrepo(s).\n' "${#DIRS[@]}" >&2
 fi
