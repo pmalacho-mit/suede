@@ -1,0 +1,77 @@
+name: Check deploy token expiry
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 9 * * 1'   # Mondays, 09:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write          # to commit the README update
+
+jobs:
+  token-expiry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build status banner and update README
+        env:
+          EXPIRY: ${{ vars.SUEDE_DEPENDENCY_TEMPLATE_PAT_EXPIRY }}
+        run: |
+          START="<!-- TOKEN-STATUS:START -->"
+          END="<!-- TOKEN-STATUS:END -->"
+          NOW=$(date -u +'%Y-%m-%d')
+          [ -f README.md ] || : > README.md
+
+          if [ -z "$EXPIRY" ]; then
+            LEVEL=CAUTION
+            LINE="🔴 \`PAT_EXPIRY\` repository variable isn't set, so token expiry can't be checked."
+          else
+            expiry_ts=$(date -u -d "$EXPIRY" +%s 2>/dev/null) || { echo "Bad PAT_EXPIRY: $EXPIRY"; exit 1; }
+            days_left=$(( (expiry_ts - $(date -u +%s)) / 86400 ))
+            if   [ "$days_left" -lt 0 ];  then LEVEL=CAUTION; LINE="🔴 The deploy token (\`REPO_B_PAT\`) **has expired** (was $EXPIRY)."
+            elif [ "$days_left" -le 7 ];  then LEVEL=CAUTION; LINE="🔴 The deploy token (\`REPO_B_PAT\`) expires in **$days_left day(s)** ($EXPIRY)."
+            elif [ "$days_left" -le 30 ]; then LEVEL=WARNING; LINE="🟡 The deploy token (\`REPO_B_PAT\`) expires in **$days_left days** ($EXPIRY)."
+            else                               LEVEL=TIP;     LINE="🟢 The deploy token (\`REPO_B_PAT\`) is good for **$days_left more days** ($EXPIRY)."
+            fi
+          fi
+
+          # Assemble the managed block (markers + alert content)
+          {
+            echo "$START"
+            echo "> [!$LEVEL]"
+            echo "> $LINE"
+            echo "> _Last checked: $NOW (UTC)._"
+            echo "$END"
+          } > block.md
+
+          # Splice it in: replace between markers if present, else prepend to top
+          if grep -qF "$START" README.md && grep -qF "$END" README.md; then
+            awk -v sf="$START" -v ef="$END" -v bf="block.md" '
+              index($0, sf) { while ((getline l < bf) > 0) print l; close(bf); skip=1; next }
+              index($0, ef) { skip=0; next }
+              skip          { next }
+                            { print }
+            ' README.md > README.new
+          else
+            { cat block.md; echo ""; cat README.md; } > README.new
+          fi
+          mv README.new README.md
+          rm -f block.md
+
+          echo "Token status: $LEVEL — $LINE" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit README if it changed
+        run: |
+          if git diff --quiet -- README.md; then
+            echo "README already up to date — nothing to commit."
+          else
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add README.md
+            git commit -m "docs: update deploy-token status banner"
+            git push
+          fi
