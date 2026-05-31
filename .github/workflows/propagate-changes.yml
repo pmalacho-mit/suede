@@ -1,0 +1,111 @@
+name: propagate-changes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dependency/main/core/**'
+      - 'dependency/main/workflows/**'
+      - 'dependency/release/core/**'
+      - 'dependency/release/workflows/**'
+      - 'sites/suede.sh/**'
+
+# Serialize runs so two pushes don't race on `git push` to main.
+concurrency:
+  group: propagate-changes
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  # ── Which variants' workflows changed? Gates the external round-trip. ──
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      variants: ${{ steps.detect.outputs.variants }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main, fetch-depth: 0 }
+      - id: detect
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if ! git rev-parse -q --verify "${BEFORE}^{commit}" >/dev/null 2>&1; then
+            BEFORE="$(git rev-parse "${AFTER}^" 2>/dev/null || true)"
+          fi
+          if [ -n "$BEFORE" ]; then
+            changed="$(git diff --name-only "$BEFORE" "$AFTER")"
+          else
+            changed="$(git show --name-only --pretty=format: "$AFTER")"
+          fi
+          variants=()
+          for v in main release; do
+            grep -qE "^dependency/${v}/workflows/" <<<"$changed" && variants+=("\"$v\"")
+          done
+          IFS=,; echo "variants=[${variants[*]}]" >> "$GITHUB_OUTPUT"
+
+  # ── Push the SUEDE-OWNED subrepos (remote = suede.git) to their branches. ──
+  internal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main, fetch-depth: 0, token: '${{ secrets.GITHUB_TOKEN }}' }
+      - name: Configure git + git-subrepo
+        run: |
+          git config --global user.email "action@github.com"
+          git config --global user.name  "GitHub Action"
+          git clone --depth 1 --branch 0.4.9 \
+            https://github.com/ingydotnet/git-subrepo ~/.git-subrepo
+      - name: Sync suede-owned subrepos
+        run: |
+          source ~/.git-subrepo/.rc
+          set -euo pipefail
+          ./scripts/pull.sh
+          ./scripts/push.sh
+          git push
+
+  # ── Per changed variant: refresh the external template, then pull it back. ──
+  external:
+    needs: [detect, internal]
+    if: needs.detect.outputs.variants != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(needs.detect.outputs.variants) }}
+    steps:
+      - name: Configure git + git-subrepo
+        run: |
+          git config --global user.email "action@github.com"
+          git config --global user.name  "GitHub Action"
+          git clone --depth 1 --branch 0.4.9 \
+            https://github.com/ingydotnet/git-subrepo ~/.git-subrepo
+
+      # 1) Update suede-dependency-template@<variant> with the new workflows.
+      - name: Checkout template repo (${{ matrix.variant }})
+        uses: actions/checkout@v4
+        with:
+          repository: pmalacho-mit/suede-dependency-template
+          ref: ${{ matrix.variant }}
+          fetch-depth: 0
+          token: ${{ secrets.SUEDE_DEPENDENCY_TEMPLATE_PAT }}
+      - name: Refresh template's vendored workflows
+        run: |
+          source ~/.git-subrepo/.rc
+          set -euo pipefail
+          bash <(curl https://suede.sh/pull)
+          git push
+
+      # 2) Pull the refreshed template back into suede (always on main).
+      - name: Checkout suede (main)
+        uses: actions/checkout@v4
+        with: { ref: main, fetch-depth: 0, token: '${{ secrets.GITHUB_TOKEN }}' }
+      - name: Re-vendor the template into suede
+        run: |
+          source ~/.git-subrepo/.rc
+          set -euo pipefail
+          git subrepo pull dependency/${{ matrix.variant }}/template
+          git push
