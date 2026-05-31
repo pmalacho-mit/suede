@@ -1,10 +1,10 @@
+# _Suede_: [git-subrepo](https://github.com/ingydotnet/git-subrepo) based dependency management
+
 <!-- TOKEN-STATUS:START -->
 > [!WARNING]
 > 🟡 The deploy token (`SUEDE_DEPENDENCY_TEMPLATE_PAT`) expires in **29 days** (2026-06-30).
 > _Last checked: 2026-05-31 (UTC)._
 <!-- TOKEN-STATUS:END -->
-
-# _Suede_: [git-subrepo](https://github.com/ingydotnet/git-subrepo) based dependency management
 
 <sub>git-</sub>***Su***<sub>br</sub>***e***<sub>po based</sub> ***de***<sub>pendency management</sub>
 
