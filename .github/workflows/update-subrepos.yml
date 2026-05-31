@@ -36,6 +36,11 @@ jobs:
           source ~/.git-subrepo/.rc
           git subrepo --version
 
+      - name: Update all subrepos
+        run: |
+          source ~/.git-subrepo/.rc
+          ./scripts/pull.sh
+
       - name: Push changed subrepos
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -82,11 +87,6 @@ jobs:
               git subrepo push "$dir"
             done
           fi
-
-      - name: Update all subrepos
-        run: |
-          source ~/.git-subrepo/.rc
-          ./scripts/pull.sh
 
       - name: Commit and push changes
         run: |
