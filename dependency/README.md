@@ -25,3 +25,31 @@ There is a top-level folder for each branch of a suede dependency — [`main`](.
 
 - (As a convention) **`template/`** is editable **only** for files that do **not** live inside a nested subfolder that has its own `.gitrepo`. For example, [`template/README.md`](./main/template/README.md) is editable and syncs back to its remote, but **`template/.github/workflows/` should not be edited here** (since it is a subrepo within a subrepo, syncing changes is less straight forward).
   - Instead, edit the source branch named in that folder's `.gitrepo`. In practice, the edit target for `dependency/<branch>/template/.github/workflows` is simply [`dependency/<branch>/workflows`](#layout) (e.g. to change a `main` workflow, edit `dependency/main/workflows`, not `dependency/main/template/.github/workflows`).
+
+## In practice
+
+In a fully initialized dependency repo, you'd have the following branch & folder structure
+
+- `main` (branch)
+  - .devcontainer
+    - devcontainer.json (symlink to /.suede/devcontainers-suede/common.json)
+  - .github/workflows/
+    - .gitrepo (points to [dependency/main/workflows](https://github.com/pmalacho-mit/suede/tree/dependency/main/workflows))
+    - ... files ...
+  - .suede/
+    - core/
+      - .gitrepo (points to [dependency/main/core](https://github.com/pmalacho-mit/suede/tree/dependency/main/core))
+      - ... files ...
+    - devcontainers-suede/
+      - .gitrepo (points to `release` branch of [pmalacho-mit/devcontainers-suede](https://github.com/pmalacho-mit/devcontainers-suede))
+      - ... files ...
+  - release/
+    - .gitrepo (points to `release` branch of dependency repo)
+    - ... files (see below) ...
+- `release` (branch)
+  - .github/workflows
+    - .gitrepo (points to [dependency/release/workflows](https://github.com/pmalacho-mit/suede/tree/dependency/release/workflows))
+    - ... files ...
+  - .suede/core
+    - .gitrepo (points to [dependency/release/core](https://github.com/pmalacho-mit/suede/tree/dependency/release/core))
+    - ... files ...
