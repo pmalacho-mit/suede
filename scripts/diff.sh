@@ -14,7 +14,9 @@
 
 set -euo pipefail
 
-readonly EXTERNAL_SCRIPT_BASE="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts"
+# SUEDE_SCRIPT_BASE overrides where sibling scripts are fetched from (defaults to
+# the hosted main branch); tests point it at a local file:// mirror.
+readonly EXTERNAL_SCRIPT_BASE="${SUEDE_SCRIPT_BASE:-https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts}"
 readonly EXTERNAL_SCRIPT_FIND="${EXTERNAL_SCRIPT_BASE}/find.sh"
 
 usage() {
@@ -55,7 +57,7 @@ while IFS= read -r abs_dir; do
 	[[ -z "$abs_dir" ]] && continue
 	[[ "$abs_dir" == "$REPO_ROOT"/* ]] || continue
 	SUBREPOS+=("${abs_dir#"$REPO_ROOT"/}")
-done < <(bash <(curl -fsSL "$EXTERNAL_SCRIPT_FIND") "${TARGET_ARGS[@]}")
+done < <(bash <(curl -fsSL "$EXTERNAL_SCRIPT_FIND") ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"})
 
 if [[ ${#SUBREPOS[@]} -eq 0 ]]; then
 	printf 'No subrepos found.\n' >&2

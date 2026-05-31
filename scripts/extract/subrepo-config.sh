@@ -27,11 +27,13 @@ get_value() {
 REMOTE="$(get_value remote)"; [[ -n "$REMOTE" ]] || { echo "ERROR: 'remote' not found" >&2; exit 1; }
 COMMIT="$(get_value commit)"; [[ -n "$COMMIT" ]] || { echo "ERROR: 'commit' not found" >&2; exit 1; }
 
-# Normalize GitHub remote -> "github.com/<owner>/<repo>[.git]"
+# Normalize the supported GitHub remote forms to "github.com/<owner>/<repo>[.git]"
+# so the owner/repo regex below has a single shape to match.
 case "$REMOTE" in
-  https://github.com/*)        NORM="github.com/${REMOTE#https://github.com/}" ;;
-  https://github.com/*)     NORM="${REMOTE#https://}" ;;
-  ssh://git@github.com/*)   NORM="${REMOTE#ssh://}" ;;
+  https://github.com/*)   NORM="github.com/${REMOTE#https://github.com/}" ;;
+  http://github.com/*)    NORM="github.com/${REMOTE#http://github.com/}" ;;
+  ssh://git@github.com/*) NORM="github.com/${REMOTE#ssh://git@github.com/}" ;;
+  git@github.com:*)       NORM="github.com/${REMOTE#git@github.com:}" ;;
   *) echo "ERROR: unsupported or non-GitHub remote: $REMOTE" >&2; exit 1 ;;
 esac
 

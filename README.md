@@ -376,6 +376,12 @@ Suede uses git-subrepo to vendor dependency code directly into your repository w
 
 Suede tries to get the best of both worlds: **vendored dependencies** (complete repository state, no external coordination) with **source control and bidirectional updates** (version tracking, easy syncing, git-based workflows).
 
+<!--
+## "Self hosting"
+
+Do you (1) trust [@pmalacho-mit](https://github.com/pmalacho-mit) and (2) have an active line of communication with him? If yes, you can probably just start using the 
+-->
+
 ## Environment-specific Tips 
 
 ... work in progress...

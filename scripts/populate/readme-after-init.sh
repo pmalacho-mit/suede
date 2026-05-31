@@ -15,10 +15,11 @@ log() { printf '[generate-install-md] %s\n' "$*"; }
 
 # Detect repo name (folder name of the top-level git dir)
 REPO_NAME="$(basename "$(git rev-parse --show-toplevel)")"
-# Humanize: replace -/_ with spaces, then Title Case
+# Humanize: replace -/_ with spaces, then Title Case. (Hyphen kept last in the
+# tr set so it is literal, not a range — '[-_]' would mean the range '['..'_'.)
 REPO_NAME_READABLE="$(
   printf '%s\n' "$REPO_NAME" \
-  | tr '[-_]' ' ' \
+  | tr '_-' ' ' \
   | awk '{ for (i=1;i<=NF;i++) { $i=toupper(substr($i,1,1)) substr($i,2) } print }'
 )"
 log "Detected repo name: $REPO_NAME (readable: $REPO_NAME_READABLE)"

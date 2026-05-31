@@ -64,7 +64,10 @@ run_test_suite() {
   local failed=0
   
   for test_function in "${test_functions[@]}"; do
-    run_test "$test_function" $((++index)) || ((failed++))
+    # NB: use an assignment, not `((failed++))` — the latter returns exit status 1
+    # when failed is 0 (post-increment yields the old value), which aborts the
+    # whole file under the `set -e` that test files run with, hiding later tests.
+    run_test "$test_function" $((++index)) || failed=$((failed + 1))
   done
   
   # Report results
