@@ -21,7 +21,7 @@ permissions:
   contents: write
 
 jobs:
-  # ── Which variants' workflows changed? Gates the external round-trip. ──
+  # ── Which variants' workflows OR template folder changed? Gates external. ──
   detect:
     runs-on: ubuntu-latest
     outputs:
@@ -45,7 +45,7 @@ jobs:
           fi
           variants=()
           for v in main release; do
-            grep -qE "^dependency/${v}/workflows/" <<<"$changed" && variants+=("\"$v\"")
+            grep -qE "^dependency/${v}/(workflows|template)/" <<<"$changed" && variants+=("\"$v\"")
           done
           IFS=,; echo "variants=[${variants[*]}]" >> "$GITHUB_OUTPUT"
 
@@ -65,11 +65,17 @@ jobs:
         run: |
           source ~/.git-subrepo/.rc
           set -euo pipefail
-          ./scripts/pull.sh
-          ./scripts/push.sh
+          ./scripts/push.sh --internal
           git push
 
-  # ── Per changed variant: refresh the external template, then pull it back. ──
+  # ── Per involved variant, reconcile suede's template subrepo with the external
+  #    template repo in BOTH directions, then re-vendor it back into suede. Three
+  #    phases run as ordered steps in ONE job so the pushes never race.
+  #
+  #    Credentials are split by TARGET repo, not by trigger: every push to SUEDE
+  #    uses GITHUB_TOKEN (which never re-triggers this workflow), while writes to
+  #    the TEMPLATE repo use the PAT. The PAT therefore only needs write to
+  #    suede-dependency-template — never to this repo.
   external:
     needs: [detect, internal]
     if: needs.detect.outputs.variants != '[]'
@@ -78,6 +84,8 @@ jobs:
       fail-fast: false
       matrix:
         variant: ${{ fromJSON(needs.detect.outputs.variants) }}
+    env:
+      TEMPLATE_REPO: pmalacho-mit/suede-dependency-template
     steps:
       - name: Configure git + git-subrepo
         run: |
@@ -86,11 +94,43 @@ jobs:
           git clone --depth 1 --branch 0.4.9 \
             https://github.com/ingydotnet/git-subrepo ~/.git-subrepo
 
-      # 1) Update suede-dependency-template@<variant> with the new workflows.
-      - name: Checkout template repo (${{ matrix.variant }})
+      # 1) Push suede's OWN edits in dependency/<variant>/template/ (e.g. a README
+      #    change — anything outside the nested workflows subrepo) OUT to the
+      #    template repo. Done first, while suede's vendored copy is still in sync
+      #    with the template, so the push only carries the new edit. No-op if
+      #    there is nothing to push.
+      #
+      #    This is the one step that writes TWO repos from a suede checkout, so we
+      #    set per-repo auth by hand: persist-credentials:false drops the default
+      #    server-wide token, then LOCAL insteadOf rules route suede -> GITHUB_TOKEN
+      #    (no re-trigger) and the template repo -> PAT. Local config is dropped on
+      #    the next checkout, so nothing leaks into later phases.
+      - name: Checkout suede
+        uses: actions/checkout@v4
+        with: { ref: main, fetch-depth: 0, persist-credentials: false }
+      - name: Push suede template edits to ${{ env.TEMPLATE_REPO }}@${{ matrix.variant }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PAT: ${{ secrets.SUEDE_DEPENDENCY_TEMPLATE_PAT }}
+          SUEDE_REPO: ${{ github.repository }}
+        run: |
+          source ~/.git-subrepo/.rc
+          set -euo pipefail
+          # Longest-prefix wins, so the template rule beats the suede rule for the
+          # template URL even though "/suede" is a prefix of "/suede-dependency-…".
+          git config url."https://x-access-token:${PAT}@github.com/${TEMPLATE_REPO}".insteadOf  "https://github.com/${TEMPLATE_REPO}"
+          git config url."https://x-access-token:${GH_TOKEN}@github.com/${SUEDE_REPO}".insteadOf "https://github.com/${SUEDE_REPO}"
+          git subrepo push dependency/${{ matrix.variant }}/template   # -> template repo (PAT)
+          git push                                                     # -> suede main (GITHUB_TOKEN)
+
+      # 2) Inside the template repo, refresh its vendored workflows (a NESTED
+      #    subrepo suede cannot push from here) from suede's workflows branch.
+      #    This is the template write that a WORKFLOWS change requires — hence the
+      #    PAT is needed even on the workflows path. Clean single-token checkout.
+      - name: Checkout ${{ env.TEMPLATE_REPO }}@${{ matrix.variant }}
         uses: actions/checkout@v4
         with:
-          repository: pmalacho-mit/suede-dependency-template
+          repository: ${{ env.TEMPLATE_REPO }}
           ref: ${{ matrix.variant }}
           fetch-depth: 0
           token: ${{ secrets.SUEDE_DEPENDENCY_TEMPLATE_PAT }}
@@ -98,14 +138,16 @@ jobs:
         run: |
           source ~/.git-subrepo/.rc
           set -euo pipefail
-          bash <(curl https://suede.sh/pull)
+          bash <(curl -fsSL https://suede.sh/pull)
           git push
 
-      # 2) Pull the refreshed template back into suede (always on main).
-      - name: Checkout suede (main)
+      # 3) Pull the now-updated template back into suede so the two stay identical
+      #    (brings in the refreshed workflows; no-op for a README-only change).
+      #    GITHUB_TOKEN: suede write + public template read; no re-trigger.
+      - name: Checkout suede
         uses: actions/checkout@v4
         with: { ref: main, fetch-depth: 0, token: '${{ secrets.GITHUB_TOKEN }}' }
-      - name: Re-vendor the template into suede
+      - name: Re-vendor template into suede
         run: |
           source ~/.git-subrepo/.rc
           set -euo pipefail

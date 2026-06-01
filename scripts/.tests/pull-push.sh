@@ -93,9 +93,30 @@ unknown_option_is_rejected() {
   log_failure "pull should reject --bogus"; return 1
 }
 
+# --internal forwards through helpers to find.sh, scoping to origin-owned
+# subrepos — a foreign-remote subrepo must be skipped. (Own temp repo so it can
+# set an origin and a mix of internal/external remotes.)
+internal_scope_excludes_external() {
+  local repo out rc=0
+  repo="$(mktemp -d)"
+  git -C "$repo" init --quiet
+  git -C "$repo" remote add origin "https://github.com/me/host"
+  mkdir -p "$repo/a" "$repo/ext"
+  printf '[subrepo]\n\tremote = https://github.com/me/host.git\n'  > "$repo/a/.gitrepo"
+  printf '[subrepo]\n\tremote = https://github.com/me/other.git\n' > "$repo/ext/.gitrepo"
+  out="$(run_in "$repo" "$LOCAL_PULL" --dry-run --internal)" || rc=$?
+  rm -rf "$repo"
+  if [[ $rc -ne 0 ]]; then
+    log_failure "pull --internal exited $rc"; printf '%s\n' "$out" | sed 's/^/    /'; return 1
+  fi
+  assert_contains "pull --internal includes a"   "$out" '\[dry-run\] git subrepo pull a$' &&
+  assert_absent   "pull --internal excludes ext" "$out" 'git subrepo pull ext$'
+}
+
 run_test_suite --setup setup --cleanup cleanup \
   pull_dry_run_is_top_level_only \
   push_dry_run_forwards_pull_and_is_top_level_only \
   empty_repo_reports_none \
   help_prints_usage_exit_zero \
-  unknown_option_is_rejected
+  unknown_option_is_rejected \
+  internal_scope_excludes_external

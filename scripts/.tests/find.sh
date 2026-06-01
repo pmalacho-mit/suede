@@ -21,9 +21,17 @@ REPO=""
 setup() {
   REPO="$(mktemp -d)"
   git -C "$REPO" init --quiet
+  git -C "$REPO" remote add origin "https://github.com/me/host"   # no .git, CI-style
   local d
   for d in a a/nested a/nested/deeper b b/c/d plain; do mkdir -p "$REPO/$d"; done
-  for d in a a/nested a/nested/deeper b b/c/d; do printf '[subrepo]\n' > "$REPO/$d/.gitrepo"; done
+  # a* are this repo's OWN subrepos (remote == origin, in assorted URL forms, to
+  # exercise normalization); b* point at a DIFFERENT repo (external). The
+  # remote does not affect path/--top-level results, only --internal/--external.
+  printf '[subrepo]\n\tremote = git@github.com:me/host.git\n'        > "$REPO/a/.gitrepo"
+  printf '[subrepo]\n\tremote = https://github.com/me/host.git\n'    > "$REPO/a/nested/.gitrepo"
+  printf '[subrepo]\n\tremote = https://github.com/me/host.git\n'    > "$REPO/a/nested/deeper/.gitrepo"
+  printf '[subrepo]\n\tremote = https://github.com/me/external.git\n' > "$REPO/b/.gitrepo"
+  printf '[subrepo]\n\tremote = https://github.com/me/external.git\n' > "$REPO/b/c/d/.gitrepo"
   printf 'x\n' > "$REPO/plain/file.txt"
 }
 cleanup() { [[ -n "${REPO:-}" && -d "$REPO" ]] && rm -rf "$REPO"; }
@@ -105,6 +113,44 @@ help_prints_usage_and_exits_zero() {
   log_failure "--help should print usage mentioning --top-level"; return 1
 }
 
+# --internal keeps only subrepos whose remote matches origin. 'a' uses the scp
+# form of origin, so this also proves remote normalization (scp == https == .git).
+internal_scope_keeps_origin_owned_top_level() {
+  assert_lines_eq "--top-level --internal keeps only a" \
+    "$(find_rel "$REPO" --top-level --internal)" "a"
+}
+
+# --external is the complement: only the foreign-remote subrepo.
+external_scope_keeps_foreign_top_level() {
+  assert_lines_eq "--top-level --external keeps only b" \
+    "$(find_rel "$REPO" --top-level --external)" "b"
+}
+
+# Scope filtering is independent of --top-level.
+internal_scope_without_top_level() {
+  assert_lines_eq "--internal keeps all origin-owned a*" \
+    "$(find_rel "$REPO" --internal)" \
+    "a
+a/nested
+a/nested/deeper"
+}
+
+internal_external_mutually_exclusive() {
+  local rc=0
+  ( cd "$REPO" && bash "$LOCAL_FIND" --internal --external ) >/dev/null 2>&1 || rc=$?
+  if [[ $rc -ne 0 ]]; then log_pass "--internal/--external conflict exits non-zero (rc=$rc)"; return 0; fi
+  log_failure "--internal/--external should be mutually exclusive"; return 1
+}
+
+scope_requires_origin() {
+  local tmp rc=0
+  tmp="$(mktemp -d)"; git -C "$tmp" init --quiet
+  ( cd "$tmp" && bash "$LOCAL_FIND" --internal ) >/dev/null 2>&1 || rc=$?
+  rm -rf "$tmp"
+  if [[ $rc -ne 0 ]]; then log_pass "--internal without origin exits non-zero (rc=$rc)"; return 0; fi
+  log_failure "--internal should require an origin remote"; return 1
+}
+
 run_test_suite --setup setup --cleanup cleanup \
   finds_every_subrepo_without_flag \
   top_level_keeps_only_outermost \
@@ -112,4 +158,9 @@ run_test_suite --setup setup --cleanup cleanup \
   directly_targeted_nested_subrepo_is_excluded \
   scoping_into_a_subrepo_yields_nothing_top_level \
   unknown_option_is_rejected \
-  help_prints_usage_and_exits_zero
+  help_prints_usage_and_exits_zero \
+  internal_scope_keeps_origin_owned_top_level \
+  external_scope_keeps_foreign_top_level \
+  internal_scope_without_top_level \
+  internal_external_mutually_exclusive \
+  scope_requires_origin

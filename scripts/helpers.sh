@@ -22,16 +22,18 @@ readonly EXTERNAL_SCRIPT_FIND="${EXTERNAL_SCRIPT_BASE}/find.sh"
 
 DRY_RUN=false
 declare -a TARGET_ARGS=()
+declare -a FIND_FILTER=()      # scope flags forwarded verbatim to find.sh
 declare -a DIRS=()
 REPO_ROOT=""
 
 subrepo_parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --dry|--dry-run) DRY_RUN=true; shift ;;
-      -h|--help)       usage ;;                 # usage() lives in the entrypoint
-      -*)              printf 'Unknown option: %s\n' "$1" >&2; exit 1 ;;
-      *)               TARGET_ARGS+=("$1"); shift ;;
+      --dry|--dry-run)     DRY_RUN=true; shift ;;
+      --internal|--external) FIND_FILTER+=("$1"); shift ;;   # forwarded to find.sh
+      -h|--help)           usage ;;                 # usage() lives in the entrypoint
+      -*)                  printf 'Unknown option: %s\n' "$1" >&2; exit 1 ;;
+      *)                   TARGET_ARGS+=("$1"); shift ;;
     esac
   done
 }
@@ -53,7 +55,8 @@ subrepo_collect_dirs() {
     [[ -z "$abs_dir" ]] && continue
     [[ "$abs_dir" == "$REPO_ROOT"/* ]] || continue
     DIRS+=("${abs_dir#"$REPO_ROOT"/}")
-  done < <(bash <(curl -fsSL "$EXTERNAL_SCRIPT_FIND") --top-level ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"})
+  done < <(bash <(curl -fsSL "$EXTERNAL_SCRIPT_FIND") --top-level \
+            ${FIND_FILTER[@]+"${FIND_FILTER[@]}"} ${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"})
 
   if [[ ${#DIRS[@]} -eq 0 ]]; then
     printf 'No top-level subrepos found.\n' >&2

@@ -35,9 +35,11 @@ subrepo_parse_args "$@"
 subrepo_resolve_root
 subrepo_collect_dirs
 
-# Pull phase: delegate to pull.sh (forwarding --dry-run + TARGET) before pushing.
+# Pull phase: delegate to pull.sh (forwarding --dry-run, scope filter, and
+# TARGET) before pushing, so the pull is scoped to the same subrepos as the push.
 declare -a PULL_ARGS=()
 $DRY_RUN && PULL_ARGS+=("--dry-run")
+PULL_ARGS+=(${FIND_FILTER[@]+"${FIND_FILTER[@]}"})
 PULL_ARGS+=(${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"})
 
 if $DRY_RUN; then

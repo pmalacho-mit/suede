@@ -19,6 +19,15 @@
 #                 directory scan (an associative-array membership walk up each
 #                 path, using only shell parameter expansion), so the flag adds
 #                 no extra filesystem traversal.
+#   --internal    Emit only "internal" subrepos: those whose .gitrepo remote
+#                 matches this repository's own 'origin' remote (compared after
+#                 normalizing scheme / user@ / trailing .git). These are the
+#                 subrepos this repo owns and can push to its own branches.
+#   --external    The complement: only subrepos whose remote DIFFERS from
+#                 'origin' (vendored copies of OTHER repositories). Pushing those
+#                 needs the other repo's credentials, not this one's.
+#                 --internal/--external are mutually exclusive and require an
+#                 'origin' remote to compare against.
 #   -h, --help    Show this help message and exit.
 #
 # Arguments:
@@ -53,15 +62,38 @@ usage() {
   exit 0
 }
 
+# Reduce a git remote URL to a comparable "host/owner/repo" form, so the same
+# repository written as https://, ssh://, or scp (git@host:owner/repo[.git])
+# all normalize identically.
+normalize_remote() {
+  local r="$1" slash=/
+  r="${r#*://}"        # strip scheme (https://, ssh://); no-op for scp form
+  r="${r#*@}"          # strip leading user@ (e.g. git@)
+  r="${r/:/$slash}"    # scp host:owner/repo -> host/owner/repo (first colon)
+  r="${r%.git}"        # strip trailing .git
+  r="${r%/}"           # strip trailing slash
+  printf '%s' "$r"
+}
+
 # ---------------------------------------------------------------------------
 # Parse options (everything that isn't a recognized flag is a GLOB argument)
 # ---------------------------------------------------------------------------
 TOP_LEVEL=false
+SCOPE=""        # "", "internal", or "external"
 declare -a ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --top-level)
       TOP_LEVEL=true
+      shift
+      ;;
+    --internal|--external)
+      scope="${1#--}"
+      if [[ -n "$SCOPE" && "$SCOPE" != "$scope" ]]; then
+        printf -- '--internal and --external are mutually exclusive\n' >&2
+        exit 1
+      fi
+      SCOPE="$scope"
       shift
       ;;
     -h|--help)
@@ -90,6 +122,17 @@ REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
   printf 'Not inside a git repository.\n' >&2
   exit 1
 }
+
+# For --internal/--external, capture the repo's own origin (normalized) to
+# classify each subrepo's remote against.
+ORIGIN_NORM=""
+if [[ -n "$SCOPE" ]]; then
+  origin_url="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null)" || {
+    printf -- '--%s requires an '\''origin'\'' remote to compare against.\n' "$SCOPE" >&2
+    exit 1
+  }
+  ORIGIN_NORM="$(normalize_remote "$origin_url")"
+fi
 
 # Capture CWD before any directory changes so glob anchoring is correct.
 CWD="$PWD"
@@ -173,6 +216,14 @@ is_nested() {
 for dir in ${SUBREPO_DIRS[@]+"${SUBREPO_DIRS[@]}"}; do
   if $TOP_LEVEL && is_nested "$dir"; then
     continue
+  fi
+  if [[ -n "$SCOPE" ]]; then
+    remote="$(git config --file "$dir/.gitrepo" subrepo.remote 2>/dev/null || true)"
+    if [[ "$(normalize_remote "$remote")" == "$ORIGIN_NORM" ]]; then
+      [[ "$SCOPE" == external ]] && continue   # internal subrepo, want external
+    else
+      [[ "$SCOPE" == internal ]] && continue   # external subrepo, want internal
+    fi
   fi
   for pattern in "${ABS_PATTERNS[@]}"; do
     if [[ "$dir" == $pattern ]]; then
