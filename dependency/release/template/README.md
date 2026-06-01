@@ -1,2 +1,2 @@
 > [!NOTE]
-> This is a [suede dependency](https://github.com/pmalacho-mit/suede). 
+> This is a [suede](https://github.com/pmalacho-mit/suede) dependency. 
