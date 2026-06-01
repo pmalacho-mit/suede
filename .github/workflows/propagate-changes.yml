@@ -50,6 +50,12 @@ jobs:
           IFS=,; echo "variants=[${variants[*]}]" >> "$GITHUB_OUTPUT"
 
   # ── Push the SUEDE-OWNED subrepos (remote = suede.git) to their branches. ──
+  # Currently:
+  # - 'dependency/main/core/**'
+  # - 'dependency/main/workflows/**'
+  # - 'dependency/release/core/**'
+  # - 'dependency/release/workflows/**'
+  # - 'sites/suede.sh/**'
   internal:
     runs-on: ubuntu-latest
     steps:
