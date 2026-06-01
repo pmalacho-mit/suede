@@ -26,12 +26,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Single source for ALL hosted suede scripts. Every curl in this workflow
-  # builds on it ($SUEDE_SCRIPTS/actions/...), as do the populate/* fetches in
-  # the other workflows. Point it at your canonical host; the scripts must be
-  # reachable at $SUEDE_SCRIPTS/<path> on the referenced ref. (The git-subrepo
-  # install in the other workflows is intentionally left pointing at upstream
-  # ingydotnet/git-subrepo — it is a third-party tool, not a suede script.)
+  # Base URL for the hosted suede scripts this workflow curls as $SUEDE_SCRIPTS/<path>.
+  # Point it at your canonical host/ref; every referenced script must be reachable there.
+  # (git-subrepo is installed separately from upstream ingydotnet/git-subrepo on purpose —
+  # it's a third-party tool, not a suede script.)
   SUEDE_SCRIPTS: https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts
 
 jobs:

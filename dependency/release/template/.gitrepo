@@ -6,7 +6,7 @@
 [subrepo]
 	remote = https://github.com/pmalacho-mit/suede-dependency-template.git
 	branch = release
-	commit = 56fad840813cacb2e384398585c1b34d8608d7f7
+	commit = 0f3b9605c7900f811d856ee3e9089f55198d657f
 	parent = 83cb7686dc425679adf8961e811dd7078225427e
 	method = merge
 	cmdver = 0.4.9
