@@ -42,6 +42,12 @@ Usage: $INVOKE_INSTALL_GITREPO -d <destination> [<path>|-]
 Reads the content of a .gitrepo file and installs the referenced repository
 archive at the specified commit into <destination>.
 
+When run inside a git repository, the installed <destination> folder is staged
+and committed automatically so the .gitrepo `parent` field correctly references
+the new commit's parent. Only <destination> is staged; other changes in the
+working tree are left untouched. Outside a git repository, the equivalent
+git add/commit commands are printed instead.
+
 Options:
   -d, --destination <path>   Destination directory (required)
   -h, --help                 Show this help and exit
@@ -199,20 +205,6 @@ echo "$GITREPO_CONTENT" > "$DEST/.gitrepo"
 
 printf "%s✓ Successfully extracted %s/%s@%s into %s%s\n" "$BOLD$GREEN" "$OWNER" "$REPO" "$COMMIT" "$DEST" "$RESET" >&2
 
-if ! mapfile -t add_targets < <(bash <(curl -fsSL "$EXTERNAL_SCRIPT_EXTRACT_DEPS") "$DEST" --message "NEXT STEPS" --emit-add-targets); then
-  printf "Error: failed to generate NEXT STEPS\n" >&2
-  exit 1
-fi
-
-# Ensure at least DEST is present
-if (( ${#add_targets[@]} == 0 )); then
-  add_targets=("$DEST")
-fi
-
-printf "%sCommit the changes to your repository:%s\n" "$BOLD" "$RESET" >&2
-# Print the git add line with all targets (joined by spaces)
-printf "  %s%s%s\n" "$GREEN" "git add ${add_targets[*]}" "$RESET" >&2
-
 # Construct a commit message similar to the original if owner/repo/commit were provided
 if [[ -n "$OWNER" ]] && [[ -n "$REPO" ]] && [[ -n "$COMMIT" ]]; then
   commit_msg="Add suede dependency (release) $OWNER/$REPO@$COMMIT"
@@ -220,4 +212,25 @@ else
   commit_msg="Add suede dependency (release)"
 fi
 
-printf "    %s%s%s\n\n" "$GREEN" "git commit -m '$commit_msg'" "$RESET" >&2
+# Commit the newly installed folder as the immediate next commit so the .gitrepo
+# `parent` field (set above to the pre-install HEAD) correctly references this
+# commit's parent. Only the install destination is staged, so any unrelated
+# changes already in the working tree are left untouched.
+if [[ -n "$PARENT_COMMIT" ]]; then
+  if git add -- "$DEST" >&2 && git commit -q -m "$commit_msg" >&2; then
+    printf "%s✓ Committed %s as %s%s\n" "$BOLD$GREEN" "$DEST" "$(git rev-parse --short HEAD)" "$RESET" >&2
+  else
+    printf "Error: failed to commit %s\n" "$DEST" >&2
+    exit 1
+  fi
+else
+  # Not in a git repository — fall back to printing manual commit instructions.
+  printf "%sCommit the changes to your repository:%s\n" "$BOLD" "$RESET" >&2
+  printf "  %s%s%s\n" "$GREEN" "git add $DEST" "$RESET" >&2
+  printf "    %s%s%s\n\n" "$GREEN" "git commit -m '$commit_msg'" "$RESET" >&2
+fi
+
+# Print any remaining manual next steps (npm deps / nested subrepos to install).
+if ! bash <(curl -fsSL "$EXTERNAL_SCRIPT_EXTRACT_DEPS") "$DEST" --message "NEXT STEPS" >&2; then
+  printf "Warning: failed to generate NEXT STEPS\n" >&2
+fi
