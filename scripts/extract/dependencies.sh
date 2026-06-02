@@ -79,7 +79,6 @@ fi
 
 DEST="${DEST%/}"
 DEPS_DIR="$DEST/.suede/.dependencies"
-NEXT_STEPS_PRINTED=false
 subrepos=()
 deps_block=""
 deps_list=""
@@ -98,10 +97,9 @@ if [[ -d "$DEPS_DIR" ]]; then
   # Find any nested .gitrepo files and collect commands to run them.
   mapfile -t subrepos < <(find "$DEPS_DIR" -type f -name '*.gitrepo' -print 2>/dev/null || true)
 
-  # Print header if we have anything to show.
+  # Print header only if we have something to show.
   if [[ -n "$deps_list" ]] || (( ${#subrepos[@]} )); then
     printf "\n%s%s:%s\n\n" "${BOLD}${YELLOW}" "$MESSAGE" "$RESET" >&2
-    NEXT_STEPS_PRINTED=true
   fi
 
   # Print dependency block if present
@@ -127,11 +125,6 @@ if [[ -d "$DEPS_DIR" ]]; then
     done
     printf "\n" >&2
   fi
-fi
-
-# Ensure header is printed at least once
-if [[ "$NEXT_STEPS_PRINTED" != true ]]; then
-  printf "\n%s%s:%s\n\n" "${BOLD}${YELLOW}" "$MESSAGE" "$RESET" >&2
 fi
 
 # Build git add targets (DEST first, then package.json if deps exist, then nested targets)

@@ -38,7 +38,7 @@ git subrepo clone --branch="$CORE_BRANCH" "$CORE_URL" "$CORE_DIR"
 
 # Install devcontainers-suede and link the chosen profile as
 # .devcontainer/devcontainer.json (install.sh derives the symlink + repo root).
-bash <(curl -fsSL "$SUEDE_INSTALL_RELEASE") --repo "$DEVCONTAINERS_REPO" --destination "$DEVCONTAINERS_DIR"
+bash <(curl -fsSL "$SUEDE_INSTALL_RELEASE") --repo "$DEVCONTAINERS_REPO" --destination "$DEVCONTAINERS_DIR" --no-suffix
 bash "$DEVCONTAINERS_DIR/install.sh" "$DEVCONTAINER_PROFILE"
 
 git add "$DEVCONTAINERS_DIR" .devcontainer/devcontainer.json
