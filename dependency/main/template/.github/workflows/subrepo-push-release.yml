@@ -13,8 +13,7 @@ on:
 env:
   # Base URL for the hosted suede scripts this workflow curls as $SUEDE_SCRIPTS/<path>.
   # Point it at your canonical host/ref; every referenced script must be reachable there.
-  # (git-subrepo is installed separately from upstream ingydotnet/git-subrepo on purpose —
-  # it's a third-party tool, not a suede script.)
+  # (git-subrepo is installed separately on purpose — it's a third-party tool, not a suede script.)
   SUEDE_SCRIPTS: https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts
 
 jobs:
