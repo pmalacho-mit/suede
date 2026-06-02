@@ -25,7 +25,11 @@ Fetch and extract the repository specified in a remote repository's release/.git
 Options:
   -r, --repo OWNER/REPO (required) source repository containing release/.gitrepo
   -b, --branch BRANCH   branch to fetch release/.gitrepo from (default: main)
-  -d, --destination DIR destination directory to extract into (default: repo name)
+  -d, --destination DIR destination directory to extract into (default: repo name).
+                        Unless --no-suffix is given, the destination is suffixed
+                        with the short SHA (first 7 chars) of the installed commit.
+      --no-suffix       do not append the commit short SHA to the destination
+                        (use the destination exactly as given/derived)
   -h, --help            display this help and exit
 
 Notes:
@@ -34,11 +38,19 @@ Notes:
     then downloads that release into the destination directory.
   • If --destination is not provided, the destination will be derived from the release
     repository name (the REPO value from release/.gitrepo, not the source repo).
+  • The final destination is suffixed with "-<short-sha>", where <short-sha> is
+    the first 7 characters of the commit referenced by release/.gitrepo (e.g.
+    ./sdk-release becomes ./sdk-release-7aeab3b). This pins the install location
+    to the installed commit. Pass --no-suffix to use the destination exactly as
+    given/derived, with no commit suffix.
   • The destination directory must be empty or nonexistent.
 
 Examples:
+  # installs into ./zoom-sdk-suede-<short-sha>
   bash <(curl https://suede.sh/install/release) -r pmalacho-mit/zoom-sdk-suede
+  # installs into ./sdk-release-<short-sha>
   bash <(curl https://suede.sh/install/release) -r pmalacho-mit/zoom-sdk-suede -b main --destination ./sdk-release
+  # installs into ./my-release-<short-sha>
   bash <(curl https://suede.sh/install/release) -r owner/repo -b develop --destination ./my-release
 USAGE
 }
@@ -60,6 +72,7 @@ is_dir_populated() {
 REPO=""
 BRANCH="main"
 DEST=""
+NO_SUFFIX=false
 
 # Process command line arguments.
 while [[ $# -gt 0 ]]; do
@@ -90,6 +103,10 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       shift 2
+      ;;
+    --no-suffix)
+      NO_SUFFIX=true
+      shift
       ;;
     -h|--help)
       usage
@@ -139,6 +156,29 @@ GITREPO_CONTENT=$(bash <(curl -fsSL "$EXTERNAL_SCRIPT_GIT_RAW") \
 if [[ -z "$DEST" ]]; then
   DEST="${REPO#*/}"
   printf "Auto-derived destination: %s\n" "$DEST" >&2
+fi
+
+# Extract the referenced commit from the fetched release/.gitrepo and suffix the
+# destination with its short SHA (first 7 chars, matching git's short-hash
+# convention) so the install location is pinned to the installed commit. This
+# is skipped when --no-suffix is given, leaving the destination exactly as
+# given/derived.
+if [[ "$NO_SUFFIX" != true ]]; then
+  COMMIT=$(printf '%s\n' "$GITREPO_CONTENT" | awk -F'=' '
+    $0 ~ /^[[:space:]]*commit[[:space:]]*=/ {
+      val = $2
+      sub(/^[[:space:]]+/, "", val)
+      sub(/[[:space:]]+$/, "", val)
+      print val
+    }' | tail -n1)
+
+  if [[ -z "$COMMIT" ]]; then
+    printf "Error: could not find a commit in the fetched release/.gitrepo\n" >&2
+    exit 1
+  fi
+
+  DEST="${DEST%/}-${COMMIT:0:7}"
+  printf "Commit-suffixed destination: %s\n" "$DEST" >&2
 fi
 
 # Delegate installation to the hosted `install-gitrepo` script by piping the
