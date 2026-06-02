@@ -69,13 +69,11 @@ Writes installation instructions to README.md by parsing the git remote origin U
 
 ## `upgrade/`
 
-### `upgrade/latest.sh`
+### `upgrade/README.md`
 
-Migrates a repository created with an earlier version of the suede workflow onto the current subrepo layout, where `.suede` and `.github/workflows` are vendored from dedicated suede library branches. Rewires both `release` and `main`, drops obsolete generated files (the old per-branch workflow on each side, plus `initialize.yml` on main), preserves consumer-authored files, and pushes both branches.
+Step-by-step manual instructions for migrating a repository created with an earlier version of the suede workflow onto the current subrepo layout, where `.suede/core` and `.github/workflows` are vendored from dedicated suede library branches. Rewires both `release` and `main` and drops obsolete generated files (the old per-branch workflow on each side, plus `initialize.yml` on main).
 
-```bash
-bash <(curl https://suede.sh/upgrade/latest)
-```
+See [upgrade/README.md](upgrade/README.md).
 
 ## Subrepo helpers
 

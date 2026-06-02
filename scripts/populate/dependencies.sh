@@ -2,7 +2,11 @@
 set -euo pipefail
 
 # Populates ./release/.suede/.dependencies with:
-#  - one <folder>.gitrepo file for each immediate child folder that contains a .gitrepo
+#  - one <folder>.gitrepo file for each subrepo dependency. A subrepo dependency
+#    is a symlink living at the repo root that points to a folder inside
+#    <root>/.suede. If that symlink is dangling (its target folder no longer
+#    exists) this script fails. If the target folder contains a .gitrepo it is
+#    copied to <folder>.gitrepo (named after the target folder).
 #  - a minimal package.json containing only { "dependencies": { ... } } if package.json exists
 #  - a requirements.txt copy if requirements.txt exists
 #
@@ -17,40 +21,71 @@ log() { printf '[populate-deps] %s\n' "$*"; }
 mkdir -p "$DEST_DIR"
 log "Ensured destination directory: $DEST_DIR"
 
-# Function to copy .gitrepo files from immediate child directories
-# Args: $1 = source directory to scan
+# Copy .gitrepo files for each subrepo dependency.
+#
+# A subrepo dependency is a symlink that lives at the root of the repo and points
+# to a folder inside <root>/.suede:
+#   - If the symlink is dangling (its target no longer exists) we fail, reporting
+#     the dangling subrepo dependency.
+#   - If the symlink is valid and the target folder contains a .gitrepo, that
+#     .gitrepo is copied to $DEST_DIR/<folder>.gitrepo (named after the target).
+#
+# Args: $1 = repo root to scan
 copy_gitrepo_files() {
   local search_dir="$1"
   [[ -d "$search_dir" ]] || return 0
-  
-  log "Scanning for .gitrepo files in: $search_dir"
+
+  local suede_dir="$search_dir/.suede"
+
+  log "Scanning for subrepo dependency symlinks in: $search_dir"
   shopt -s nullglob dotglob
-  for dir in "$search_dir"/*/ ; do
-    [[ -d "$dir" ]] || continue
-    local base="$(basename "$dir")"
-    
-    # Skip 'release' and '.git' folders only when scanning from ROOT
-    if [[ "$search_dir" == "$ROOT" ]]; then
-      [[ "$base" == "release" || "$base" == ".git" ]] && continue
+  for link in "$search_dir"/* ; do
+    # Only consider symlinks at the root.
+    [[ -L "$link" ]] || continue
+
+    # Resolve the link's target to an absolute path (works even when dangling).
+    local target
+    target="$(readlink "$link")"
+    case "$target" in
+      /*) ;;                              # already absolute
+      *)  target="$search_dir/$target" ;; # relative -> resolve against root
+    esac
+
+    # Only treat symlinks that point inside <root>/.suede as subrepo deps.
+    case "$target" in
+      "$suede_dir"/*) ;;
+      *) continue ;;
+    esac
+
+    local link_name target_name
+    link_name="$(basename "$link")"
+    target_name="$(basename "$target")"
+
+    # Dangling dependency: the target folder no longer exists -> fail.
+    if [[ ! -e "$link" ]]; then
+      log "ERROR: dangling subrepo dependency '$link_name' -> '$target' (target folder no longer exists)"
+      exit 1
     fi
 
-    local src="$dir.gitrepo"
+    # Skip if a .suedeignore sits in the target folder.
+    if [[ -f "$target/.suedeignore" ]]; then
+      log "Skipped '$link_name' (found .suedeignore in $target)"
+      continue
+    fi
+
+    local src="$target/.gitrepo"
     if [[ -f "$src" ]]; then
-      # Skip if .suedeignore exists in the same directory
-      if [[ -f "$dir.suedeignore" ]]; then
-        log "Skipped $src (found .suedeignore)"
-        continue
-      fi
-      
-      local dst="$DEST_DIR/$base.gitrepo"
+      local dst="$DEST_DIR/$target_name.gitrepo"
       cp -f "$src" "$dst"
       log "Copied $src -> $dst"
+    else
+      log "Skipped '$link_name' (no .gitrepo in $target)"
     fi
   done
   shopt -u nullglob dotglob
 }
 
-# Copy .gitrepo files from release/.suede/.dependencies if it exists
+# Discover subrepo dependencies (root symlinks into .suede) and copy their .gitrepo files.
 copy_gitrepo_files "$ROOT"
 
 # Extract only "dependencies" from package.json, write to release/.suede/.dependencies/package.json
