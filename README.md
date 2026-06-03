@@ -400,3 +400,51 @@ Do you (1) trust [@pmalacho-mit](https://github.com/pmalacho-mit) and (2) have a
 ### Vite
 
 ### SvelteKit
+
+
+
+### Deploy token setup & monitoring
+
+This repo pushes to the downstream [suede-dependency-template]() using a personal access token. PATs
+expire, so a workflow checks the remaining time and keeps a status banner at the
+top of this README up to date.
+
+**One-time setup after you fork:**
+
+1. **Create the token.** GitHub → Settings → Developer settings → Personal
+   access tokens → Fine-grained tokens. Scope it to **only the target repo**
+   ("Only select repositories") and grant:
+   - Contents: **Read and write**
+   - Workflows: **Read and write**
+   - Metadata: Read-only (GitHub adds this automatically)
+
+2. **Store the token.** Save it as a repository **secret** named `SUEDE_DEPENDENCY_TEMPLATE_PAT`
+   (Settings → Secrets and variables → Actions → Secrets).
+
+3. **Record the expiry.** On the token page, copy the expiration date and save
+   it as a repository **variable** named `SUEDE_DEPENDENCY_TEMPLATE_PAT_EXPIRY` (same screen, Variables
+   tab). Use ISO format `YYYY-MM-DD` (e.g. GitHub's "Tue, Jun 30 2026" becomes
+   `2026-06-30`).
+
+That's it. The **Check deploy token expiry** workflow runs on every push to
+`main` and weekly, then commits an updated banner to the top of this README:
+
+- 🟢 **TIP** — more than 30 days left
+- 🟡 **WARNING** — 30 days or fewer
+- 🔴 **CAUTION** — final week, or already expired
+
+**When you rotate the token,** update **both** `SUEDE_DEPENDENCY_TEMPLATE_PAT` (new token) and
+`SUEDE_DEPENDENCY_TEMPLATE_PAT_EXPIRY` (new date).
+
+**Banner placement (optional).** By default the banner is prepended to the very
+top of the README. To pin it somewhere specific instead — say, under your title
+or below a badges row — commit these two markers where you want it, and the
+workflow will fill that spot from then on:
+
+```md
+<!-- TOKEN-STATUS:START -->
+<!-- TOKEN-STATUS:END -->
+```
+
+The workflow only ever rewrites the lines between those markers, so anything
+above or below stays exactly as you left it.
