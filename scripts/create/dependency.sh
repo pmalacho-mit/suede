@@ -57,7 +57,7 @@ OWNER="$(gh api user --jq .login)"
 REPO="$OWNER/$NAME"
 
 echo "▶ Creating $REPO from $TEMPLATE …"
-gh repo create "$REPO" --template "$TEMPLATE" --"$VISIBILITY"
+gh repo create "$REPO" --template "$TEMPLATE" --"$VISIBILITY" --include-all-branches
 
 echo "▶ Setting workflow permissions (read/write + allow PR create/approve) …"
 gh api --method PUT "/repos/$REPO/actions/permissions/workflow" \
