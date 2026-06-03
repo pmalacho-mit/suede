@@ -6,7 +6,7 @@ set -euo pipefail
 #    is a symlink living at the repo root that points to a folder inside
 #    <root>/.suede. If that symlink is dangling (its target folder no longer
 #    exists) this script fails. If the target folder contains a .gitrepo it is
-#    copied to <folder>.gitrepo (named after the target folder).
+#    copied to <symlink-name>.gitrepo (named after the root symlink).
 #  - a minimal package.json containing only { "dependencies": { ... } } if package.json exists
 #  - a requirements.txt copy if requirements.txt exists
 #
@@ -28,7 +28,7 @@ log "Ensured destination directory: $DEST_DIR"
 #   - If the symlink is dangling (its target no longer exists) we fail, reporting
 #     the dangling subrepo dependency.
 #   - If the symlink is valid and the target folder contains a .gitrepo, that
-#     .gitrepo is copied to $DEST_DIR/<folder>.gitrepo (named after the target).
+#     .gitrepo is copied to $DEST_DIR/<symlink-name>.gitrepo.
 #
 # Args: $1 = repo root to scan
 copy_gitrepo_files() {
@@ -57,9 +57,8 @@ copy_gitrepo_files() {
       *) continue ;;
     esac
 
-    local link_name target_name
+    local link_name
     link_name="$(basename "$link")"
-    target_name="$(basename "$target")"
 
     # Dangling dependency: the target folder no longer exists -> fail.
     if [[ ! -e "$link" ]]; then
@@ -75,7 +74,7 @@ copy_gitrepo_files() {
 
     local src="$target/.gitrepo"
     if [[ -f "$src" ]]; then
-      local dst="$DEST_DIR/$target_name.gitrepo"
+      local dst="$DEST_DIR/$link_name.gitrepo"
       cp -f "$src" "$dst"
       log "Copied $src -> $dst"
     else
