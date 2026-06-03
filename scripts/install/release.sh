@@ -26,10 +26,11 @@ Options:
   -r, --repo OWNER/REPO (required) source repository containing release/.gitrepo
   -b, --branch BRANCH   branch to fetch release/.gitrepo from (default: main)
   -d, --destination DIR destination directory to extract into (default: repo name).
-                        Unless --no-suffix is given, the destination is suffixed
-                        with the short SHA (first 7 chars) of the installed commit.
-      --no-suffix       do not append the commit short SHA to the destination
-                        (use the destination exactly as given/derived)
+                        By default the destination is used exactly as given/derived.
+                        Pass --commit-suffix to append the short SHA (first 7 chars)
+                        of the installed commit.
+      --commit-suffix   append the commit short SHA to the destination
+                        (e.g. ./sdk-release becomes ./sdk-release-7aeab3b)
   -h, --help            display this help and exit
 
 Notes:
@@ -38,20 +39,20 @@ Notes:
     then downloads that release into the destination directory.
   • If --destination is not provided, the destination will be derived from the release
     repository name (the REPO value from release/.gitrepo, not the source repo).
-  • The final destination is suffixed with "-<short-sha>", where <short-sha> is
-    the first 7 characters of the commit referenced by release/.gitrepo (e.g.
-    ./sdk-release becomes ./sdk-release-7aeab3b). This pins the install location
-    to the installed commit. Pass --no-suffix to use the destination exactly as
-    given/derived, with no commit suffix.
+  • By default the destination is used exactly as given/derived. When
+    --commit-suffix is passed, the destination is suffixed with "-<short-sha>",
+    where <short-sha> is the first 7 characters of the commit referenced by
+    release/.gitrepo (e.g. ./sdk-release becomes ./sdk-release-7aeab3b). This
+    pins the install location to the installed commit.
   • The destination directory must be empty or nonexistent.
 
 Examples:
-  # installs into ./zoom-sdk-suede-<short-sha>
+  # installs into ./zoom-sdk-suede
   bash <(curl https://suede.sh/install/release) -r pmalacho-mit/zoom-sdk-suede
-  # installs into ./sdk-release-<short-sha>
+  # installs into ./sdk-release
   bash <(curl https://suede.sh/install/release) -r pmalacho-mit/zoom-sdk-suede -b main --destination ./sdk-release
   # installs into ./my-release-<short-sha>
-  bash <(curl https://suede.sh/install/release) -r owner/repo -b develop --destination ./my-release
+  bash <(curl https://suede.sh/install/release) -r owner/repo -b develop --destination ./my-release --commit-suffix
 USAGE
 }
 
@@ -72,7 +73,7 @@ is_dir_populated() {
 REPO=""
 BRANCH="main"
 DEST=""
-NO_SUFFIX=false
+COMMIT_SUFFIX=false
 
 # Process command line arguments.
 while [[ $# -gt 0 ]]; do
@@ -104,8 +105,8 @@ while [[ $# -gt 0 ]]; do
       fi
       shift 2
       ;;
-    --no-suffix)
-      NO_SUFFIX=true
+    --commit-suffix)
+      COMMIT_SUFFIX=true
       shift
       ;;
     -h|--help)
@@ -158,12 +159,12 @@ if [[ -z "$DEST" ]]; then
   printf "Auto-derived destination: %s\n" "$DEST" >&2
 fi
 
-# Extract the referenced commit from the fetched release/.gitrepo and suffix the
-# destination with its short SHA (first 7 chars, matching git's short-hash
-# convention) so the install location is pinned to the installed commit. This
-# is skipped when --no-suffix is given, leaving the destination exactly as
-# given/derived.
-if [[ "$NO_SUFFIX" != true ]]; then
+# When --commit-suffix is given, extract the referenced commit from the fetched
+# release/.gitrepo and suffix the destination with its short SHA (first 7 chars,
+# matching git's short-hash convention) so the install location is pinned to the
+# installed commit. By default this is skipped, leaving the destination exactly
+# as given/derived.
+if [[ "$COMMIT_SUFFIX" == true ]]; then
   COMMIT=$(printf '%s\n' "$GITREPO_CONTENT" | awk -F'=' '
     $0 ~ /^[[:space:]]*commit[[:space:]]*=/ {
       val = $2
