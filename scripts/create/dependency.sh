@@ -87,7 +87,8 @@ RUN_ID="$(gh run list --workflow "$WORKFLOW" --repo "$REPO" \
 echo "▶ Watching run $RUN_ID …"
 gh run watch "$RUN_ID" --repo "$REPO" --exit-status
 
-echo "✅ Init succeeded.  Result:  https://github.com/$REPO"
+echo "✅ Init succeeded.  Result:"
+echo "   https://github.com/$REPO"
 
 if [ "$CLEANUP" = true ]; then
   echo "▶ Cleaning up (--cleanup) …"
