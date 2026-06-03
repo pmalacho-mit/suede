@@ -2,8 +2,8 @@
 
 <!-- TOKEN-STATUS:START -->
 > [!WARNING]
-> 🟡 The deploy token (`SUEDE_DEPENDENCY_TEMPLATE_PAT`) expires in **27 days** (2026-06-30).
-> _Last checked: 2026-06-02 (UTC)._
+> 🟡 The deploy token (`SUEDE_DEPENDENCY_TEMPLATE_PAT`) expires in **26 days** (2026-06-30).
+> _Last checked: 2026-06-03 (UTC)._
 <!-- TOKEN-STATUS:END -->
 
 <sub>git-</sub>***Su***<sub>br</sub>***e***<sub>po based</sub> ***de***<sub>pendency management</sub>
