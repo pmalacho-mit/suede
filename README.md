@@ -443,6 +443,9 @@ workflow will fill that spot from then on:
 
 ```md
 <!-- TOKEN-STATUS:START -->
+> [!WARNING]
+> 🟡 The deploy token (`SUEDE_DEPENDENCY_TEMPLATE_PAT`) expires in **26 days** (2026-06-30).
+> _Last checked: 2026-06-03 (UTC)._
 <!-- TOKEN-STATUS:END -->
 ```
 
