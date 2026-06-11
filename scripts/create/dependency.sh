@@ -22,6 +22,18 @@ TEMPLATE="pmalacho-mit/suede-dependency-template"
 WORKFLOW="initialize.yml"        # the init workflow that self-destructs
 # ────────────────────────────────────────────────────────────────────────
 
+# Print a clickable terminal hyperlink (OSC 8). Falls back to a bare URL when
+# stdout isn't a TTY (e.g. piped to a file or CI logs), so nothing is mangled.
+#   hyperlink <url> [label]
+hyperlink() {
+  local url="$1" label="${2:-$1}"
+  if [ -t 1 ]; then
+    printf '\e]8;;%s\e\\%s\e]8;;\e\\\n' "$url" "$label"
+  else
+    printf '%s\n' "$url"
+  fi
+}
+
 # Parse args: --cleanup/--org can appear anywhere; the rest are positional.
 CLEANUP=false
 ORG=""
@@ -110,7 +122,7 @@ echo "▶ Watching run $RUN_ID …"
 gh run watch "$RUN_ID" --repo "$REPO" --exit-status
 
 echo "✅ Init succeeded.  Result:"
-echo "   https://github.com/$REPO"
+printf '   '; hyperlink "https://github.com/$REPO"
 
 if [ "$CLEANUP" = true ]; then
   echo "▶ Cleaning up (--cleanup) …"
