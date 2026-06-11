@@ -6,26 +6,34 @@ set -euo pipefail
 # completion — all in one shot.
 #
 # Usage:
-#   ./create-suede-repo.sh <name> [public|private] [--cleanup]
-#   ./create-suede-repo.sh my-dep                 # public, kept
-#   ./create-suede-repo.sh my-dep private          # private, kept
+#   ./create-suede-repo.sh <name> [public|private] [--org <org>] [--cleanup]
+#   ./create-suede-repo.sh my-dep                  # public, under your account
+#   ./create-suede-repo.sh my-dep private          # private, under your account
+#   ./create-suede-repo.sh my-dep --org my-org     # public, under an organization
 #   ./create-suede-repo.sh temp --cleanup          # throwaway test, deleted on success
 #
-# <name> is required. With --cleanup the repo is deleted only if init
-# succeeds; on failure it's left intact so you can inspect what went wrong.
+# <name> is required. With --org <org> the repo is created in that organization
+# (you must be a member with permission to create repos there) instead of your
+# personal account. With --cleanup the repo is deleted only if init succeeds;
+# on failure it's left intact so you can inspect what went wrong.
 
 # ── Config ──────────────────────────────────────────────────────────────
 TEMPLATE="pmalacho-mit/suede-dependency-template"
 WORKFLOW="initialize.yml"        # the init workflow that self-destructs
 # ────────────────────────────────────────────────────────────────────────
 
-# Parse args: --cleanup can appear anywhere; the rest are positional.
+# Parse args: --cleanup/--org can appear anywhere; the rest are positional.
 CLEANUP=false
+ORG=""
 POSITIONAL=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --cleanup) CLEANUP=true; shift ;;
-    -h|--help) sed -n '4,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --org)
+      if [ -z "${2:-}" ]; then echo "Error: --org requires an organization name." >&2; exit 2; fi
+      ORG="$2"; shift 2 ;;
+    --org=*) ORG="${1#--org=}"; shift ;;
+    -h|--help) sed -n '4,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "Unknown option: $1" >&2; exit 2 ;;
     *) POSITIONAL+=("$1"); shift ;;
   esac
@@ -34,7 +42,7 @@ set -- "${POSITIONAL[@]+"${POSITIONAL[@]}"}"
 
 if [ "$#" -lt 1 ] || [ -z "${1:-}" ]; then
   echo "Error: repo name is required." >&2
-  echo "Usage: $(basename "$0") <name> [public|private] [--cleanup]" >&2
+  echo "Usage: $(basename "$0") <name> [public|private] [--org <org>] [--cleanup]" >&2
   exit 2
 fi
 
@@ -53,7 +61,21 @@ if ! gh auth status >/dev/null 2>&1; then
   exit 1
 fi
 
-OWNER="$(gh api user --jq .login)"
+if [ -n "$ORG" ]; then
+  # Verify membership early so we fail before creating anything. The public
+  # members endpoint only sees public membership, so if that misses, fall back
+  # to /memberships, which reports your own membership even when it's private.
+  ME="$(gh api user --jq .login)"
+  if ! gh api "/orgs/$ORG/members/$ME" >/dev/null 2>&1 \
+     && ! gh api "/orgs/$ORG/memberships/$ME" --jq '.state == "active"' 2>/dev/null | grep -q true; then
+    echo "Error: you don't appear to be a member of the '$ORG' organization" >&2
+    echo "       (or it doesn't exist). Check the name and your access." >&2
+    exit 1
+  fi
+  OWNER="$ORG"
+else
+  OWNER="$(gh api user --jq .login)"
+fi
 REPO="$OWNER/$NAME"
 
 echo "▶ Creating $REPO from $TEMPLATE …"
