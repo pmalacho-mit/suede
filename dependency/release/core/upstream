@@ -21,7 +21,7 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)" \
 
 # The dependency root is exactly one level up from this script
 # (<dep>/.gitrepo, with this script at <dep>/.suede/upstream).
-DEP_DIR="$(cd "$SELF_DIR/.." >/dev/null 2>&1 && pwd)" \
+DEP_DIR="$(cd "$SELF_DIR/../.." >/dev/null 2>&1 && pwd)" \
   || err "cannot resolve dependency root above $SELF_DIR"
 [ -f "$DEP_DIR/.gitrepo" ] \
   || err "no .gitrepo found at $DEP_DIR/.gitrepo — is this inside a vendored suede dependency?"
