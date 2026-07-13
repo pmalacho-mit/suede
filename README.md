@@ -3,7 +3,7 @@
 <!-- TOKEN-STATUS:START -->
 > [!CAUTION]
 > 🔴 The deploy token (`SUEDE_DEPENDENCY_TEMPLATE_PAT`) **has expired** (was 2026-06-30).
-> _Last checked: 2026-07-06 (UTC)._
+> _Last checked: 2026-07-13 (UTC)._
 <!-- TOKEN-STATUS:END -->
 
 <sub>git-</sub>***Su***<sub>br</sub>***e***<sub>po based</sub> ***de***<sub>pendency management</sub>
@@ -445,7 +445,7 @@ workflow will fill that spot from then on:
 <!-- TOKEN-STATUS:START -->
 > [!CAUTION]
 > 🔴 The deploy token (`SUEDE_DEPENDENCY_TEMPLATE_PAT`) **has expired** (was 2026-06-30).
-> _Last checked: 2026-07-06 (UTC)._
+> _Last checked: 2026-07-13 (UTC)._
 <!-- TOKEN-STATUS:END -->
 ```
 
