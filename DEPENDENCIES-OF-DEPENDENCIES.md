@@ -20,7 +20,7 @@ The goal is the most _boring_ (but still ergonomic) solution. Folders and names 
 
 The three types are mutually exclusive and exhaustive. Dependencies are resolved by walking this in order:
 
-1. Is the dependency's folder **inside `release/`**? → **Vendored Release Dependency.** (Stop. Names and symlinks are irrelevant here.)
+1. Is the dependency's folder **inside `release/`**? → **Vendored Release Dependency.** (Stop. Names are irrelevant here.)
 2. Otherwise, is there an entry **at the project root** (same level as `release/`) whose **name begins with `$repo.`**, and whose backing folder — the entry itself if it's a folder, or the symlink's target otherwise — sits **outside `release/`** and contains a `.gitrepo`? → **Release Dependency.**
 3. Otherwise → **Development Dependency.**
 
