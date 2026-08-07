@@ -6,7 +6,7 @@ The whole idea is that **the kind of a dependency is fully determined by where i
 
 Here are the three kinds of dependencies:
 
-- **Release Dependency** — announced by a **root-level entry named `$repo.$dependency` or `$repo__$dependency`**: either a real folder with that name, or a symlink with that name pointing to a folder elsewhere outside `release/`. The backing folder (the entry itself, or the symlink's target) contains a `.gitrepo`. Your `release/` code references it (via it's full name, e.g. `import {} from "$repo.$dependency"`, `from $repo__$dependency import _`), but you do **not** ship its source; you ship a pointer to its remote commit.
+- **Release Dependency** — announced by a **root-level entry named `$repo.$dependency` or `$repo__$dependency`**: either a real folder with that name, or a symlink with that name pointing to a folder elsewhere outside `release/`. The backing folder (the entry itself, or the symlink's target) contains a `.gitrepo` file. Your `release/` code references it (via it's full name, e.g. `import {} from "$repo.$dependency"`, `from $repo__$dependency import _`), but you do **not** ship its source; you ship a pointer to its remote commit.
 - **Development Dependency** — any suede dependency (a `.gitrepo`-containing folder) outside `release/` that has **no** qualifying prefix-named root entry. The `release` branch knows nothing about it.
 - **Vendored Release Dependency** — lives _inside_ `release/`. It ships verbatim with your `release` branch like any other release file.
 
