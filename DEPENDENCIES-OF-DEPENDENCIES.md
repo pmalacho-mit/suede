@@ -2,15 +2,19 @@
 
 This concerns the cases where a [suede](https://github.com/pmalacho-mit/suede) dependency, call it _some-lib_, relies on the source code of one or more other [suede](https://github.com/pmalacho-mit/suede) dependencies — either in _some-lib_'s shipped `release/` code, or only in the development of _some-lib_ on its `main` branch (e.g. for testing, examples, or docs).
 
-The whole v2 idea is that **the kind of a dependency is fully determined by where it lives on `main` and what it is named.** No config file, no manifest, no language-specific tooling — and no symlink required, either. Just folders and names (with symlinks as an optional nicety).
+The whole idea is that **the kind of a dependency is fully determined by where it lives on `main` and what it is named.** No config file, no manifest, no language-specific tooling. Just folders and names.
 
-- **Release Dependency** — announced by a **root-level entry named `$repo.$dependency`**: either a real folder with that name, or a symlink with that name pointing to a folder elsewhere outside `release/`. The backing folder (the entry itself, or the symlink's target) contains a `.gitrepo`. Your `release/` code references it, but you do **not** ship its source; you ship a pointer to its remote commit.
+Here are the three kinds of dependencies:
+
+- **Release Dependency** — announced by a **root-level entry named `$repo.$dependency` or `$repo__$dependency`**: either a real folder with that name, or a symlink with that name pointing to a folder elsewhere outside `release/`. The backing folder (the entry itself, or the symlink's target) contains a `.gitrepo`. Your `release/` code references it (via it's full name, e.g. `import {} from "$repo.$dependency"`, `from $repo__$dependency import _`), but you do **not** ship its source; you ship a pointer to its remote commit.
 - **Development Dependency** — any suede dependency (a `.gitrepo`-containing folder) outside `release/` that has **no** qualifying prefix-named root entry. The `release` branch knows nothing about it.
 - **Vendored Release Dependency** — lives _inside_ `release/`. It ships verbatim with your `release` branch like any other release file.
 
 The goal is the most _boring_ (but still ergonomic) solution. Folders and names — _chef's kiss_.
 
 > `$repo`: the name of the repository, without the `owner/` prefix.
+
+> As a convention, a `.` is used to separate `$repo` from `$dependency` in **release dependency** paths for typescript modules, while `__` is used as a separator for python modules. This can be freely configured by creating a `config.yml` file inside of the `.suede/` file on the `main` and specify the `release-dependency-separator` property.
 
 ## The classification rule
 
