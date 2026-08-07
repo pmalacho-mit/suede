@@ -6,7 +6,7 @@ The whole idea is that **the kind of a dependency is fully determined by where i
 
 Here are the three kinds of dependencies:
 
-- **Release Dependency** — announced by a **root-level entry named `$repo.$dependency` or `$repo__$dependency`**: either a real folder with that name, or a symlink with that name pointing to a folder elsewhere outside `release/`. The backing folder (the entry itself, or the symlink's target) contains a `.gitrepo` file. Your `release/` code references it (via it's full name, e.g. `import {} from "$repo.$dependency"`, `from $repo__$dependency import _`), but you do **not** ship its source; you ship a pointer to its remote commit.
+- **Release Dependency** — announced by a **root-level entry named `$repo.$dependency` or `$repo__$dependency`**: either a real folder with that name, or a symlink with that name pointing to a folder elsewhere outside `release/`. The backing folder (the entry itself, or the symlink's target) contains a `.gitrepo` file. Your `release/` code references it (via it's full name, e.g. `import {} from "$repo.$dependency"`, `from $repo__$dependency import *`), but you do **not** ship its source; you ship a pointer to its remote commit.
 - **Development Dependency** — any suede dependency (a `.gitrepo`-containing folder) outside `release/` that has **no** qualifying prefix-named root entry. The `release` branch knows nothing about it.
 - **Vendored Release Dependency** — lives _inside_ `release/`. It ships verbatim with your `release` branch like any other release file.
 
@@ -14,11 +14,11 @@ The goal is the most _boring_ (but still ergonomic) solution. Folders and names 
 
 > `$repo`: the name of the repository, without the `owner/` prefix.
 
-> As a convention, `.` and  `__` are used to separate `$repo` from `$dependency` in **release dependency** paths for typescript and python modules, respectively. Thus, these separators are used by default for evaluation, but you can specify your own seperator by creating a `config.yml` file inside of the `.suede/` folder on the `main` branch and specify the `release-dependency-separator` property.
+> As a convention, `.` and  `__` are used to separate `$repo` from `$dependency` in **release dependency** paths for typescript and python modules, respectively. Thus, these separators are used by default for evaluation, but you can specify your own seperator by creating a `config.yml` file inside of the `.suede/` folder on the `main` branch and specify the `release-dependency-separator` property (accepts both a string and an array of values).
 
 ## The classification rule
 
-The three types are mutually exclusive and exhaustive. Resolve a dependency by walking this in order:
+The three types are mutually exclusive and exhaustive. Dependencies are resolved by walking this in order:
 
 1. Is the dependency's folder **inside `release/`**? → **Vendored Release Dependency.** (Stop. Names and symlinks are irrelevant here.)
 2. Otherwise, is there an entry **at the project root** (same level as `release/`) whose **name begins with `$repo.`**, and whose backing folder — the entry itself if it's a folder, or the symlink's target otherwise — sits **outside `release/`** and contains a `.gitrepo`? → **Release Dependency.**
