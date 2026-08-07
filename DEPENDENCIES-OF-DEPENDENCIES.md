@@ -14,7 +14,7 @@ The goal is the most _boring_ (but still ergonomic) solution. Folders and names 
 
 > `$repo`: the name of the repository, without the `owner/` prefix.
 
-> As a convention, `.` and  `__` are used to separate `$repo` from `$dependency` in **release dependency** paths for typescript and python modules, respectively. This can be freely configured by creating a `config.yml` file inside of the `.suede/` folder on the `main` branch and specify the `release-dependency-separator` property.
+> As a convention, `.` and  `__` are used to separate `$repo` from `$dependency` in **release dependency** paths for typescript and python modules, respectively. Thus, these separators are used by default for evaluation, but you can specify your own seperator by creating a `config.yml` file inside of the `.suede/` folder on the `main` branch and specify the `release-dependency-separator` property.
 
 ## The classification rule
 
