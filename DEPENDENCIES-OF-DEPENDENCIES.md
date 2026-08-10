@@ -137,10 +137,7 @@ This is especially good for moving quickly, and it sidesteps the [symlink portab
 
 #### Install-script resolution modes
 
-When resolving a `release/.suede/.dependencies/*.gitrepo` pointer, the install script should offer both ends of that tradeoff. Proposed flags (names TBD):
-
-- **`--mode folder` (default):** clone the subrepo directly into the sibling `$repo.$dependency` (the plain-folder fast path above). No symlink to manage, no location to choose — the name _is_ the location.
-- **`--mode symlink --target <path>`:** clone the subrepo to the location the user chooses (there is no default location; the whole point is that dependencies live wherever users want) and create the `$repo.$dependency` symlink pointing at it. Useful when the install location should be shared by multiple edges.
+When resolving a `release/.suede/.dependencies/*.gitrepo` pointer, the install script should offer both ends of that tradeoff. 
 
 On top of the mode, the script should **resolve intelligently** rather than blindly cloning:
 
