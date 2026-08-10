@@ -184,7 +184,7 @@ class Plan:
 
 Each milestone ends with something runnable and tested. No milestone depends on a later one.
 
-**M0 — Worker `.py` support.** One-line change to `sites/suede.sh`, plus a smoke test that `curl https://suede.sh/suede` returns Python. Blocks everything.
+**M0 — Worker `.py` support.** `src/index.ts` currently does `if (!pathname.endsWith(".sh")) pathname += ".sh"`, so `/suede.py` would become `/suede.py.sh`. Replace with an extension allowlist (`.sh`, `.py`) plus an alias so `/suede` → `scripts/suede.py`. Revised worker supplied; it also adds `?ref=` pinning, stops forwarding client headers upstream, and returns a readable error instead of proxying GitHub's 404 body into a shell. Exit: `curl -fsSL https://suede.sh/suede` returns Python and `?ref=v0.0.0` 404s cleanly. Blocks everything.
 
 **M1 — Model + git layer + scan.** §3–§7. Exit: `suede list` prints a correct classification table for a hand-built fixture tree. This is the cheapest way to validate the classification rule (including the `$repo`+separator fix) against a real tree before any planning exists.
 
@@ -391,8 +391,101 @@ A scratch org with a real template repo, exercised on a schedule. This is the on
 
 ## 8. Sequencing risks
 
-- **The worker `.py` change (M0) blocks the bootstrap.** Do it first; it is a one-liner and a smoke test.
+- **The worker `.py` change (M0) blocks the bootstrap.** Revised `index.ts` supplied. Note its cache TTL is 60s, so iteration is fast but a bad deploy propagates fast too — pin CI with `?ref=`.
+- **The bootstrap must use `curl -fsSL`.** Today's documented one-liner is `bash <(curl https://suede.sh/install/release)` with no `-f`, so a 404 body gets executed as bash. The revised worker returns a readable message, but `-f` is the actual fix, and it belongs in the README and in every generated dependency README.
 - **`extract/dependencies.sh` may have callers you don't expect** — grep the workflows and the template repo before deleting.
 - **The `initialize` workflow writes install instructions into every new dependency's README.** If the one-liner ever changes, every previously generated README is stale. It should not change; if it must, plan the migration explicitly.
 - **The deploy token is currently expired** (`SUEDE_DEPENDENCY_TEMPLATE_PAT`, was 2026-06-30). Anything touching the downstream template push is blocked until it is rotated — worth resolving before M7.
 - **Don't let the planner leak I/O.** The moment `plan()` calls git, the §5.1 matrix stops being cheap and starts being fixtures. Enforce it with a review rule, or a test that monkeypatches the git module to raise on any call during planning.
+
+---
+
+## 9. What an implementing agent must read first
+
+I inferred these from references rather than reading them (GitHub blocks automated access to tree pages). An agent should read each one before touching the corresponding milestone.
+
+| Artifact | Why it's needed | Blocks |
+| --- | --- | --- |
+| `scripts/install/gitrepo.sh` | Its CLI contract is the thing `suede.py install --gitrepo` must preserve for the deprecation shim | M4 |
+| `scripts/utils/degit.sh` | Confirm the exact extraction semantics (dotfile handling, submodules, `.gitattributes` export-ignore) | M4 |
+| `scripts/utils/git-raw.sh` | Confirm whether anything depends on its raw-URL fallback for the no-git case | M4 |
+| `dependency/main/workflows/subrepo-push-release.yml` callers of `subrepo-config.sh` | The parser is GitHub-only and drops `branch`; find what depends on that | M1 |
+| `scripts/extract/dependencies.sh` | It appears to do double duty — classification *and* next-steps printing. Confirm which callers need which | M6 |
+| `dependency/main/workflows/subrepo-push-release.yml` | The refactor target; also where the divergence guard and README status block live | M7 |
+| `dependency/release/workflows/subrepo-pull-into-main.yml` | Path unverified. The revert + PR flow that Tier C must reproduce | M7 |
+| The `initialize` workflow | It generates install instructions into every new dependency's README — determines what must stay backward-compatible | M8 |
+| `.devcontainer/devcontainer.json` | Current features, git-subrepo pin, whether dind is already enabled | M0 |
+| `.tests/` current contents | Avoid duplicating an existing harness | M1 |
+| `dependency/release/core/` current contents | `vendor`/`diff`/`sync` may be partly written already | M7 |
+| The dependency **template repo** | Referenced by `SUEDE_DEPENDENCY_TEMPLATE_PAT`; its structure determines what M8 migrates | M8 |
+
+Also worth deciding and writing down before code starts: shell style (`set -euo pipefail`, shellcheck in CI?), Python formatting conventions given there are no runtime dependencies (dev-time formatters are fine), the pinned git-subrepo version, and whether the dind test environment has network egress — §6.3 needs it for `uses:` resolution unless actions are vendored.
+
+---
+
+## 10. Specification gaps to close before coding
+
+Each of these is a decision an agent would otherwise make silently, and inconsistently across sections. Recommended answers included; override as you like, but pick one.
+
+**10.1 Which declared entry satisfies an edge, when several could.** The unspecified case: the root declares `app.C` @abc *and* `app.C-9c3e11b` @def (a coexist outcome), then `B`'s manifest asks for C @abc. Rule:
+
+> Among root-declared entries whose backing install has the same `remote`, prefer an **exact commit match**. Exactly one remote-match with a different commit is an **override** (announce, proceed). Two or more remote-matches with no exact match is **ambiguous** — prompt, never guess.
+
+Without this, coexist installs are unresolvable downstream, which would quietly defeat the whole conflict story.
+
+**10.2 What fields the extracted manifest `.gitrepo` contains.** A live `.gitrepo` carries `remote, branch, commit, parent, method, cmdver`. Of those, **`parent` is a SHA in the local repository and is meaningless — actively misleading — downstream**, and `cmdver` records the local git-subrepo version. `extract` should write only `remote`, `branch`, `commit`.
+
+`subrepo-config.sh` is a *reader*, not a writer — it emits `OWNER`, `REPO`, `COMMIT` and never touches `parent`. So the question lands entirely on whoever writes into `release/.suede/.dependencies/`: if that step is a `cp` of the live `.gitrepo`, `parent` ships today and should stop. **Still to verify in `extract/dependencies.sh`.**
+
+Note also that `subrepo-config.sh` drops `branch` on the floor. That is invisible today because `branch` is always `release`, but the manifest format names it, so `suede.py` should read and preserve it rather than assume.
+
+**10.3 Exit codes.** The GitHub Action needs to distinguish "check found problems" from "the tool crashed."
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Success |
+| 1 | Unexpected error |
+| 2 | Usage error |
+| 3 | Precondition failure (not a git repo, unborn HEAD) |
+| 4 | Unresolved conflict / deferred |
+| 5 | `check` found at least one FAIL |
+
+**10.4 `--plan-json` schema.** This is a public interface the moment CI consumes it. Pin it with a `version` field:
+
+```json
+{
+  "version": 1,
+  "repo": "my-app", "separator": ".", "separator_source": "inferred",
+  "layout": "flat", "blockers": [], "warnings": [],
+  "acts": [
+    {"op": "install", "entry": "my-app.dockview-suede",
+     "pin": {"remote": "…", "branch": "release", "commit": "4f10c2a…"},
+     "dest": "my-app.dockview-suede", "reason": "required by sweater-vest-suede"},
+    {"op": "link", "entry": "sweater-vest-suede.dockview-suede",
+     "target": "./my-app.dockview-suede"}
+  ],
+  "conflicts": [
+    {"remote": "…", "ancestry": "ancestor", "involves_root": false,
+     "claims": [{"dependent": "my-app.sweater-vest-suede", "commit": "4f10c2a…"}],
+     "options": [{"id": "coexist", "entries": ["…"], "risk": "…"}]}
+  ]
+}
+```
+
+**10.5 Determinism.** Golden-output tests need it. Sort `acts` by `(op_priority, entry)` with `op_priority = install < reuse < link < copy < record < override < npm`; sort `conflicts` by `remote`; sort `claims` by `dependent`. Short SHAs are 7 characters, extended on collision within the tree.
+
+**10.6 Vendored dependencies are exempt from the divergence check.** This asymmetry is easy to get wrong and would break the vendor escape hatch entirely. A release dependency must match its pinned commit — that's what makes the shipped pointer honest. A **vendored** dependency exists precisely *because* it diverges. `diff` and `check` must apply the divergence rule only to release dependencies (backing folders outside `release/`).
+
+**10.7 Consumers have no `release/` directory.** A pure application consuming suede dependencies never publishes, so `extract` is a no-op there and there is no manifest of its own. `check`'s declaration invariant is stated in terms of **root entries**, not in terms of a manifest, precisely so it works in both shapes. Make sure `scan()` doesn't assume `release/` exists.
+
+**10.8 npm merge policy.** Recommendation: add missing entries; on a semver-range conflict, **report and stop** rather than resolving — range unification is a different problem with its own semantics, and guessing here would undercut the "consumer decides" principle. Never write `package-lock.json`; leave that to `npm install`.
+
+**10.9 Cache lifecycle.** `.git/suede-cache/<short-sha>/` persists across runs (it makes re-planning free). Prune entries older than 30 days at startup; `--no-cache` forces a fresh clone. Since it lives under `.git/`, no `.gitignore` entry is needed.
+
+**10.10 Error paths worth writing deliberately.** Each should name the fix, not just the failure: no `release` branch on the remote (the repo isn't a suede dependency, or hasn't published yet); `core.symlinks=false` or symlink creation denied (native Windows — point at WSL 2); remote unreachable or auth required; `python3` present but below 3.9.
+
+**10.11 GitHub lock-in disappears as a side effect.** `subrepo-config.sh` hard-fails on any non-GitHub remote, because it normalizes to `github.com/<owner>/<repo>` to build raw-content URLs. `suede.py` needs none of that: `git clone`/`ls-remote` take the remote verbatim, and the dependency's name is just the URL basename. The only place `owner/name` still matters is the `--repo` convenience flag. **Recommendation: drop the GitHub restriction rather than porting it.** GitLab, Codeberg, and self-hosted git start working for free, and the Tier C harness gets simpler because Gitea remotes stop being a special case.
+
+Two smaller bugs worth not reproducing: `get_value` splits on `=` and keeps only the second field, so any value containing `=` is silently truncated; and the `owner/repo` regex rejects remotes with extra path segments, which self-hosted forges commonly have.
+
+**10.12 Private repositories work for free — and can't be tested offline.** Because all network access goes through `git`, the installer inherits SSH keys and credential helpers with no extra code. Worth stating as intended behaviour, and worth noting that the Tier C harness can't cover it; that belongs in the Tier D canary.
