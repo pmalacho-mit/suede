@@ -1,236 +1,69 @@
 #!/usr/bin/env bash
 #
-# Script to parse in the piped-in content of .gitrepo file,
-# extract the referenced repository information (OWNER/REPO/COMMIT),
-# and download the repository archive at that commit into a local destination.
+# Deprecated. Kept so a copied `https://suede.sh/install/gitrepo` URL keeps
+# working for one release. It translates the v1 arguments and hands over to the
+# bootstrap, which runs `suede.py install --gitrepo`.
 #
-# This script uses remote hosted utilities (extract/subrepo-config.sh and utils/degit.sh)
-# to accomplish its task without requiring a full git clone.
+#   was:  bash <(curl https://suede.sh/install/gitrepo) -d vendor/dep dep.gitrepo
+#   now:  bash <(curl -fsSL https://suede.sh/install/release) \
+#             --gitrepo dep.gitrepo --target vendor --name dep
+#
+# The v2 installer resolves the whole transitive closure, so it also creates
+# the sibling entries this script only ever printed instructions for.
 
 set -euo pipefail
 
-# ----- External Script Dependencies -----
-# These scripts are downloaded and executed at runtime.
 readonly EXTERNAL_SCRIPT_BASE="${SUEDE_SCRIPT_BASE:-https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts}"
-readonly EXTERNAL_SCRIPT_DEGIT="${EXTERNAL_SCRIPT_BASE}/utils/degit.sh"
-readonly EXTERNAL_SCRIPT_EXTRACT_CONFIG="${EXTERNAL_SCRIPT_BASE}/extract/subrepo-config.sh"
-readonly EXTERNAL_SCRIPT_EXTRACT_DEPS="${EXTERNAL_SCRIPT_BASE}/extract/dependencies.sh"
+readonly BOOTSTRAP="$EXTERNAL_SCRIPT_BASE/install/release.sh"
 
-readonly INVOKE_INSTALL_GITREPO="bash <(curl https://suede.sh/install/gitrepo)"
+die() { printf 'install/gitrepo: %s\n' "$*" >&2; exit 1; }
 
-# Color and formatting (only enable when stderr is a TTY)
-if [[ -t 2 ]]; then
-  # Use actual escape sequences (bash $'...') so printf %b works correctly
-  BOLD=$'\033[1m'
-  GREEN=$'\033[32m'
-  YELLOW=$'\033[33m'
-  CYAN=$'\033[36m'
-  RESET=$'\033[0m'
-else
-  BOLD=''
-  GREEN=''
-  YELLOW=''
-  CYAN=''
-  RESET=''
-fi
-
-# Print usage information to stderr.
-usage() {
-  cat >&2 <<USAGE
-Usage: $INVOKE_INSTALL_GITREPO -d <destination> [<path>|-]
-
-Reads the content of a .gitrepo file and installs the referenced repository
-archive at the specified commit into <destination>.
-
-When run inside a git repository, the installed <destination> folder is staged
-and committed automatically so the .gitrepo `parent` field correctly references
-the new commit's parent. Only <destination> is staged; other changes in the
-working tree are left untouched. Outside a git repository, the equivalent
-git add/commit commands are printed instead.
-
-Options:
-  -d, --destination <path>   Destination directory (required)
-  -h, --help                 Show this help and exit
-
-Positional arguments:
-  <path>   Path to a local .gitrepo file. Use '-' to read the content from STDIN.
-
-Examples:
-  # Read from a local file by piping it in:
-  cat release/.gitrepo | $INVOKE_INSTALL_GITREPO -d vendor/release -
-
-  # Or pass the filename directly:
-  $INVOKE_INSTALL_GITREPO -d vendor/release release/.gitrepo
-
-  # Read content from a remote URL:
-  curl -fsSL https://example.com/release/.gitrepo | $INVOKE_INSTALL_GITREPO -d vendor/release -
-USAGE
+notice() {
+  cat >&2 <<'NOTICE'
+install/gitrepo is deprecated and will be removed in the next release.
+  Use: bash <(curl -fsSL https://suede.sh/install/release) --gitrepo <path|-> [--name <entry>]
+NOTICE
 }
 
-# Determine whether a directory contains any entries.  Returns 0 if
-# populated, 1 if empty or nonexistent.
-is_dir_populated() {
-  local dir="$1"
-  [[ -d "$dir" ]] || return 1
-  shopt -s nullglob dotglob
-  local files=("$dir"/*)
-  shopt -u nullglob dotglob
-  (( ${#files[@]} > 0 ))
-}
-
-# ----- Main script begins -----
-
-DEST=""
-DEST_PROVIDED=false
-CONTENT_SOURCE=""
-
-# Process command line arguments.
-while [[ $# -gt 0 ]]; do
+fetch() {
   case "$1" in
-    -d|--destination)
-      DEST="${2-}"
-      DEST_PROVIDED=true
-      if [[ -z "$DEST" ]]; then
-        printf "Error: missing argument to %s\n" "$1" >&2
-        usage
-        exit 1
-      fi
-      shift 2
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    --)
-      shift
-      break
-      ;;
-    -)
-      # '-' is commonly used to indicate reading from STDIN; treat it as a positional argument.
-      CONTENT_SOURCE="-"
-      shift
-      ;;
-    -*)
-      printf "Unknown option: %s\n" "$1" >&2
-      usage
-      exit 1
-      ;;
-    *)
-      if [[ -z "${CONTENT_SOURCE-}" ]]; then
-        CONTENT_SOURCE="$1"
-        shift
-      else
-        printf "Error: unexpected positional argument: %s\n" "$1" >&2
-        usage
-        exit 1
-      fi
-      ;;
+    file://*) cat "${1#file://}" ;;
+    /*)       cat "$1" ;;
+    *)        curl -fsSL "$1" ;;
   esac
-done
-
-# Ensure destination was provided.
-if [[ "${DEST_PROVIDED-}" != true ]]; then
-  printf "Error: destination is required (--destination/-d)\n" >&2
-  usage
-  exit 1
-fi
-
-# Read .gitrepo content from the positional argument, or from stdin if '-' or if content is piped.
-if [[ -n "${CONTENT_SOURCE-}" ]]; then
-  if [[ "$CONTENT_SOURCE" == "-" ]]; then
-    GITREPO_CONTENT="$(cat -)"
-  elif [[ -f "$CONTENT_SOURCE" ]]; then
-    GITREPO_CONTENT="$(< "$CONTENT_SOURCE")"
-  else
-    printf "Error: '%s' is not a readable file\n" "$CONTENT_SOURCE" >&2
-    exit 1
-  fi
-else
-  # No positional arg given; attempt to read from stdin if available.
-  if [ -t 0 ]; then
-    printf "Error: no .gitrepo content provided; pass a file path or pipe content via '-' or stdin\n" >&2
-    usage
-    exit 1
-  fi
-  GITREPO_CONTENT="$(cat -)"
-fi
-
-# Ensure we have non-empty content.
-if [[ -z "${GITREPO_CONTENT//[[:space:]]/}" ]]; then
-  printf "Error: .gitrepo content is empty\n" >&2
-  exit 1
-fi
-
-# Canonicalise DEST to remove any trailing slashes.
-DEST="${DEST%/}"
-
-# Check whether destination exists and is non-empty.
-if is_dir_populated "$DEST"; then
-  printf "Error: destination '%s' already exists and is not empty.\n" "$DEST" >&2
-  exit 1
-fi
-
-# Ensure destination directory exists and is empty now.
-mkdir -p "$DEST"
-
-# Parse the .gitrepo content to extract OWNER, REPO, and COMMIT.
-eval "$(echo "$GITREPO_CONTENT" | bash <(curl -fsSL "$EXTERNAL_SCRIPT_EXTRACT_CONFIG"))" || {
-  printf "Error: failed to parse .gitrepo content\n" >&2
-  exit 1
 }
 
-# Download and extract repository archive.
-printf "Downloading %s/%s@%s into %s...\n" "$OWNER" "$REPO" "$COMMIT" "$DEST" >&2
-bash <(curl -fsSL "$EXTERNAL_SCRIPT_DEGIT") \
-  --repo     "${OWNER}/${REPO}" \
-  --commit   "${COMMIT}" \
-  --destination "${DEST}" || {
-    printf "Error: failed to download and extract release\n" >&2
-    exit 1
-  }
-
-# Get the current commit SHA of the parent repository.
-PARENT_COMMIT=$(git rev-parse HEAD 2>/dev/null) || {
-  printf "Warning: could not determine current commit SHA (not in a git repository?)\n" >&2
-  PARENT_COMMIT=""
+# v1 took the .gitrepo as a positional argument and the destination as -d.
+translate() {
+  ARGUMENTS=()
+  local source=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -d|--destination)
+        [[ -n "${2-}" ]] || die "missing argument to $1"
+        ARGUMENTS+=(-d "$2")
+        shift 2
+        ;;
+      -h|--help) notice; exit 0 ;;
+      --) shift ;;
+      -|*)
+        [[ -z "$source" ]] || die "unexpected argument: $1"
+        source="$1"
+        shift
+        ;;
+    esac
+  done
+  [[ -n "$source" ]] || die "no .gitrepo given; pass a path or - to read stdin"
+  ARGUMENTS+=(--gitrepo "$source")
 }
 
-# Update the parent line in the .gitrepo content if we have a parent commit.
-if [[ -n "$PARENT_COMMIT" ]]; then
-  GITREPO_CONTENT=$(echo "$GITREPO_CONTENT" | sed "s/^\(\s*parent\s*=\s*\).*/\1$PARENT_COMMIT/")
-fi
+notice
+translate "$@"
 
-# Save the .gitrepo content into the destination as `.gitrepo`.
-echo "$GITREPO_CONTENT" > "$DEST/.gitrepo"
+WORKSPACE="$(mktemp -d)"
+trap 'rm -rf "$WORKSPACE"' EXIT
+fetch "$BOOTSTRAP" > "$WORKSPACE/release.sh" || die "could not fetch $BOOTSTRAP"
 
-printf "%s✓ Successfully extracted %s/%s@%s into %s%s\n" "$BOLD$GREEN" "$OWNER" "$REPO" "$COMMIT" "$DEST" "$RESET" >&2
-
-# Construct a commit message similar to the original if owner/repo/commit were provided
-if [[ -n "$OWNER" ]] && [[ -n "$REPO" ]] && [[ -n "$COMMIT" ]]; then
-  commit_msg="Add suede dependency (release) $OWNER/$REPO@$COMMIT"
-else
-  commit_msg="Add suede dependency (release)"
-fi
-
-# Commit the newly installed folder as the immediate next commit so the .gitrepo
-# `parent` field (set above to the pre-install HEAD) correctly references this
-# commit's parent. Only the install destination is staged, so any unrelated
-# changes already in the working tree are left untouched.
-if [[ -n "$PARENT_COMMIT" ]]; then
-  if git add -- "$DEST" >&2 && git commit -q -m "$commit_msg" >&2; then
-    printf "%s✓ Committed %s as %s%s\n" "$BOLD$GREEN" "$DEST" "$(git rev-parse --short HEAD)" "$RESET" >&2
-  else
-    printf "Error: failed to commit %s\n" "$DEST" >&2
-    exit 1
-  fi
-else
-  # Not in a git repository — fall back to printing manual commit instructions.
-  printf "%sCommit the changes to your repository:%s\n" "$BOLD" "$RESET" >&2
-  printf "  %s%s%s\n" "$GREEN" "git add $DEST" "$RESET" >&2
-  printf "    %s%s%s\n\n" "$GREEN" "git commit -m '$commit_msg'" "$RESET" >&2
-fi
-
-# Print any remaining manual next steps (npm deps / nested subrepos to install).
-if ! bash <(curl -fsSL "$EXTERNAL_SCRIPT_EXTRACT_DEPS") "$DEST" --message "NEXT STEPS" >&2; then
-  printf "Warning: failed to generate NEXT STEPS\n" >&2
-fi
+STATUS=0
+bash "$WORKSPACE/release.sh" ${ARGUMENTS[@]+"${ARGUMENTS[@]}"} || STATUS=$?
+exit "$STATUS"

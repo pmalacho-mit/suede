@@ -6,6 +6,51 @@ on-disk path, so `scripts/install/release.sh` is served at both
 `https://suede.sh/install/release` and
 `https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install/release.sh`.
 
+## `suede.py`
+
+The installer. A single dependency-free Python 3.9 file: everything install,
+`check`, `list`, `remove` and `extract` do lives here, and every other script
+below is either a thin shell around it or a v1 script kept for compatibility.
+
+```bash
+python3 suede.py install --repo OWNER/REPO [--dry-run|--yes|--commit]
+python3 suede.py check [--plan-json]
+python3 suede.py list  [--json]
+python3 suede.py remove <entry>
+python3 suede.py extract
+```
+
+Consumers normally reach it through the bootstrap rather than downloading it
+themselves:
+
+```bash
+bash <(curl -fsSL https://suede.sh/install/release) --repo OWNER/REPO
+```
+
+It is one readable file on purpose — if you hit a problem on an unusual system,
+download it, open it, and patch it. See
+[DEPENDENCIES-OF-DEPENDENCIES.md](../DEPENDENCIES-OF-DEPENDENCIES.md) for what a
+dependency is and [INSTALL.md](../INSTALL.md) for how one gets installed.
+
+## Deprecated
+
+These are v1 endpoints. They still work — the URLs are copied into READMEs and
+shell histories — but they forward to `suede.py` or are superseded by it, and
+they will be removed after one release.
+
+| Endpoint | Use instead |
+| --- | --- |
+| `install/gitrepo.sh` | `suede.py install --gitrepo <path\|->` (the shim forwards to it) |
+| `utils/degit.sh` | `git clone --depth 1 --branch release`, which `suede.py` does for you |
+| `utils/git-raw.sh` | Nothing needs it: all network access now goes through `git` |
+| `extract/subrepo-config.sh` | `git config -f <file> --get subrepo.<key>` |
+| `extract/dependencies.sh` | `suede.py extract` for classification; the install announce block for next steps |
+
+`utils/git-raw.sh` and `extract/subrepo-config.sh` are also the two places
+GitHub was hard-coded. `suede.py` has no such restriction — `git clone` and
+`git ls-remote` take a remote verbatim — so GitLab, Codeberg and self-hosted
+git work.
+
 ## `extract/`
 
 ### `extract/subrepo-config.sh`
@@ -37,10 +82,11 @@ bash <(curl https://suede.sh/install/release) --repo OWNER/REPO [--branch BRANCH
 
 ### `install/gitrepo.sh`
 
-Reads the content of a `.gitrepo` file and downloads/extracts the referenced repository archive into a destination.
+**Deprecated.** Translates the v1 arguments and hands over to the bootstrap, so
+a copied URL keeps working for one release.
 
 ```bash
-bash <(curl https://suede.sh/install/gitrepo) -d <destination> [<file.gitrepo>|-]
+bash <(curl -fsSL https://suede.sh/install/gitrepo) -d <destination> [<file.gitrepo>|-]
 ```
 
 ## `populate/`

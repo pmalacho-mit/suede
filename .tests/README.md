@@ -1,5 +1,26 @@
 # Test suite
 
+Three suites, cheapest first. The rule: **push every assertion to the cheapest
+layer that can hold it.** Anything provable against a literal `World` must not
+be tested with a git repository.
+
+| Suite | What it holds | Run |
+| --- | --- | --- |
+| `unit/` | The planner and `check`, pure over literal `World`s — no repos, no network, no fixtures | `python3 -m unittest discover .tests/unit -t .tests/unit` |
+| `integration/` | That the tree suede writes is the tree it planned, against generated local repos | `python3 -m unittest discover .tests/integration -t .tests/integration` |
+| colocated `**/.tests/*.sh` | The shell surface: bootstrap argument translation, the v1 scripts | `bash .tests/harness/run-all.sh` |
+
+`fixtures/make_graph.py` builds a graph of local bare repos from a small spec,
+each with a real `release` branch and `.suede/.dependencies/`, so integration
+tests exercise the actual manifest format rather than a mock of it.
+
+`unit/test_purity.py` replaces the git layer with an object that raises on any
+use, so the pure boundary fails loudly if it ever leaks. That boundary is the
+reason the scenario matrix stays cheap.
+
+The shell suite below is unchanged.
+
+
 Colocated tests (`**/.tests/*.sh`, where `.tests` is the immediate parent) are
 discovered and run by `.tests/harness/run-all.sh` on top of the shared harness
 in `.tests/harness/`. The whole suite is **offline and deterministic** — no

@@ -79,8 +79,12 @@ This branch is what consumers actually install. It's kept automatically synchron
 To consume a dependency, make use of [./scripts/install/release.sh](./scripts/install/release.sh) and specify the `--repo` flag (or `-r` shortahand) in the form `<repo owner>/<repo name>` (e.g., `pmalacho-mit/suede`).
 
 ```bash
-bash <(curl https://suede.sh/install/release) --repo <owner/name> 
+bash <(curl -fsSL https://suede.sh/install/release) --repo <owner/name>
 ```
+
+> [!IMPORTANT]
+> Keep the `-f`. Without it a failed download (a 404 page, a proxy error) is
+> handed to `bash` and executed.
 
 > [!NOTE]  
 > The above leverages [`curl`](https://curl.se/), [process substition (`bash <(...)`)](https://tldp.org/LDP/abs/html/process-sub.html), and our [suede.sh script proxy](#suedesh) to download and execute the [install script](./scripts/install/release.sh) in a single, concise line.
@@ -92,18 +96,52 @@ See alternative to using <a href="#suedesh">suede.sh</a> script proxy
 </summary>
 
 ```bash
-bash <(curl https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install/release.sh) --repo <owner/name> 
+bash <(curl -fsSL https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install/release.sh) --repo <owner/name>
 ```
 
 </details>
 
-The [install script](./scripts/install/release.sh) will inspect the `./release/.gitrepo` file of the dependency's `main` branch to determine the appropriate commit of its `release` branch to install (see more in [Anatomy of a Suede Dependency](#anatomy-of-a-suede-dependency)). 
+The one-liner is a bootstrap: it finds a Python 3.9+, downloads
+[`scripts/suede.py`](./scripts/suede.py), and runs it.
 
-It then will extract the `release` branch's content to a folder named the same as the dendency's repository (or use the `--dest` flag / `-d` shorthand to install the depenency to a different location).
+The installer resolves the dependency's `release` branch, then **its**
+dependencies, and so on, and shows you the whole plan before touching anything:
 
-If the installed dependency depends on other resources (e.g., an [npm](https://www.npmjs.com/) package or another suede dependency), install instructions will be printed to the console (see more in [Dependencies of Dependencies](#dependencies-of-dependencies)).
+```
+PLAN
 
-Finally, `git add` & `git commit` the new files.
+  install   my-app.sweater-vest-suede            @ 86abeeb   (requested)
+  install   my-app.dockview-svelte-suede         @ 4f10c2a   (required by sweater-vest-suede)
+  reuse     my-app.mixin-suede                   @ 9bb0e41   (already present)
+
+  link      sweater-vest-suede.dockview-svelte-suede  -> ./my-app.dockview-svelte-suede
+
+Proceed? [Y/n]
+```
+
+Everything in the closure is installed once, flat at the repo root, named
+`$repo.<dependency>`; each dependent gets a symlink to it. Two dependents
+wanting the same dependency at different commits is a **conflict**, and the
+installer offers the resolutions rather than picking one. See
+[DEPENDENCIES-OF-DEPENDENCIES.md](./DEPENDENCIES-OF-DEPENDENCIES.md) for why,
+and [INSTALL.md](./INSTALL.md) for the full algorithm.
+
+Installs are **staged, not committed** — review them, then `git commit`, or
+pass `--commit`.
+
+### The other commands
+
+```bash
+suede check                 # audit the tree: undeclared, missing and dangling entries
+suede list  [--json]        # every dependency, its classification, target and pin
+suede remove <entry>        # drop an entry; reports what becomes orphaned, deletes nothing
+suede extract               # write release/.suede/.dependencies/ (what the action runs)
+```
+
+Useful install flags: `--dry-run`, `--plan-json`, `--yes`, `--commit`,
+`--on-conflict coexist|unify-newest|defer`, `--separator`, `--target`,
+`--name`. Exit codes: `0` success, `2` usage, `3` precondition, `4` unresolved
+conflict, `5` `check` found a failure.
 
 You then have the dependency's source code [vendored](https://htmx.org/essays/vendoring/) into your repository. You can modify and track changes to it the same as any other code in your repository and only need to amend your typical development workflow when you want to:
 - Sync the dependency (see [upgrading](#upgrading-ie-pulling)).
@@ -185,6 +223,15 @@ After your dependency repository is set up, you can maintain and develop it as y
 In summary, do your day-to-day development on `main` (or a sub-branch), keep the `./release` folder up-to-date with the code you want to distribute, and let the automation handle syncing that code to the `release` branch.
 
 ### Dependencies of Dependencies
+
+> [!IMPORTANT]
+> The rule below is v1: it promoted **any** root folder containing a
+> `.gitrepo`. v2 requires the folder to be announced by a root entry named
+> `$repo$SEP<dependency>` — the separator is part of the match, so
+> `suede-extras/` in a repo named `suede` is no longer silently promoted.
+> [DEPENDENCIES-OF-DEPENDENCIES.md](./DEPENDENCIES-OF-DEPENDENCIES.md) defines
+> the three kinds of dependency and how to migrate; `suede list` shows how your
+> tree classifies today.
 
 If your suede dependency relies on other libraries or modules, the [subrepo-push-release](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) Github Action will automatically capture these dependencies with the following conventions:
 
@@ -310,6 +357,17 @@ curl https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/script
 The source code for the suede.sh worker is available at [github.com/pmalacho-mit/suede-cloudflare-worker](https://github.com/pmalacho-mit/suede-cloudflare-worker) for review.
 
 ## Prequisites
+
+### Python 3.9 or newer
+
+The installer is a single dependency-free Python file. macOS ships a suitable
+interpreter with the Command Line Tools (`xcode-select --install`); most Linux
+distributions have one already. Nothing is installed from PyPI — there are no
+runtime dependencies, which is what lets you read
+[`scripts/suede.py`](./scripts/suede.py) and patch it if you ever need to.
+
+`git` is required too, and does all the network access, so private
+repositories, SSH keys and credential helpers work with no extra setup.
 
 ### Install [git-subrepo](https://github.com/ingydotnet/git-subrepo) 
 

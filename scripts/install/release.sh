@@ -1,194 +1,90 @@
 #!/usr/bin/env bash
 #
-# Script to fetch a release/.gitrepo file from a remote repository, parse it
-# to extract the referenced repository information (OWNER/REPO/COMMIT), and
-# download the repository archive at that commit into a local destination.
+# Bootstrap for the suede installer.
 #
-# This script uses remote hosted utilities (utils/git-raw.sh, extract/subrepo-config.sh,
-# and utils/degit.sh) to accomplish its task without requiring a full git clone.
+#   bash <(curl -fsSL https://suede.sh/install/release) --repo OWNER/REPO
+#
+# Finds a Python 3.9+, downloads scripts/suede.py, and hands it the arguments.
+# Everything the installer does lives in that one readable file; this script
+# exists only because the documented one-liner is baked into every dependency
+# README the initialize workflow has ever generated.
+#
+# Run `suede.py install --help` for the full option list.
+#
+# Overrides (used by the test suite):
+#   SUEDE_PY   where to fetch suede.py from; a path or file:// URL works
 
 set -euo pipefail
 
-# ----- External Script Dependencies -----
-# These scripts are downloaded and executed at runtime.
-readonly EXTERNAL_SCRIPT_BASE="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts"
-readonly EXTERNAL_SCRIPT_GIT_RAW="${EXTERNAL_SCRIPT_BASE}/utils/git-raw.sh"
-readonly EXTERNAL_SCRIPT_INSTALL="${EXTERNAL_SCRIPT_BASE}/install/gitrepo.sh"
+readonly SUEDE_PY="${SUEDE_PY:-https://suede.sh/suede}"
+readonly MINIMUM_PYTHON="3.9"
 
-# Print usage information to stderr.
-usage() {
-  cat >&2 <<'USAGE'
-Usage: bash <(curl https://suede.sh/install/release) [OPTIONS] --repo OWNER/REPO
+die() { printf 'install/release: %s\n' "$*" >&2; exit 1; }
 
-Fetch and extract the repository specified in a remote repository's release/.gitrepo file.
-
-Options:
-  -r, --repo OWNER/REPO (required) source repository containing release/.gitrepo
-  -b, --branch BRANCH   branch to fetch release/.gitrepo from (default: main)
-  -d, --destination DIR destination directory to extract into (default: repo name).
-                        By default the destination is used exactly as given/derived.
-                        Pass --commit-suffix to append the short SHA (first 7 chars)
-                        of the installed commit.
-      --commit-suffix   append the commit short SHA to the destination
-                        (e.g. ./sdk-release becomes ./sdk-release-7aeab3b)
-  -h, --help            display this help and exit
-
-Notes:
-  • The script fetches the release/.gitrepo file from the specified repository
-    and branch, parses it to determine the actual release repository and commit,
-    then downloads that release into the destination directory.
-  • If --destination is not provided, the destination will be derived from the release
-    repository name (the REPO value from release/.gitrepo, not the source repo).
-  • By default the destination is used exactly as given/derived. When
-    --commit-suffix is passed, the destination is suffixed with "-<short-sha>",
-    where <short-sha> is the first 7 characters of the commit referenced by
-    release/.gitrepo (e.g. ./sdk-release becomes ./sdk-release-7aeab3b). This
-    pins the install location to the installed commit.
-  • The destination directory must be empty or nonexistent.
-
-Examples:
-  # installs into ./zoom-sdk-suede
-  bash <(curl https://suede.sh/install/release) -r pmalacho-mit/zoom-sdk-suede
-  # installs into ./sdk-release
-  bash <(curl https://suede.sh/install/release) -r pmalacho-mit/zoom-sdk-suede -b main --destination ./sdk-release
-  # installs into ./my-release-<short-sha>
-  bash <(curl https://suede.sh/install/release) -r owner/repo -b develop --destination ./my-release --commit-suffix
-USAGE
+# The first interpreter new enough to run the installer. `python3` is tried
+# first so an activated virtualenv wins; the numbered names cover systems where
+# `python3` is older than what is also installed alongside it.
+find_python() {
+  local candidate
+  for candidate in python3 python3.13 python3.12 python3.11 python3.10 python3.9 python; do
+    command -v "$candidate" >/dev/null 2>&1 || continue
+    "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' \
+      >/dev/null 2>&1 || continue
+    printf '%s\n' "$candidate"
+    return 0
+  done
+  return 1
 }
 
-# Determine whether a directory contains any entries.  Returns 0 if
-# populated, 1 if empty or nonexistent.
-is_dir_populated() {
-  local dir="$1"
-  [[ -d "$dir" ]] || return 1
-  shopt -s nullglob dotglob
-  local files=("$dir"/*)
-  shopt -u nullglob dotglob
-  (( ${#files[@]} > 0 ))
-}
-
-# ----- Main script begins -----
-
-# Initialize variables for argument parsing.
-REPO=""
-BRANCH="main"
-DEST=""
-COMMIT_SUFFIX=false
-
-# Process command line arguments.
-while [[ $# -gt 0 ]]; do
+fetch() {
   case "$1" in
-    -r|--repo)
-      REPO="${2-}"
-      if [[ -z "$REPO" ]]; then
-        printf "Error: missing argument to %s\n" "$1" >&2
-        usage
-        exit 1
-      fi
-      shift 2
-      ;;
-    -b|--branch)
-      BRANCH="${2-}"
-      if [[ -z "$BRANCH" ]]; then
-        printf "Error: missing argument to %s\n" "$1" >&2
-        usage
-        exit 1
-      fi
-      shift 2
-      ;;
-    -d|--destination)
-      DEST="${2-}"
-      if [[ -z "$DEST" ]]; then
-        printf "Error: missing argument to %s\n" "$1" >&2
-        usage
-        exit 1
-      fi
-      shift 2
-      ;;
-    --commit-suffix)
-      COMMIT_SUFFIX=true
-      shift
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    --)
-      shift
-      break
-      ;;
-    -*)
-      printf "Unknown option: %s\n" "$1" >&2
-      usage
-      exit 1
-      ;;
-    *)
-      printf "Error: unexpected positional argument: %s\n" "$1" >&2
-      usage
-      exit 1
-      ;;
+    file://*) cp "${1#file://}" "$2" ;;
+    /*)       cp "$1" "$2" ;;
+    *)        curl -fsSL "$1" -o "$2" ;;   # -f: a 404 body must never reach python
   esac
-done
+}
 
-# Validate required arguments.
-if [[ -z "$REPO" ]]; then
-  printf "Error: --repo OWNER/REPO is required\n" >&2
-  usage
-  exit 1
-fi
+# v1 flags that still appear in generated READMEs. `--branch` named the branch
+# holding release/.gitrepo, a lookup v2 does not perform: it resolves the
+# release branch on the remote directly.
+translate() {
+  ARGUMENTS=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -b|--branch)
+        printf 'install/release: ignoring "%s %s" - v2 resolves the release branch directly\n' \
+          "$1" "${2-}" >&2
+        shift 2
+        ;;
+      -d|--destination)
+        [[ -n "${2-}" ]] || die "missing argument to $1"
+        ARGUMENTS+=(--name "$(basename "${2%/}")")
+        [[ "$(dirname "${2%/}")" == "." ]] || ARGUMENTS+=(--target "$(dirname "${2%/}")")
+        shift 2
+        ;;
+      *)
+        ARGUMENTS+=("$1")
+        shift
+        ;;
+    esac
+  done
+}
 
-if [[ "$REPO" != */* ]]; then
-  printf "Error: --repo must be OWNER/REPO (got %s)\n" "$REPO" >&2
-  exit 1
-fi
+command -v curl >/dev/null 2>&1 || die "curl not found"
 
-printf "Fetching release/.gitrepo from %s (branch: %s)...\n" "$REPO" "$BRANCH" >&2
+PYTHON="$(find_python)" || die \
+  "no python3 >= $MINIMUM_PYTHON found. macOS ships one with the Command Line Tools
+  (xcode-select --install); on Linux install the python3 package for your distribution."
 
-# Fetch the release/.gitrepo file from the remote repository.
-GITREPO_CONTENT=$(bash <(curl -fsSL "$EXTERNAL_SCRIPT_GIT_RAW") \
-  --repo "$REPO" \
-  --branch "$BRANCH" \
-  --file "release/.gitrepo") || {
-    printf "Error: failed to fetch release/.gitrepo from %s (branch: %s)\n" "$REPO" "$BRANCH" >&2
-    exit 1
-  }
+WORKSPACE="$(mktemp -d)"
+trap 'rm -rf "$WORKSPACE"' EXIT
 
-# Determine destination if not provided (use only the repo name part of OWNER/REPO).
-if [[ -z "$DEST" ]]; then
-  DEST="${REPO#*/}"
-  printf "Auto-derived destination: %s\n" "$DEST" >&2
-fi
+fetch "$SUEDE_PY" "$WORKSPACE/suede.py" || die "could not download the installer from $SUEDE_PY"
 
-# When --commit-suffix is given, extract the referenced commit from the fetched
-# release/.gitrepo and suffix the destination with its short SHA (first 7 chars,
-# matching git's short-hash convention) so the install location is pinned to the
-# installed commit. By default this is skipped, leaving the destination exactly
-# as given/derived.
-if [[ "$COMMIT_SUFFIX" == true ]]; then
-  COMMIT=$(printf '%s\n' "$GITREPO_CONTENT" | awk -F'=' '
-    $0 ~ /^[[:space:]]*commit[[:space:]]*=/ {
-      val = $2
-      sub(/^[[:space:]]+/, "", val)
-      sub(/[[:space:]]+$/, "", val)
-      print val
-    }' | tail -n1)
+translate "$@"
 
-  if [[ -z "$COMMIT" ]]; then
-    printf "Error: could not find a commit in the fetched release/.gitrepo\n" >&2
-    exit 1
-  fi
-
-  DEST="${DEST%/}-${COMMIT:0:7}"
-  printf "Commit-suffixed destination: %s\n" "$DEST" >&2
-fi
-
-# Delegate installation to the hosted `install-gitrepo` script by piping the
-# fetched release/.gitrepo content into it.  This centralizes parsing,
-# extraction and any extra dependency handling in a single place.
-if ! echo "$GITREPO_CONTENT" | bash <(curl -fsSL "$EXTERNAL_SCRIPT_INSTALL") -d "$DEST" -; then
-  printf "Error: install-gitrepo failed to install the release into %s\n" "$DEST" >&2
-  exit 1
-fi
-
-# `install-gitrepo` prints success and next steps; mirror its success exit.
-exit 0
+# Not `exec`: the installer's exit code is the contract (see suede.py's Exit
+# table), and the trap above still has a workspace to remove.
+STATUS=0
+"$PYTHON" "$WORKSPACE/suede.py" install ${ARGUMENTS[@]+"${ARGUMENTS[@]}"} || STATUS=$?
+exit "$STATUS"

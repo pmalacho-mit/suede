@@ -1,0 +1,76 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # macOS is not optional: it is the only runner that catches case-insensitive
+  # entry collisions, and it is the platform that sets the 3.9 floor.
+  python:
+    name: python ${{ matrix.python }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "test@example.test"
+          git config --global user.name "suede tests"
+          git config --global init.defaultBranch main
+
+      # A version guard inside the file cannot save you from a SyntaxError, so
+      # gate on the parser itself at the floor version.
+      - name: Compile under the minimum supported Python
+        run: python -m py_compile scripts/suede.py
+
+      - name: Unit tests (pure, no fixtures)
+        run: python -m unittest discover .tests/unit -t .tests/unit -v
+
+      - name: Integration tests (real git, generated fixtures)
+        run: python -m unittest discover .tests/integration -t .tests/integration
+
+  shell:
+    name: shell suite (git-subrepo ${{ matrix.subrepo }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - subrepo: "0.4.9"
+            required: true
+          - subrepo: "main"
+            required: false
+    continue-on-error: ${{ !matrix.required }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "test@example.test"
+          git config --global user.name "suede tests"
+
+      # Pinned by default; `main` runs alongside so a change in git-subrepo's
+      # assumptions fails loudly here rather than silently downstream.
+      - name: Install git-subrepo
+        run: |
+          git clone --quiet --branch "${{ matrix.subrepo }}" \
+            https://github.com/ingydotnet/git-subrepo "$HOME/.git-subrepo"
+          echo "$HOME/.git-subrepo/lib" >> "$GITHUB_PATH"
+
+      - name: Check git-subrepo installation
+        run: git subrepo --version
+
+      - name: Run the shell suite
+        run: bash .tests/harness/run-all.sh
