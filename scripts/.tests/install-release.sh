@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Offline test for the install/gitrepo and install/release compatibility path.
+# Offline test for the install/release bootstrap.
 #
-# Both are argument translators over one real installer, so what is worth
-# pinning is the translation: which flags survive, which are dropped, and what
-# `suede.py install` is finally asked to do. SUEDE_PY points at a stub that
-# records its argv, so no python, network or repository is involved.
+# The bootstrap is an argument translator over one real installer, so what is
+# worth pinning is the translation: which flags survive, which are dropped, and
+# what `suede.py install` is finally asked to do. SUEDE_PY points at a stub that
+# records its argv, so no network and no repository are involved.
 set -euo pipefail
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_DIR="$(cd "$TESTS_DIR/.." && pwd)"
@@ -67,27 +67,8 @@ release_keeps_commit_suffix() {
     "--commit-suffix survives"
 }
 
-gitrepo_shim_forwards_the_file_as_a_source() {
-  bash "$SCRIPTS_DIR/install/gitrepo.sh" -d vendor/dep example.gitrepo 2>/dev/null >/dev/null
-  assert_argv "$(printf 'install\n--name\ndep\n--target\nvendor\n--gitrepo\nexample.gitrepo')" \
-    "the positional .gitrepo becomes --gitrepo"
-}
-
-gitrepo_shim_announces_that_it_is_deprecated() {
-  local output
-  output="$(bash "$SCRIPTS_DIR/install/gitrepo.sh" -d dep example.gitrepo 2>&1 >/dev/null)"
-  if [[ "$output" == *"deprecated"* ]]; then
-    log_pass "the shim says it is deprecated"
-  else
-    log_failure "the shim says it is deprecated"
-    return 1
-  fi
-}
-
 run_test_suite --setup setup --cleanup cleanup \
   release_passes_repo_through \
   release_translates_destination_into_target_and_name \
   release_drops_the_v1_metadata_branch_flag \
-  release_keeps_commit_suffix \
-  gitrepo_shim_forwards_the_file_as_a_source \
-  gitrepo_shim_announces_that_it_is_deprecated
+  release_keeps_commit_suffix

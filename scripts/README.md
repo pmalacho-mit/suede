@@ -32,42 +32,25 @@ download it, open it, and patch it. See
 [DEPENDENCIES-OF-DEPENDENCIES.md](../DEPENDENCIES-OF-DEPENDENCIES.md) for what a
 dependency is and [INSTALL.md](../INSTALL.md) for how one gets installed.
 
-## Deprecated
+## Removed in v2
 
-These are v1 endpoints. They still work — the URLs are copied into READMEs and
-shell histories — but they forward to `suede.py` or are superseded by it, and
-they will be removed after one release.
+These were absorbed into `suede.py`. Their `https://suede.sh/...` URLs now
+return a readable 404 rather than a script.
 
-| Endpoint | Use instead |
+| Removed | What replaced it |
 | --- | --- |
-| `install/gitrepo.sh` | `suede.py install --gitrepo <path\|->` (the shim forwards to it) |
-| `utils/degit.sh` | `git clone --depth 1 --branch release`, which `suede.py` does for you |
-| `utils/git-raw.sh` | Nothing needs it: all network access now goes through `git` |
+| `install/gitrepo.sh` | `suede.py install --gitrepo <path\|->` |
+| `utils/degit.sh` | `git clone --depth 1` + a hand-written `.gitrepo`, which the installer does for you |
+| `utils/git-raw.sh` | Nothing needs it: all network access goes through `git` |
 | `extract/subrepo-config.sh` | `git config -f <file> --get subrepo.<key>` |
 | `extract/dependencies.sh` | `suede.py extract` for classification; the install announce block for next steps |
+| `populate/dependencies.sh` | `suede.py extract` |
+| `actions/push-release.sh` | `dependency/main/core/push-release.sh`, which also runs the publish guard |
 
-`utils/git-raw.sh` and `extract/subrepo-config.sh` are also the two places
-GitHub was hard-coded. `suede.py` has no such restriction — `git clone` and
+`utils/git-raw.sh` and `extract/subrepo-config.sh` were the two places GitHub
+was hard-coded. `suede.py` has no such restriction — `git clone` and
 `git ls-remote` take a remote verbatim — so GitLab, Codeberg and self-hosted
 git work.
-
-## `extract/`
-
-### `extract/subrepo-config.sh`
-
-Parses a git-subrepo `.gitrepo` file from stdin and outputs `OWNER`, `REPO`, and `COMMIT` as `KEY=VALUE` pairs.
-
-```bash
-cat .gitrepo | bash <(curl https://suede.sh/extract/subrepo-config)
-```
-
-### `extract/dependencies.sh`
-
-Summarizes the `.suede/.dependencies` of an installed gitrepo and prints NEXT STEPS (npm install line + nested suede dependencies to install).
-
-```bash
-bash <(curl https://suede.sh/extract/dependencies) <dest> [--message TEXT] [--emit-add-targets]
-```
 
 ## `install/`
 
@@ -80,27 +63,7 @@ bash <(curl https://suede.sh/install/release) --repo OWNER/REPO [--branch BRANCH
 # Defaults: --branch=main, --destination=./<repo-name>
 ```
 
-### `install/gitrepo.sh`
-
-**Deprecated.** Translates the v1 arguments and hands over to the bootstrap, so
-a copied URL keeps working for one release.
-
-```bash
-bash <(curl -fsSL https://suede.sh/install/gitrepo) -d <destination> [<file.gitrepo>|-]
-```
-
 ## `populate/`
-
-### `populate/dependencies.sh`
-
-Collects dependency metadata into `release/.suede/.dependencies/`: copies `.gitrepo` files from child folders, extracts package.json dependencies, and copies requirements.txt.
-
-```bash
-./populate/dependencies.sh
-```
-
-> [!NOTE]  
-> Used in [subrepo-push-release](../templates/dependency/main/.github/workflows/subrepo-push-release.yml) Github Action
 
 ### `populate/readme-after-init.sh`
 
@@ -161,26 +124,6 @@ Proposes a vendored dependency's local changes upstream as a reviewable PR, with
 
 ```bash
 bash <(curl https://suede.sh/upstream) <path-to-dependency> [-r|--remote NAME]
-```
-
-## `utils/`
-
-### `utils/degit.sh`
-
-Downloads a GitHub repository archive at a specific commit/branch without cloning.
-
-```bash
-bash <(curl https://suede.sh/utils/degit) --repo OWNER/REPO [--commit SHA] [--branch BRANCH] [--destination DIR] [--include PATH...]
-# Defaults: --branch=<default-branch>, --destination=./<repo-name>
-```
-
-### `utils/git-raw.sh`
-
-Fetches a single raw file from a GitHub repository at a specific ref.
-
-```bash
-bash <(curl https://suede.sh/utils/git-raw) --repo OWNER/REPO --file PATH [--branch BRANCH] [--commit SHA]
-# Defaults: --branch=HEAD
 ```
 
 ## `curl` Flags Reference

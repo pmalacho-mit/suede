@@ -6,10 +6,10 @@ readonly EXTERNAL_UPSTREAM="https://raw.githubusercontent.com/pmalacho-mit/suede
 readonly LOCAL_UPSTREAM="$TESTS_DIR/../../upstream.sh"
 readonly EXTERNAL_INIT="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/actions/init-release-subrepo.sh"
 readonly LOCAL_INIT="$TESTS_DIR/../init-release-subrepo.sh"
-readonly EXTERNAL_REBUILD="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/actions/rebuild-pr-branch.sh"
-readonly LOCAL_REBUILD="$TESTS_DIR/../rebuild-pr-branch.sh"
-readonly EXTERNAL_SYNC="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/actions/push-release.sh"
-readonly LOCAL_SYNC="$TESTS_DIR/../push-release.sh"
+readonly EXTERNAL_REBUILD="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/dependency/main/core/rebuild-pr-branch.sh"
+readonly LOCAL_REBUILD="$TESTS_DIR/../../../dependency/main/core/rebuild-pr-branch.sh"
+readonly ROOT_DIR="$(cd "$TESTS_DIR/../../.." && pwd)"
+readonly PUSH_RELEASE="$ROOT_DIR/dependency/main/core/push-release.sh"
 source "$HARNESS/runner.sh"; source "$HARNESS/color-logging.sh"
 source "$HARNESS/mock-curl.sh"; source "$HARNESS/with-local-suede-chain.sh"
 
@@ -19,7 +19,6 @@ setup() {
   mock_curl_url "$EXTERNAL_UPSTREAM" "$LOCAL_UPSTREAM"
   mock_curl_url "$EXTERNAL_INIT"     "$LOCAL_INIT"
   mock_curl_url "$EXTERNAL_REBUILD"  "$LOCAL_REBUILD"
-  mock_curl_url "$EXTERNAL_SYNC"     "$LOCAL_SYNC"
   enable_url_mocking
   chain_seed_remote "$TEST_DIR/dep.git" "$TEST_DIR/seed"
   git clone --quiet "$TEST_DIR/dep.git" "$TEST_DIR/main"
@@ -52,7 +51,7 @@ full_round_trip_returns_change_cleanly() {
     squash)  git merge --quiet --squash pull-request-head && git commit --quiet -m "squash" ;;
   esac
   git push --quiet origin main
-  bash <(curl -fsSL "$EXTERNAL_SYNC") >/dev/null
+  SUEDE="$ROOT_DIR/scripts/suede.py" bash "$PUSH_RELEASE" >/dev/null
   assert_release_matches "$bare" lib/index.js 'patch = true' "release advanced with the patch"
 
   # consumer pulls the now-vetted release — no clobber

@@ -238,6 +238,26 @@ class Publishing(Fixture):
         self.assertEqual(sorted(manifest.edges), ["app.dockview"])
 
 
+class Vendoring(Fixture):
+    release = True
+
+    def test_the_release_folders_own_pointer_is_not_a_vendored_dependency(self):
+        """release/.gitrepo points at the branch release/ is published to."""
+        make_graph.write(self.path("release", ".gitrepo"), "[subrepo]\n\tremote = x\n\tcommit = y\n")
+
+        self.assertEqual(suede.scan(self.consumer, "app", ".", "flag").vendored, ())
+
+    def test_a_subrepo_inside_release_is_vendored(self):
+        make_graph.write(
+            self.path("release", ".suede", "vendor", "widget", ".gitrepo"),
+            "[subrepo]\n\tremote = x\n\tcommit = y\n",
+        )
+
+        world = suede.scan(self.consumer, "app", ".", "flag")
+        self.assertEqual(world.vendored, ("release/.suede/vendor/widget",))
+        self.assertEqual(world.installs, {})
+
+
 class UnbornHead(unittest.TestCase):
     def test_refuses_to_install_before_the_first_commit(self):
         directory = tempfile.mkdtemp(prefix="suede-test-")

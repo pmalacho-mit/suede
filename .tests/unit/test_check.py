@@ -8,11 +8,12 @@ informational.
 
 import unittest
 
-from support import pin, suede, world
+from support import manifest, pin, request, suede, world
 
 B = pin("B", "b")
 C = pin("C", "c")
 C_OTHER = pin("C", "9")
+LEGACY = suede.LEGACY_MANIFEST_DIR
 
 
 def levels(findings, code):
@@ -137,6 +138,34 @@ class Classification(unittest.TestCase):
         rows = suede.listing(tree)
         self.assertEqual([row.kind for row in rows], ["vendored"])
         self.assertEqual(suede.check(tree), ())
+
+
+class DivergenceTargets(unittest.TestCase):
+    """The asymmetry that keeps the vendor escape hatch working."""
+
+    def test_release_dependencies_are_checked(self):
+        tree = world(installs={"app.C": C})
+
+        self.assertEqual([entry for entry, _ in suede.divergence_targets(tree)], ["app.C"])
+
+    def test_a_development_dependency_is_not_checked(self):
+        tree = world(installs={"tools/helper": C})
+
+        self.assertEqual(suede.divergence_targets(tree), ())
+
+    def test_a_vendored_dependency_is_not_checked(self):
+        tree = world(vendored=("release/.suede/vendor/C",))
+
+        self.assertEqual(suede.divergence_targets(tree), ())
+
+
+class LegacyManifest(unittest.TestCase):
+    def test_a_dependency_publishing_the_old_path_is_named_in_the_plan(self):
+        legacy = suede.Manifest(edges={"C": C}, legacy=True)
+
+        plan = suede.plan(world(), request(B), suede.Policy(), {B: legacy, C: manifest()})
+
+        self.assertTrue(any(LEGACY in warning for warning in plan.warnings))
 
 
 class Removal(unittest.TestCase):

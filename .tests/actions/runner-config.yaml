@@ -1,0 +1,15 @@
+# Gitea Actions is act-based, so `uses:` clauses resolve against github.com by
+# default. The workflows under test are deliberately kept to a small, known set
+# of actions; anything beyond that must be vendored into the runner image
+# rather than fetched, or Tier C stops being offline.
+log:
+  level: info
+runner:
+  capacity: 1
+  timeout: 10m
+  labels:
+    - "ubuntu-latest:docker://gitea/runner-images:ubuntu-latest"
+container:
+  network: bridge
+  valid_volumes:
+    - "**"

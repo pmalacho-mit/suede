@@ -30,7 +30,7 @@ GitHub, no network.
 ```
 .tests/run.sh                    # run the whole suite
 .tests/run.sh --verbose          # full output for every test
-.tests/run.sh degit.sh ...       # run only the named test file(s)
+.tests/run.sh push-release.sh ...  # run only the named test file(s)
 ```
 `run.sh` builds `.tests/Dockerfile` (git + curl + git-subrepo + identity) and
 runs the suite with `--network none`, so the run is provably hermetic; its exit
@@ -54,7 +54,7 @@ of truth — Docker can silently drop a container's final buffered stdout on exi
 ## Run directly (if git-subrepo is on PATH)
 ```
 bash .tests/harness/run-all.sh           # all tests
-bash .tests/harness/run-all.sh --verbose degit.sh
+bash .tests/harness/run-all.sh --verbose push-release.sh
 ```
 
 ## The report
@@ -72,22 +72,19 @@ failure, so CI fails automatically.
   and (for the GitHub-fetching scripts) a `file://` mirror of the GitHub REST
   surface plus a 2-commit source repo
 
-## How the GitHub-fetching scripts run offline
-`degit.sh` and `install/gitrepo.sh` honor two origin overrides (default to real
-GitHub, so production is unchanged — and they double as GitHub-Enterprise/mirror
-support):
-- `GITHUB_API_ORIGIN` — where degit fetches the tarball + commit checks
-- `SUEDE_SCRIPT_BASE` — where install/gitrepo fetches its sibling scripts
+## Tier C - the forge
 
-The fixture points both at a local `file://` tree, so these tests use real
-`curl`/`git`/`tar` against the filesystem — no network, but the same code paths.
+`actions/` boots Gitea plus an `act_runner` in Docker, so the two flows that are
+fundamentally cross-repository (push to `main` syncs `release`; a `subrepo push`
+into `release` opens a PR into `main`) can be exercised offline:
 
-## Opt-in live check (degit)
-`scripts/utils/.tests/degit.sh` runs offline by default. Set `SUEDE_TEST_LIVE=1`
-to instead fetch the real hosted commits from `github.com/pmalacho-mit/suede`,
-which exercises actual HTTP (auth, redirects, rate limits). Pass `GITHUB_TOKEN`
-to avoid rate limits. Keep this OFF in the hermetic `--network none` CI job; run
-it as a separate, network-enabled step if you want it in CI:
 ```
-SUEDE_TEST_LIVE=1 GITHUB_TOKEN=... bash scripts/utils/.tests/degit.sh
+.tests/actions/bootstrap.sh      # boot the forge, seed repos, register a runner
+.tests/actions/scenarios.sh      # trigger and assert
+.tests/actions/bootstrap.sh --down
 ```
+
+It needs a Docker daemon in this container. Everything a forge is *not* needed
+for - extraction, the divergence guard, `check`, the PR description - is
+covered above at a fraction of the cost, so keep it that way: add to Tier C
+only what genuinely needs a trigger, a permission or a token to be real.

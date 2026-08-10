@@ -1,0 +1,39 @@
+# A forge, offline.
+#
+# The suede workflows are fundamentally cross-repository and cross-branch: push
+# to `main` syncs `release`; a `subrepo push` into `release` opens a PR back
+# into `main`. Nothing below a real forge exercises that. Gitea runs Actions via
+# act_runner, hosts several repos, issues PATs, and needs no network.
+services:
+  gitea:
+    image: gitea/gitea:1.22
+    environment:
+      GITEA__server__ROOT_URL: "http://gitea:3000/"
+      GITEA__actions__ENABLED: "true"
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__service__DISABLE_REGISTRATION: "false"
+      GITEA__repository__DEFAULT_BRANCH: "main"
+    ports: ["3000:3000"]
+    volumes: ["gitea-data:/data"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  runner:
+    image: gitea/act_runner:0.2.11
+    depends_on:
+      gitea:
+        condition: service_healthy
+    environment:
+      GITEA_INSTANCE_URL: "http://gitea:3000"
+      GITEA_RUNNER_REGISTRATION_TOKEN: "${RUNNER_TOKEN:?run bootstrap.sh first}"
+      GITEA_RUNNER_NAME: "suede-tier-c"
+      CONFIG_FILE: /config.yaml
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./runner-config.yaml:/config.yaml
+
+volumes:
+  gitea-data:

@@ -224,90 +224,40 @@ In summary, do your day-to-day development on `main` (or a sub-branch), keep the
 
 ### Dependencies of Dependencies
 
-> [!IMPORTANT]
-> The rule below is v1: it promoted **any** root folder containing a
-> `.gitrepo`. v2 requires the folder to be announced by a root entry named
-> `$repo$SEP<dependency>` — the separator is part of the match, so
-> `suede-extras/` in a repo named `suede` is no longer silently promoted.
-> [DEPENDENCIES-OF-DEPENDENCIES.md](./DEPENDENCIES-OF-DEPENDENCIES.md) defines
-> the three kinds of dependency and how to migrate; `suede list` shows how your
-> tree classifies today.
+A suede dependency may itself depend on other suede dependencies. Which kind a
+dependency is, is decided entirely by **where it lives and what it is named** —
+no config file, no manifest you maintain by hand:
 
-If your suede dependency relies on other libraries or modules, the [subrepo-push-release](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) Github Action will automatically capture these dependencies with the following conventions:
+| Kind | How it is announced | What ships |
+| --- | --- | --- |
+| **Release dependency** | A root entry named `$repo$SEP<dependency>` — a folder, or a symlink to one anywhere outside `release/` | A pointer (`.gitrepo`), not the source |
+| **Development dependency** | Any other `.gitrepo` folder outside `release/` | Nothing; the `release` branch never sees it |
+| **Vendored release dependency** | It lives *inside* `release/` | The source itself, verbatim |
 
-- A `./package.json` file at the root of the `main` branch will have it's [`"dependencies"`](https://docs.npmjs.com/cli/v7/configuring-npm/package-json#dependencies) object copied to `./release/.suede/.dependencies/package.json`
-  - Therefore, npm packages should be included in [`"dependencies"`](https://docs.npmjs.com/cli/v7/configuring-npm/package-json#dependencies) if and only if they are required by your `release` code. All other dependencies should be installed as [`"devDependencies"`](https://docs.npmjs.com/cli/v7/configuring-npm/package-json#devdependencies).
-- Any folders at the root of the `main` branch that contain a `.gitrepo` file (indicating it's a [subrepo](https://github.com/ingydotnet/git-subrepo)) will have the `.gitrepo`  contents copied to `./release/.suede/.dependencies/<folder-name>.gitrepo` (e.g., if your `main` branch included `./some-dependency/.gitrepo`, the [subrepo-push-release](./templates/dependency/main/.github/workflows/subrepo-push-release.yml) action will copy it's contents to `./release/.suede/.dependencies/some-dependency.gitrepo`)  
-  - Therefore, suede dependencies should only be installed in the root of your `main` branch if and only if they are required by your `release` code. If instead you're `main` branch depends on other suede dependencies (say for testing or documentation), simply install those into a subfolder.
+[DEPENDENCIES-OF-DEPENDENCIES.md](./DEPENDENCIES-OF-DEPENDENCIES.md) is the full
+treatment, including why the separator is part of the name match and what to do
+when a dependency can no longer stay pristine.
 
-> [!IMPORTANT]  
-> The `./release/.suede/.dependencies` folder is maintained by the automation and you shouldn't need to edit it by hand. 
+**A project records its whole transitive closure as its own release
+dependencies.** If you install `B` and `B` needs `C`, you end up with root
+entries for both, and `B` gets a symlink:
 
-These dependencies are then analyzed upon [install](#consuming-a-dependency) and instructions for resolving them are printed to the terminal. 
-
-This manual step for consumers (to review and install sub-dependencies) is seen as a feature: it promotes awareness of exactly what your project is using under the hood, rather than nesting hidden dependencies. It ensures that nothing gets added to a consumer's project without them explicitly opting in.
-
-<details>
-<summary>
-See sample post-install instructions
-</summary>
-
-```bash
-NEXT STEPS:
-
-The installed gitrepo has the following npm dependencies:
-
-    "dependencies": {
-      "@storybook/test": "^8.6.14",
-      "html-to-image": "^1.11.13",
-      "svelte": "^5.41.0",
-      "typescript": "^5.9.3"
-    }
-
-  Add these to your project's package.json and run 'npm install' or install them with the following command:
-    npm install @storybook/test@^8.6.14 html-to-image@^1.11.13 svelte@^5.41.0 typescript@^5.9.3
-
-Install nested suede dependencies:
-  bash <(curl https://suede.sh/install/gitrepo) -d sweater-vest-suede/../dockview-svelte-suede sweater-vest-suede/.suede/.dependencies/dockview-svelte-suede.gitrepo
-
-Commit the changes to your repository:
-  git add sweater-vest-suede package.json sweater-vest-suede/../dockview-svelte-suede
-  git commit -m 'Add suede dependency (release) pmalacho-mit/sweater-vest-suede@86abeeba0ba123167ae6f04639fc75b1508d59dc'
+```
+app.B/                 real folder — B's release bytes
+app.C/                 real folder — C's release bytes
+B.C          ->        ./app.C     symlink satisfying B's edge
 ```
 
-</details>
+Three things fall out of that, and they are why the bookkeeping is worth it: a
+manifest is a complete recipe (install each pointer once, flat, done);
+recursion becomes a repair path rather than the happy path; and every
+dependency in the closure is named in *your* root, so every one is yours to
+repoint, fork or unify. `suede check` enforces exactly one structural rule —
+that nothing was resolved implicitly — and stays informational about which
+commit you chose.
 
-To see the depenencies of an already installed dependency, run `bash (< https://suede.sh/extract/dependencies)` and provide the dependencies location as a positional argument, for example:
-
-```bash
-bash (< https://suede.sh/extract/dependencies) ./example-depepdency/
-```
-
-<details>
-<summary>
-See sample dependency 
-</summary>
-
-```bash
-SUEDE DEPENDENCIES OF DEPENDENCY:
-
-The installed gitrepo has the following npm dependencies:
-
-    "dependencies": {
-      "@storybook/test": "^8.6.14",
-      "html-to-image": "^1.11.13",
-      "svelte": "^5.41.0",
-      "typescript": "^5.9.3"
-    }
-
-  Add these to your project's package.json and run 'npm install' or install them with the following command:
-    npm install @storybook/test@^8.6.14 html-to-image@^1.11.13 svelte@^5.41.0 typescript@^5.9.3
-
-Install nested suede dependencies:
-  bash <(curl https://suede.sh/install/gitrepo) -d sweater-vest-suede/../dockview-svelte-suede sweater-vest-suede/.suede/.dependencies/dockview-svelte-suede.gitrepo
-```
-
-</details>
+The `release/.suede/.dependencies/` folder is generated by
+[`suede extract`](./scripts/suede.py) in CI. Don't edit it by hand.
 
 ### Converting an Existing Repository to a Dependency
 
@@ -320,7 +270,7 @@ Install nested suede dependencies:
 [suede.sh](https://suede.sh) is a Cloudflare Worker that provides cached, convenient access to the scripts in this repository. It serves as a proxy to the GitHub raw content URLs, with two key benefits:
 
 1. **Simplified URLs:** Instead of typing the full GitHub raw content URL, you can use shorter URLs like `https://suede.sh/install/release`
-2. **Optional file extensions:** The `.sh` extension can be omitted from requests (e.g., `https://suede.sh/utils/degit` instead of `https://suede.sh/utils/degit.sh`)
+2. **Optional file extensions:** The extension can be omitted from requests (e.g. `https://suede.sh/install/release` instead of `https://suede.sh/install/release.sh`), and `https://suede.sh/suede` serves the installer itself
 3. **Caching:** Responses are cached via Cloudflare's CDN for faster access
 
 > [!NOTE]  

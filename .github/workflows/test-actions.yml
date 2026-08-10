@@ -1,0 +1,37 @@
+name: test-actions
+
+# Tier C is slow: it boots a forge and a runner. It only runs where it can
+# actually tell you something — a change to the workflows or the scripts they
+# call — plus nightly.
+on:
+  pull_request:
+    paths:
+      - "dependency/**"
+      - ".github/workflows/**"
+      - ".tests/actions/**"
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  forge:
+    name: gitea + act_runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "test@example.test"
+          git config --global user.name "suede tests"
+
+      - name: Boot the forge and seed it
+        run: bash .tests/actions/bootstrap.sh
+
+      - name: Run the cross-repository scenarios
+        run: bash .tests/actions/scenarios.sh
+
+      - name: Tear down
+        if: always()
+        run: bash .tests/actions/bootstrap.sh --down

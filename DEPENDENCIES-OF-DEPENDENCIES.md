@@ -274,13 +274,19 @@ Python 3.9 is the floor, set by macOS Command Line Tools (pinned at 3.9.6). `mat
 
 All network access goes through `git` (`ls-remote`, `clone --depth 1`, sparse checkout) rather than HTTP. This works with any git host, inherits the user's existing auth, avoids API rate limits, and sidesteps `tarfile` extraction-filter differences across Python patch releases. `.gitrepo` files are read and written with `git config -f`, which is what git-subrepo itself uses.
 
-`sync`, `diff`, and `vendor` remain bash — they are short wrappers around git commands, which is what shell is good at.
+`sync`, `vendor` and `upstream` remain bash — they are short wrappers around
+git commands, which is what shell is good at. `diff` is the exception: deciding
+*which* dependencies the divergence rule applies to is the classification rule
+again, and a second implementation of it in shell would drift from the first.
+So `diff` lives in `suede.py` and the shell script is a wrapper, which also
+means CI and the human command cannot disagree about what counts.
 
 ---
 
 ## The install/git-subrepo contract
 
-suede installs with degit-style extraction and a hand-written `.gitrepo`; `git subrepo` is used only afterwards, for syncing. That handoff is verified by [`.tests/subrepo-degit-contract.test.sh`](.tests/subrepo-degit-contract.test.sh), which pins the following against git-subrepo 0.4.9:
+suede installs with degit-style extraction and a hand-written `.gitrepo`; `git subrepo` is used only afterwards, for syncing. That handoff is pinned by the integration suite (`.tests/integration/`) and by
+the contract test planned in [`PLAN.md`](./PLAN.md) §5.3:
 
 **What works.** A degit-installed folder with a hand-written `.gitrepo` is fully recognised by `git subrepo status`, `pull`, and `push`. No `git subrepo init` or re-clone is needed. Several dependencies installed and committed **together in a single commit** each remain independently pullable — which is why install stages rather than committing per-dependency.
 
@@ -296,7 +302,17 @@ suede installs with degit-style extraction and a hand-written `.gitrepo`; `git s
 
 ## Supporting Scripts
 
-These belong in `dependency/release/core` (the collection of scripts a user runs to perform suede-specific tasks).
+Where each one lives follows from which branch it operates on. A dependency
+vendors `.suede/core` from `dependency/main/core` on `main`, and from
+`dependency/release/core` on `release` — and the release core is what ships on
+to consumers inside an installed dependency.
+
+| Script | Lives in | Because |
+| --- | --- | --- |
+| [`vendor`](#vendor) | `dependency/main/core` | It rearranges *your* working tree on `main` |
+| [`diff`](#diff) | `dependency/main/core` | It audits your release dependencies before you publish |
+| `push-release`, `rebuild-pr-branch`, `open-pull-request` | `dependency/main/core` | CI, and all three run against a `main` checkout |
+| [`sync`](#sync), `upstream` | `dependency/release/core` | A consumer runs them on a dependency you shipped them |
 
 ### `vendor`
 
