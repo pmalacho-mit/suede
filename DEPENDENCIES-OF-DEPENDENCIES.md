@@ -6,7 +6,7 @@ The whole idea is that **the kind of a dependency is fully determined by where i
 
 Here are the three kinds of dependencies:
 
-- **Release Dependency** — announced by a **root-level entry named `$repo.$dependency` or `$repo__$dependency`**: either a real folder with that name, or a symlink with that name pointing to a folder elsewhere outside `release/`. The backing folder (the entry itself, or the symlink's target) contains a `.gitrepo` file. Your `release/` code references it (via it's full name, e.g. `import {} from "$repo.$dependency"`, `from $repo__$dependency import *`), but you do **not** ship its source; you ship a pointer to its remote commit.
+- **Release Dependency** — announced by a **root-level entry with a name beginning with `$repo`**: either a real folder with a name prefixed with `$repo` , or a symlink with such a name pointing to a folder elsewhere outside `release/`. The backing folder (the entry itself, or the symlink's target) contains a `.gitrepo` file. Your `release/` code references it (via it's full name, e.g. `import {} from "$repo.$dependency"`, `from $repo__$dependency import *`), but you do **not** ship its source; you ship a pointer to its remote commit.
 - **Development Dependency** — any suede dependency (a `.gitrepo`-containing folder) outside `release/` that has **no** qualifying prefix-named root entry. The `release` branch knows nothing about it.
 - **Vendored Release Dependency** — lives _inside_ `release/`. It ships verbatim with your `release` branch like any other release file.
 
@@ -14,7 +14,7 @@ The goal is the most _boring_ (but still ergonomic) solution. Folders and names 
 
 > `$repo`: the name of the repository, without the `owner/` prefix.
 
-> As a convention, `.` and  `__` are used to separate `$repo` from `$dependency` in **release dependency** paths for typescript and python modules, respectively. Thus, these separators are used by default for evaluation, but you can specify your own seperator by creating a `config.yml` file inside of the `.suede/` folder on the `main` branch and specify the `release-dependency-separator` property (accepts both a string and an array of values).
+> As a convention, `.` and  `__` are used to separate `$repo` from `$dependency` in **release dependency** paths for typescript and python modules, respectively. But since the check is for entries that begin with `$repo` you’re free to establish your own conventions. 
 
 ## The classification rule
 
@@ -45,7 +45,17 @@ The most involved case. A release dependency is a suede dependency that your **p
 
 A release dependency can take **either of two equivalent forms** — the classification rule doesn't care which:
 
-**Form A — symlink (indirect).** The real subrepo lives **anywhere the author chooses** — `deps/`, `libs/`, a shared folder, wherever; nothing about the location is special — and a prefix-named root symlink points at it:
+**Form A — plain folder (direct).** The subrepo simply _is_ the prefix-named root folder:
+
+```
+$repo.some-suede-dependency/
+  .gitrepo
+  utility.ts
+release/
+  index.ts                         →  imports ../$repo.some-suede-dependency
+```
+
+**Form B — symlink (indirect).** The real subrepo lives **anywhere the author chooses** — `deps/`, `libs/`, a shared folder, wherever; nothing about the location is special — and a prefix-named root symlink points at it:
 
 ```
 deps/                              (or any location you like)
@@ -57,19 +67,9 @@ release/
   index.ts                         →  imports ../$repo.some-suede-dependency
 ```
 
-**Form B — plain folder (direct).** The subrepo simply _is_ the prefix-named root folder:
-
-```
-$repo.some-suede-dependency/
-  .gitrepo
-  utility.ts
-release/
-  index.ts                         →  imports ../$repo.some-suede-dependency
-```
-
 Either way, `release/` code imports through the same `../$repo.some-suede-dependency` path — the **name** is what's load-bearing, not the entry's type. This is deliberate: the naming convention enforces exactly how imports of release dependencies must be written from within the code.
 
-The `$repo.` prefix is **required** for classification, but the suffix is free — which is convenient, because it lets one project reference multiple versions of the same suede dependency (each installed separately, each with its own uniquely named entry, e.g. `$repo.some-dep-v1` and `$repo.some-dep-v2`). The prefix also means that, downstream, an installed dependency (likely named the same as its repo) lands in the file tree directly next to the entries that point to _its_ dependencies (see [The invariant](#the-invariant-the-name-is-the-contract)).
+The `$repo` prefix is **required** for classification, but the suffix is free — which is convenient, because it lets one project reference multiple versions of the same suede dependency (each installed separately, each with its own uniquely named entry, e.g. `$repo.some-dep-v1` and `$repo.some-dep-v2`). The prefix also means that, downstream, an installed dependency (likely named the same as its repo) lands in the file tree directly next to the entries that point to _its_ dependencies (see [The invariant](#the-invariant-the-name-is-the-contract)).
 
 ### Example
 
@@ -155,11 +155,11 @@ On top of the mode, the script should **resolve intelligently** rather than blin
 
 Development dependencies are suede dependencies the `release` branch needs to know nothing about: test harnesses, fixtures, example apps, doc generators, benchmarking tools, etc. They live anywhere outside `release/` and are **never** extracted into `release/.suede/.dependencies/`.
 
-The definition is now delightfully simple: **any `.gitrepo`-containing folder that isn't announced by a `$repo.`-prefixed root entry is a development dependency.** There are three natural ways a dependency stays "development":
+The definition is simple: **any `.gitrepo`-containing folder that isn't announced by a `$repo.`-prefixed root entry is a development dependency.** There are three natural ways a dependency s"development":
 
 1. **No root entry at all** — keep it wherever it lives (e.g. `tools/test-helpers/`) and reference it by its real path from your dev/test code. Simplest.
 2. **Nested anywhere below the root** — `extract` only scans the project root, so a `.gitrepo` folder (or even a prefix-named entry) tucked under `tests/` is invisible to it.
-3. **A root entry with a non-qualifying name** — any name that doesn't begin with `$repo.` is skipped. If you _want_ sibling-style import ergonomics for a dev dependency, pick a different prefix — e.g. a root symlink or folder named `dev.test-helpers`, so dev code can `import ../dev.test-helpers/...` — and it will never be extracted.
+3. **A root entry with a non-qualifying name** — any name that doesn't begin with `$repo.` is skipped. 
 
 > [!NOTE]
 > Option 3 is also the escape hatch for "I structured this like a release dependency, but on second thought it's dev-only." Rename the root entry to drop the `$repo.` prefix (e.g. `consumer-lib.test-helpers` → `dev.test-helpers`) and the classification flips — no files moved, though dev-side imports need the matching rename. The reverse promotion is equally a rename.
