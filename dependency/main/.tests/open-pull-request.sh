@@ -6,8 +6,8 @@
 # lets the description be asserted without a forge at all.
 set -euo pipefail
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CORE_DIR="$(cd "$TESTS_DIR/.." && pwd)"
-HARNESS="$(cd "$TESTS_DIR/../../../../.tests/harness" && pwd)"
+CORE_DIR="$(cd "$TESTS_DIR/../core" && pwd)"
+HARNESS="$(cd "$TESTS_DIR/../../../.tests/harness" && pwd)"
 source "$HARNESS/runner.sh"; source "$HARNESS/color-logging.sh"
 
 readonly OPEN_PR="$CORE_DIR/open-pull-request.sh"

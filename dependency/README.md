@@ -9,8 +9,9 @@ Every part is brought in as a [git-subrepo](https://github.com/ingydotnet/git-su
 There is a top-level folder for each branch of a suede dependency — [`main`](./main/) (development) and [`release`](./release/) (distribution). Each branch-specific folder contains the same three subfolders:
 
 - **`core/`** — suede-specific helper files that get vendored into the dependency.
-  - On `release`, these ship to **consumers** (e.g. the [`upstream`](./release/core/upstream) script, which proposes a consumer's local changes back to the library as a PR).
-  - On `main`, these assist the **maintainer** (currently none).
+  - On `release`, these ship to **consumers** (e.g. the [`upstream`](./release/core/upstream) script, which proposes a consumer's local changes back to the library as a PR, and [`sync.sh`](./release/core/sync.sh), which pulls one).
+  - On `main`, these assist the **maintainer** and drive CI: [`push-release.sh`](./main/core/push-release.sh) (publish, with the divergence + `check` guard), [`rebuild-pr-branch.sh`](./main/core/rebuild-pr-branch.sh) and [`open-pull-request.sh`](./main/core/open-pull-request.sh) (the downstream PR flow), [`diff.sh`](./main/core/diff.sh), [`vendor.sh`](./main/core/vendor.sh), and [`suede.py`](./main/core/suede.py) itself — vendored so the guard needs no network beyond git.
+  - Which side a script belongs on follows from the branch it operates against, not from who conceptually "owns" it: `rebuild-pr-branch.sh` is triggered by a workflow on `release` but runs against a `main` checkout, so it lives in `main/core`.
   - Each folder is a [subrepo](https://github.com/ingydotnet/git-subrepo) clone of this repository pointed at a branch matching it's path
 - **`workflows/`** — the [GitHub Actions](https://github.com/features/actions) files that drive a suede dependency's automated branch coordination (e.g. `initialize.yml` and `subrepo-push-release.yml` on `main`; `suede-downstream-to-main.yml` on `release`).
   - This is the **canonical place to author workflow files** — not [`template/.github/workflows/`](#editing--syncing).
@@ -18,6 +19,15 @@ There is a top-level folder for each branch of a suede dependency — [`main`](.
 - **`template/`** — a [subrepo](https://github.com/ingydotnet/git-subrepo) clone of the external [`suede-dependency-template`](https://github.com/pmalacho-mit/suede-dependency-template) repo (either it's `main` or `release` branch), which is what new dependency repos are created from.
   - Contains a **nested** subrepo at `template/.github/workflows/`, which points to the corresponding `dependency/<branch>/workflows` branch of this repository. 
     - **_NOTE:_** For simplicity, **DO NOT EDIT** these files and prefer instead to update the corresponding `dependency/<branch>/workflows` location (which can then be `git subrepo push`ed, and then `git subrepo pull` can be invoked within the [`suede-dependency-template`](https://github.com/pmalacho-mit/suede-dependency-template) repo)
+
+> [!IMPORTANT]
+> **Tests go beside a subrepo, never inside one.** Everything in a folder with a
+> `.gitrepo` is pushed to its branch and vendored into every dependency, so a
+> `.tests/` folder in there would ship to consumers. The unshipped parents are
+> the right home: [`dependency/main/.tests/`](./main/.tests/) covers
+> `main/core/`, is discovered by the test harness like any other colocated
+> suite, and goes nowhere. `shipped-content.sh` fails the build if a test
+> directory reappears inside a subrepo.
 
 ## Editing & syncing
 

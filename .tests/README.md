@@ -23,7 +23,12 @@ The shell suite below is unchanged.
 
 Colocated tests (`**/.tests/*.sh`, where `.tests` is the immediate parent) are
 discovered and run by `.tests/harness/run-all.sh` on top of the shared harness
-in `.tests/harness/`. The whole suite is **offline and deterministic** — no
+in `.tests/harness/`.
+
+One placement rule: anything under `dependency/` that contains a `.gitrepo` is
+vendored into every consumer, so tests for those scripts live in the unshipped
+parent — `dependency/main/.tests/` covers `dependency/main/core/`. They are
+discovered exactly like any other colocated suite; they just do not ship. The whole suite is **offline and deterministic** — no
 GitHub, no network.
 
 ## Run everything in a container (recommended)

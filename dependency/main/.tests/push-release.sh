@@ -7,8 +7,8 @@
 # the remote is touched, so they need no git-subrepo; only the happy path does.
 set -euo pipefail
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CORE_DIR="$(cd "$TESTS_DIR/.." && pwd)"
-ROOT_DIR="$(cd "$TESTS_DIR/../../../.." && pwd)"
+CORE_DIR="$(cd "$TESTS_DIR/../core" && pwd)"
+ROOT_DIR="$(cd "$TESTS_DIR/../../.." && pwd)"
 HARNESS="$(cd "$ROOT_DIR/.tests/harness" && pwd)"
 source "$HARNESS/runner.sh"; source "$HARNESS/color-logging.sh"
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HARNESS="$(cd "$TESTS_DIR/../../../../.tests/harness" && pwd)"
+HARNESS="$(cd "$TESTS_DIR/../../../.tests/harness" && pwd)"
 readonly EXTERNAL_REBUILD="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/dependency/main/core/rebuild-pr-branch.sh"
-readonly LOCAL_REBUILD="$TESTS_DIR/../rebuild-pr-branch.sh"
+readonly LOCAL_REBUILD="$TESTS_DIR/../core/rebuild-pr-branch.sh"
 source "$HARNESS/runner.sh"; source "$HARNESS/color-logging.sh"
 source "$HARNESS/mock-curl.sh"; source "$HARNESS/with-local-suede-chain.sh"
 
