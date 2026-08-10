@@ -118,6 +118,28 @@ run_one() {
   return $rc
 }
 
+# --- preflight --------------------------------------------------------------
+# The suite needs three things present. Checking once, up front, turns "git:
+# 'subrepo' is not a git command" repeated across half the run into one line
+# that names the fix.
+missing_tools() {
+  command -v git      >/dev/null 2>&1 || printf 'git\n'
+  command -v python3  >/dev/null 2>&1 || printf 'python3\n'
+  git subrepo --version >/dev/null 2>&1 || printf 'git-subrepo (0.4.9)\n'
+  python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' \
+    >/dev/null 2>&1 || printf 'python3 >= 3.9\n'
+}
+
+MISSING="$(missing_tools)"
+if [[ -n "${MISSING//[[:space:]]/}" ]]; then
+  say "$(printf '%b[ERROR]%b the suite needs tools this shell does not have:' "$RED" "$NO_COLOR")"
+  while IFS= read -r tool; do [[ -n "$tool" ]] && say "         $tool"; done <<< "$MISSING"
+  say ""
+  say "  .tests/run.sh runs the whole suite in a container that has all of them,"
+  say "  pinned to the versions CI uses. That is the supported way to run it."
+  exit 1
+fi
+
 # --- main -------------------------------------------------------------------
 mapfile -t TESTS < <(discover_tests)
 

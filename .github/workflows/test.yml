@@ -41,8 +41,8 @@ jobs:
       - name: Integration tests (real git, generated fixtures)
         run: python -m unittest discover .tests/integration -t .tests/integration
 
-  shell:
-    name: shell suite (git-subrepo ${{ matrix.subrepo }})
+  suite:
+    name: full suite (git-subrepo ${{ matrix.subrepo }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -50,27 +50,26 @@ jobs:
         include:
           - subrepo: "0.4.9"
             required: true
+          # Runs alongside so a change in git-subrepo's assumptions fails
+          # loudly here rather than silently downstream.
           - subrepo: "main"
             required: false
     continue-on-error: ${{ !matrix.required }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure git identity
-        run: |
-          git config --global user.email "test@example.test"
-          git config --global user.name "suede tests"
+      # Everything the suite needs is in the image, pinned: Python 3.9,
+      # git-subrepo, and a git identity. The run itself is --network none, so a
+      # pass here is a pass with no hidden dependency on the network.
+      - name: Run the suite in its container
+        env:
+          SUEDE_GIT_SUBREPO_REF: ${{ matrix.subrepo }}
+        run: .tests/run.sh
 
-      # Pinned by default; `main` runs alongside so a change in git-subrepo's
-      # assumptions fails loudly here rather than silently downstream.
-      - name: Install git-subrepo
-        run: |
-          git clone --quiet --branch "${{ matrix.subrepo }}" \
-            https://github.com/ingydotnet/git-subrepo "$HOME/.git-subrepo"
-          echo "$HOME/.git-subrepo/lib" >> "$GITHUB_PATH"
-
-      - name: Check git-subrepo installation
-        run: git subrepo --version
-
-      - name: Run the shell suite
-        run: bash .tests/harness/run-all.sh
+      - name: Upload the transcript
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: suite-${{ matrix.subrepo }}
+          path: .tests/.last-run/
+          if-no-files-found: ignore
