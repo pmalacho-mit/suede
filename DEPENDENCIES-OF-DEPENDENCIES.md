@@ -12,8 +12,10 @@ Here are the three kinds of dependencies:
 
 The goal is the most _boring_ (but still ergonomic) solution. Folders and names — _chef's kiss_.
 
+> [!NOTE]
 > `$repo`: the name of the repository, without the `owner/` prefix.
 
+> [!TIP]
 > As a convention, `.` and  `__` are used to separate `$repo` from `$dependency` in **release dependency** paths for typescript and python modules, respectively. But since the check is for entries that begin with `$repo` you’re free to establish your own conventions. 
 
 ## The classification rule
@@ -21,14 +23,11 @@ The goal is the most _boring_ (but still ergonomic) solution. Folders and names 
 The three types are mutually exclusive and exhaustive. Dependencies are resolved by walking this in order:
 
 1. Is the dependency's folder **inside `release/`**? → **Vendored Release Dependency.** (Stop. Names are irrelevant here.)
-2. Otherwise, is there an entry **at the project root** (same level as `release/`) whose **name begins with `$repo.`**, and whose backing folder — the entry itself if it's a folder, or the symlink's target otherwise — sits **outside `release/`** and contains a `.gitrepo`? → **Release Dependency.**
+2. Otherwise, is there an entry **at the project root** (same level as `release/`) whose **name begins with `$repo`**, and whose backing folder — the entry itself if it's a folder, or the symlink's target otherwise — sits **outside `release/`** and contains a `.gitrepo`? → **Release Dependency.**
 3. Otherwise → **Development Dependency.**
 
 > [!NOTE]
 > [extract/dependencies.sh](https://github.com/pmalacho-mit/suede/blob/main/scripts/extract/dependencies.sh) only ever treats backing folders **outside** `release/` as candidates. So a stray prefix-named symlink pointing _into_ `release/` can never be misread as a release dependency — step 1 already owns everything inside `release/`. This is what keeps the rule robust against leftover links after a [vendor](#vendor).
-
-> [!IMPORTANT]
-> **This is a behavior change from v1.** v1 promoted **any** root-level folder containing a `.gitrepo` to a release dependency. v2 promotes only entries carrying the `$repo.` prefix — **the name is the declaration.** A root entry can be a plain folder or a symlink; both qualify identically. This frees the actual subrepo to live **anywhere the author chooses** (when using the symlink form — there is no blessed location) while making the intent legible at a glance: `consumer-lib.some-suede-dependency` reads as "this library is required by _consumer-lib_." It also groups all release dependencies together in a directory listing. See [Migrating from v1](#migrating-from-v1).
 
 ## Release Dependency
 
