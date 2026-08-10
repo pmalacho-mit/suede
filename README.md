@@ -1,8 +1,8 @@
 # _Suede_: [git-subrepo](https://github.com/ingydotnet/git-subrepo) based dependency management
 
 <!-- TOKEN-STATUS:START -->
-> [!CAUTION]
-> 🔴 The deploy token (`SUEDE_DEPENDENCY_TEMPLATE_PAT`) **has expired** (was 2026-06-30).
+> [!TIP]
+> 🟢 The deploy token (`SUEDE_DEPENDENCY_TEMPLATE_PAT`) is good for **58 more days** (2026-10-08).
 > _Last checked: 2026-08-10 (UTC)._
 <!-- TOKEN-STATUS:END -->
 
@@ -443,8 +443,8 @@ workflow will fill that spot from then on:
 
 ```md
 <!-- TOKEN-STATUS:START -->
-> [!CAUTION]
-> 🔴 The deploy token (`SUEDE_DEPENDENCY_TEMPLATE_PAT`) **has expired** (was 2026-06-30).
+> [!TIP]
+> 🟢 The deploy token (`SUEDE_DEPENDENCY_TEMPLATE_PAT`) is good for **58 more days** (2026-10-08).
 > _Last checked: 2026-08-10 (UTC)._
 <!-- TOKEN-STATUS:END -->
 ```
