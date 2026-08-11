@@ -76,7 +76,7 @@ not delete a directory it does not own:
 
 ```bash
 git rm -r release/.dependencies
-python3 .suede/core/suede.py extract
+bash .suede/core/suede extract
 ```
 
 Confirm the result before continuing:
@@ -104,9 +104,9 @@ printf '.\n' > .suede/.dependencies/separator
 ## 5. Verify, commit, push
 
 ```bash
-python3 .suede/core/suede.py list     # one release dependency, as above
-python3 .suede/core/suede.py check    # exit 0
-python3 .suede/core/suede.py diff     # exit 0 — see the warning below
+bash .suede/core/suede list     # one release dependency, as above
+bash .suede/core/suede check    # exit 0
+bash .suede/core/suede diff     # exit 0 — see the warning below
 
 git add -A && git commit -m "suede v2: migrate to the vendored core and manifest layout"
 git push origin main
@@ -138,7 +138,7 @@ workaround — make it on purpose.
 - `check` reports `undeclared-edge` or `missing-edge`. It would mean
   `programmatic-docker-suede` has gained a dependency of its own that you now
   need to declare at your root. The fix is
-  `python3 .suede/core/suede.py install --repo pmalacho-mit/<name>`, but
+  `bash .suede/core/suede install --repo pmalacho-mit/<name>`, but
   confirm the extra dependency is expected before adding it.
 - The folder name `programmatic-docker-suede-f80591d` no longer matches the
   commit in its `.gitrepo`. The name is cosmetic and v2 ignores it, but a

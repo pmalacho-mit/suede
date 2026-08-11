@@ -148,7 +148,7 @@ not own, so remove the old ones explicitly:
 ```bash
 git rm -r release/.dependencies 2>/dev/null || true   # legacy location
 git rm -r .dependencies 2>/dev/null || true           # even older, at the root
-python3 .suede/core/suede.py extract
+bash .suede/core/suede extract
 ls release/.suede/.dependencies/
 ```
 
@@ -193,9 +193,9 @@ consumer's separator is their own choice.
 ## Step 6 — Verify, commit, push
 
 ```bash
-python3 .suede/core/suede.py list     # what the tree means now
-python3 .suede/core/suede.py check    # exit 0, no FAIL lines
-python3 .suede/core/suede.py diff     # exit 0 — every pointer is honest
+bash .suede/core/suede list     # what the tree means now
+bash .suede/core/suede check    # exit 0, no FAIL lines
+bash .suede/core/suede diff     # exit 0 — every pointer is honest
 
 git add -A && git commit -m "suede v2: migrate to the vendored core and manifest layout"
 git push origin main

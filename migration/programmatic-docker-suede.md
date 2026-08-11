@@ -31,7 +31,7 @@ steps, with these specifics:
   legacy directory in the same commit:
   ```bash
   git rm -r release/.dependencies
-  python3 .suede/core/suede.py extract
+  bash .suede/core/suede extract
   ```
 - **Step 5** — the separator is `.`:
   ```bash

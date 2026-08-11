@@ -68,7 +68,7 @@ There is no `release/.dependencies/` to remove here, so this is just the first
 run of the generator:
 
 ```bash
-python3 .suede/core/suede.py extract
+bash .suede/core/suede extract
 ```
 
 Expect `release/.suede/.dependencies/requirements.txt` and nothing else — no
@@ -88,9 +88,9 @@ otherwise.
 ## 5. Verify, commit, push
 
 ```bash
-python3 .suede/core/suede.py list     # expect: no suede dependencies found
-python3 .suede/core/suede.py check    # expect: no problems found, exit 0
-python3 .suede/core/suede.py diff     # expect: exit 0 (nothing to compare)
+bash .suede/core/suede list     # expect: no suede dependencies found
+bash .suede/core/suede check    # expect: no problems found, exit 0
+bash .suede/core/suede diff     # expect: exit 0 (nothing to compare)
 
 git add -A && git commit -m "suede v2: migrate to the vendored core and manifest layout"
 git push origin main

@@ -65,7 +65,7 @@ Then steps 4–6, with:
 - **Step 4** — remove only the legacy directory; the current one is regenerated:
   ```bash
   git rm -r release/.dependencies
-  python3 .suede/core/suede.py extract
+  bash .suede/core/suede extract
   ```
   Expect `release/.suede/.dependencies/package.json` and no `.gitrepo` records:
   `devcontainers-suede` is a development dependency and is deliberately never

@@ -41,7 +41,7 @@ seed_dep_lib() {
 
   mkdir -p "$repo/release" "$repo/.suede/core" "$repo/.github/workflows"
   printf 'export const version = 1;\n' > "$repo/release/index.ts"
-  cp "$SUEDE_ROOT/dependency/main/core/"*.sh "$SUEDE_ROOT/dependency/main/core/suede.py" "$repo/.suede/core/"
+  cp "$SUEDE_ROOT/dependency/main/core/"* "$repo/.suede/core/"
   cp "$SUEDE_ROOT/dependency/main/workflows/subrepo-push-release.yml" "$repo/.github/workflows/"
 
   git_at "$repo" add -A

@@ -39,7 +39,7 @@ cleanup() { [[ -n "${TEST_DIR:-}" && -d "$TEST_DIR" ]] && rm -rf "$TEST_DIR"; }
 
 # DRY_RUN stops after the guard, which is everything these cases are about.
 guard() {
-  ( cd "$LIBRARY" && DRY_RUN=1 SUEDE="$ROOT_DIR/scripts/suede.py" bash "$PUSH_RELEASE" ) \
+  ( cd "$LIBRARY" && DRY_RUN=1 SUEDE_PY="$ROOT_DIR/scripts/suede.py" bash "$PUSH_RELEASE" ) \
     > "$TEST_DIR/out.txt" 2>&1
 }
 

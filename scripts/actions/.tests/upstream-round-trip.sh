@@ -51,7 +51,7 @@ full_round_trip_returns_change_cleanly() {
     squash)  git merge --quiet --squash pull-request-head && git commit --quiet -m "squash" ;;
   esac
   git push --quiet origin main
-  SUEDE="$ROOT_DIR/scripts/suede.py" bash "$PUSH_RELEASE" >/dev/null
+  SUEDE_PY="$ROOT_DIR/scripts/suede.py" bash "$PUSH_RELEASE" >/dev/null
   assert_release_matches "$bare" lib/index.js 'patch = true' "release advanced with the patch"
 
   # consumer pulls the now-vetted release — no clobber

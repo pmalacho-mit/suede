@@ -13,14 +13,16 @@
 #
 # Inputs (env):
 #   RELEASE_DIR   default: release
-#   SUEDE         default: .suede/core/suede.py
 #   DRY_RUN       set to 1 to stop before touching the remote
+#   SUEDE_PY      where ./suede fetches the installer from (a path, for tests)
 
 set -euo pipefail
 
 RELEASE_DIR="${RELEASE_DIR:-release}"
-SUEDE="${SUEDE:-.suede/core/suede.py}"
 DRY_RUN="${DRY_RUN:-0}"
+
+# Resolved before the cd, because it sits next to this script.
+CORE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 cd "$(git rev-parse --show-toplevel)"
 
@@ -34,18 +36,7 @@ report() {
   return 0
 }
 
-python_runtime() {
-  local candidate
-  for candidate in python3 python3.13 python3.12 python3.11 python3.10 python3.9; do
-    command -v "$candidate" >/dev/null 2>&1 || continue
-    "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' \
-      >/dev/null 2>&1 && { printf '%s\n' "$candidate"; return 0; }
-  done
-  say "no python3 >= 3.9 found"
-  return 1
-}
-
-suede() { "$PYTHON" "$SUEDE" "$@"; }
+suede() { bash "$CORE_DIR/suede" "$@"; }
 
 require_release_folder() {
   [[ -d "$RELEASE_DIR" ]] || { say "no ./$RELEASE_DIR folder - nothing to publish"; exit 1; }
@@ -94,7 +85,6 @@ sync_release_branch() {
   git push   # propagate the .gitrepo pointer bump back to main
 }
 
-PYTHON="$(python_runtime)"
 WORKSPACE="$(mktemp -d)"
 trap 'rm -rf "$WORKSPACE"' EXIT
 

@@ -112,7 +112,7 @@ git subrepo clone https://github.com/pmalacho-mit/suede.git .suede/core --branch
 
 ```bash
 git rm -r release/.dependencies
-python3 .suede/core/suede.py extract
+bash .suede/core/suede extract
 ls release/.suede/.dependencies/
 ```
 
@@ -146,9 +146,9 @@ printf '.\n' > .suede/.dependencies/separator
 ## 5. Verify, commit, push
 
 ```bash
-python3 .suede/core/suede.py list     # four release, one development, as above
-python3 .suede/core/suede.py check    # exit 0; the INFO line is expected
-python3 .suede/core/suede.py diff     # exit 0 — see below
+bash .suede/core/suede list     # four release, one development, as above
+bash .suede/core/suede check    # exit 0; the INFO line is expected
+bash .suede/core/suede diff     # exit 0 — see below
 
 git add -A && git commit -m "suede v2: publish the dependency closure, migrate to the vendored core"
 git push origin main
@@ -180,7 +180,7 @@ publishes no pointer.
 - `check` reports `undeclared-edge`. One of `dockview-svelte-suede`,
   `typescript-cli-suede` or `programmatic-docker-suede` has gained a dependency
   of its own. It must be declared at your root
-  (`python3 .suede/core/suede.py install --repo pmalacho-mit/<name>`) — but
+  (`bash .suede/core/suede install --repo pmalacho-mit/<name>`) — but
   confirm it is expected first; a new transitive dependency is a real change to
   what you ship.
 - The installer warns that a dependency publishes at the pre-2.0 path. That

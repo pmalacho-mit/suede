@@ -112,8 +112,8 @@ The logic moved out of YAML into `.suede/core/*.sh`, vendored from this
 library. That is what makes it testable without a runner — and it means your
 repository gets fixes by pulling the subrepo rather than by you editing YAML.
 
-`.suede/core/suede.py` is the installer itself, vendored, so the guard runs
-with no network beyond git.
+`.suede/core/suede` fetches the installer when it runs, so a fix here reaches
+every repository without a `git subrepo pull` in each one.
 
 ### 6. suede's own plumbing is no longer classified as a dependency
 
@@ -141,9 +141,9 @@ somewhere safe: the steps replace that whole folder.
 The same three commands answer it, in every repository:
 
 ```bash
-python3 .suede/core/suede.py list     # what the tree means now
-python3 .suede/core/suede.py check    # exit 0, no FAIL lines
-python3 .suede/core/suede.py diff     # exit 0 — every pointer is honest
+bash .suede/core/suede list     # what the tree means now
+bash .suede/core/suede check    # exit 0, no FAIL lines
+bash .suede/core/suede diff     # exit 0 — every pointer is honest
 ```
 
 Then push `main`. The `subrepo-push-release` workflow republishes `release`
@@ -153,7 +153,7 @@ dependency and the reason.
 ## If something looks wrong
 
 - **`check` reports `undeclared-edge`.** A dependency of a dependency is not
-  declared at your root. Install it: `python3 .suede/core/suede.py install
+  declared at your root. Install it: `bash .suede/core/suede install
   --repo <owner/name>`. That is the flattening rule doing its job.
 - **`check` reports `missing-edge`.** A dependency asks for a sibling that does
   not exist at all. Same fix.

@@ -35,7 +35,7 @@ Delete both in step 4:
 ```bash
 git rm -r release/.dependencies
 git rm -r .dependencies
-python3 .suede/core/suede.py extract
+bash .suede/core/suede extract
 ```
 
 Note the shapes are *not* interchangeable: the manifest suede publishes is

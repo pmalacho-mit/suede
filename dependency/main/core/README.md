@@ -34,8 +34,8 @@ the last honest version.
 DRY_RUN=1 bash .suede/core/push-release.sh   # stop after the guard
 ```
 
-`RELEASE_DIR` (default `release`) and `SUEDE` (default `.suede/core/suede.py`)
-override the paths it uses.
+`RELEASE_DIR` (default `release`) overrides which folder is published, and
+`SUEDE_PY` overrides where [`suede`](./suede) fetches the installer from.
 
 ### [rebuild-pr-branch.sh](./rebuild-pr-branch.sh)
 
@@ -96,18 +96,23 @@ repointing. Afterwards its `.gitrepo` ships too, so consumers get a nested
 subrepo — a feature (they can still pull and push it independently) and a sharp
 edge.
 
-### [suede.py](./suede.py)
+### [suede](./suede)
 
-The installer itself, vendored so the guard runs without fetching anything.
-Everything `install`, `check`, `list`, `diff`, `remove` and `extract` do lives in
-this one dependency-free Python 3.9 file.
+Runs the installer. Everything `check`, `list`, `diff`, `extract`, `install` and
+`remove` do lives in one dependency-free Python 3.9 file.
 
 ```bash
-python3 .suede/core/suede.py list     # every dependency, its kind and pin
-python3 .suede/core/suede.py check    # audit the tree
-python3 .suede/core/suede.py extract  # regenerate release/.suede/.dependencies/
+bash .suede/core/suede list     # every dependency, its kind and pin
+bash .suede/core/suede check    # audit the tree
+bash .suede/core/suede extract  # regenerate release/.suede/.dependencies/
 ```
 
-It is one readable file on purpose: if you hit a problem on an unusual system,
-open it and patch it. It is a copy of `scripts/suede.py` in the library, kept
-in step by a test rather than by convention.
+It is a thin bootstrapper, the same shape as `upstream` on the release side:
+the installer is **hosted, not vendored**, so a fix reaches every repository as
+soon as it is pushed to the library rather than waiting on a `git subrepo pull`
+in each one. `SUEDE_PY` points it somewhere else — a local path for tests, or a
+pinned URL (`https://suede.sh/suede?ref=v2.0.0`) if you would rather a
+publish never change underneath you.
+
+It needs `python3` on PATH; the installer checks its own version and explains
+itself if it is older than 3.9.
