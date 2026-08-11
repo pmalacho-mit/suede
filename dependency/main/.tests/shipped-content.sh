@@ -50,4 +50,30 @@ no_tests_ship_inside_a_subrepo() {
   fi
 }
 
-run_test_suite the_vendored_installer_matches_the_source no_tests_ship_inside_a_subrepo
+# A core folder is a dependency's whole view of suede's tooling: its README is
+# the only place the scripts are explained, and it is read from inside the
+# consumer's repo where the library is not to hand. A script nobody documented
+# is a script nobody runs.
+every_core_script_is_documented() {
+  local undocumented=""
+  local core script name
+  for core in "$ROOT_DIR"/dependency/*/core; do
+    for script in "$core"/*.sh "$core"/*.py "$core"/upstream; do
+      [[ -f "$script" ]] || continue
+      name="$(basename "$script")"
+      grep -q -- "$name" "$core/README.md" 2>/dev/null || undocumented+="${core#$ROOT_DIR/}/$name"$'\n'
+    done
+  done
+
+  if [[ -z "${undocumented//[[:space:]]/}" ]]; then
+    log_pass "every core script is named in its README"
+  else
+    log_failure "these ship with no explanation in their folder's README:"
+    printf '%s' "$undocumented" >&2
+    return 1
+  fi
+}
+
+run_test_suite the_vendored_installer_matches_the_source \
+  no_tests_ship_inside_a_subrepo \
+  every_core_script_is_documented

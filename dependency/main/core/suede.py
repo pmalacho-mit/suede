@@ -39,8 +39,9 @@ import subprocess  # noqa: E402
 import tempfile  # noqa: E402
 import time  # noqa: E402
 from collections import Counter, deque  # noqa: E402
+from collections.abc import Iterable, Mapping, Sequence  # noqa: E402
 from dataclasses import dataclass, field  # noqa: E402
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple  # noqa: E402
+from typing import Final, Optional, TextIO, cast  # noqa: E402
 
 # --------------------------------------------------------------------------- #
 # 1. Constants                                                                 #
@@ -114,12 +115,12 @@ MUTATING_OPS = ("install", "link", "copy", "record", "npm")
 
 
 class Exit:
-    OK = 0
-    ERROR = 1
-    USAGE = 2
-    PRECONDITION = 3
-    UNRESOLVED = 4
-    CHECK_FAILED = 5
+    OK: Final = 0
+    ERROR: Final = 1
+    USAGE: Final = 2
+    PRECONDITION: Final = 3
+    UNRESOLVED: Final = 4
+    CHECK_FAILED: Final = 5
 
 
 # --------------------------------------------------------------------------- #
@@ -128,19 +129,19 @@ class Exit:
 
 
 class SuedeError(Exception):
-    code = Exit.ERROR
+    code: int = Exit.ERROR
 
 
 class Usage(SuedeError):
-    code = Exit.USAGE
+    code: int = Exit.USAGE
 
 
 class Precondition(SuedeError):
-    code = Exit.PRECONDITION
+    code: int = Exit.PRECONDITION
 
 
 class PlanError(SuedeError):
-    code = Exit.UNRESOLVED
+    code: int = Exit.UNRESOLVED
 
 
 # --------------------------------------------------------------------------- #
@@ -195,8 +196,8 @@ class Edge:
 
 @dataclass(frozen=True)
 class Manifest:
-    edges: Mapping[str, Pin] = field(default_factory=dict)
-    npm: Mapping[str, str] = field(default_factory=dict)
+    edges: Mapping[str, Pin] = field(default_factory=dict[str, Pin])
+    npm: Mapping[str, str] = field(default_factory=dict[str, str])
     legacy: bool = False  # published at the pre-2.0 path
 
 
@@ -212,12 +213,12 @@ class World:
     head: Optional[str]  # None => unborn HEAD
     dirty: bool = False
     has_release: bool = False
-    installs: Mapping[str, Install] = field(default_factory=dict)  # path -> Install
-    entries: Mapping[str, Entry] = field(default_factory=dict)  # path -> Entry
-    edges: Tuple[Edge, ...] = ()
-    vendored: Tuple[str, ...] = ()
-    npm: Mapping[str, str] = field(default_factory=dict)
-    records: Mapping[str, Pin] = field(default_factory=dict)  # what release/ already ships
+    installs: Mapping[str, Install] = field(default_factory=dict[str, Install])  # path -> Install
+    entries: Mapping[str, Entry] = field(default_factory=dict[str, Entry])  # path -> Entry
+    edges: tuple[Edge, ...] = ()
+    vendored: tuple[str, ...] = ()
+    npm: Mapping[str, str] = field(default_factory=dict[str, str])
+    records: Mapping[str, Pin] = field(default_factory=dict[str, Pin])  # what release/ already ships
 
 
 @dataclass(frozen=True)
@@ -228,6 +229,30 @@ class Act:
     dest: Optional[str] = None
     target: Optional[str] = None
     reason: str = ""
+
+    # Which of the optional fields an act carries is decided by its op, and
+    # every applier runs on one op only. These name what its op promises, so a
+    # planner bug says so here instead of reaching shutil as a None.
+    @property
+    def required_pin(self) -> Pin:
+        if self.pin is None:
+            raise self._missing("pin")
+        return self.pin
+
+    @property
+    def required_dest(self) -> str:
+        if self.dest is None:
+            raise self._missing("dest")
+        return self.dest
+
+    @property
+    def required_target(self) -> str:
+        if self.target is None:
+            raise self._missing("target")
+        return self.target
+
+    def _missing(self, field_name: str) -> PlanError:
+        return PlanError("%s act for %s carries no %s" % (self.op, self.entry, field_name))
 
 
 @dataclass(frozen=True)
@@ -244,32 +269,32 @@ class Option:
     id: str  # "coexist" | "unify" | "defer"
     label: str
     risk: str
-    placements: Tuple[Tuple[Pin, str], ...] = ()  # pin -> entry name to install
-    assignments: Tuple[Tuple[Pin, str], ...] = ()  # demanded pin -> entry satisfying it
+    placements: tuple[tuple[Pin, str], ...] = ()  # pin -> entry name to install
+    assignments: tuple[tuple[Pin, str], ...] = ()  # demanded pin -> entry satisfying it
     pin: Optional[Pin] = None  # the commit a `unify` option settles on
     backed_by: Optional[Pin] = None  # what an already-installed entry holds
 
     @property
-    def entries(self) -> Tuple[str, ...]:
+    def entries(self) -> tuple[str, ...]:
         return tuple(entry for _, entry in self.placements)
 
 
 @dataclass(frozen=True)
 class Conflict:
     remote: str
-    claims: Tuple[Claim, ...]
+    claims: tuple[Claim, ...]
     ancestry: str  # "ancestor"|"descendant"|"diverged"|"unknown"
-    options: Tuple[Option, ...]
+    options: tuple[Option, ...]
     involves_root: bool = False
     kind: str = "commit"  # "commit" | "ambiguous"
 
 
 @dataclass(frozen=True)
 class Plan:
-    acts: Tuple[Act, ...] = ()
-    conflicts: Tuple[Conflict, ...] = ()
-    warnings: Tuple[str, ...] = ()
-    blockers: Tuple[str, ...] = ()  # non-empty => refuse to apply
+    acts: tuple[Act, ...] = ()
+    conflicts: tuple[Conflict, ...] = ()
+    warnings: tuple[str, ...] = ()
+    blockers: tuple[str, ...] = ()  # non-empty => refuse to apply
 
     @property
     def mutates(self) -> bool:
@@ -278,7 +303,7 @@ class Plan:
 
 @dataclass(frozen=True)
 class Request:
-    pins: Tuple[Pin, ...] = ()
+    pins: tuple[Pin, ...] = ()
     name: Optional[str] = None  # --name, applies to a single requested pin
     target: str = ""  # --target, repo-relative; "" => flat at the repo root
     link_mode: str = "symlink"  # symlink | copy
@@ -289,7 +314,7 @@ class Request:
 class Policy:
     on_conflict: str = "defer"  # ask | coexist | unify-newest | defer
     npm: bool = True
-    choices: Mapping[str, int] = field(default_factory=dict)  # remote -> option index
+    choices: Mapping[str, int] = field(default_factory=dict[str, int])  # remote -> option index
 
 
 @dataclass(frozen=True)
@@ -301,7 +326,7 @@ class Naming:
     repo: str
     sep: str
     override: Optional[str] = None
-    requested: Tuple[Pin, ...] = ()
+    requested: tuple[Pin, ...] = ()
     commit_suffix: bool = False
 
     def preferred(self, pin: Pin) -> str:
@@ -329,7 +354,7 @@ class Layout:
     def install_path(self, entry: str) -> str:
         return os.path.join(self.target, entry) if self.target else entry
 
-    def edge_paths(self, dependent_home: str, entry_name: str) -> Tuple[str, ...]:
+    def edge_paths(self, dependent_home: str, entry_name: str) -> tuple[str, ...]:
         """An edge is satisfied by a sibling of its dependent. When the
         dependent does not live at the root, the entry goes in both places:
         Node resolves `../` through the realpath, a bundler with
@@ -355,8 +380,7 @@ def relative_link(link_path: str, install_path: str) -> str:
 
 class git:
     @staticmethod
-    def run(*args: str, **kwargs) -> str:
-        cwd = kwargs.pop("cwd", None)
+    def run(*args: str, cwd: Optional[str] = None) -> str:
         proc = subprocess.run(
             ("git",) + args,
             cwd=cwd,
@@ -371,9 +395,9 @@ class git:
         return proc.stdout.strip()
 
     @staticmethod
-    def ok(*args: str, **kwargs) -> bool:
+    def ok(*args: str, cwd: Optional[str] = None) -> bool:
         try:
-            git.run(*args, **kwargs)
+            git.run(*args, cwd=cwd)
             return True
         except SuedeError:
             return False
@@ -397,7 +421,7 @@ class git:
         return bool(git.run("status", "--porcelain", cwd=cwd))
 
     @staticmethod
-    def tracked_files(cwd: Optional[str] = None) -> List[str]:
+    def tracked_files(cwd: Optional[str] = None) -> list[str]:
         listing = git.run("ls-files", cwd=cwd)
         return listing.splitlines() if listing else []
 
@@ -518,7 +542,7 @@ class gitrepo:
         )
 
     @staticmethod
-    def _manifest_dir(directory: str) -> Tuple[Optional[str], bool]:
+    def _manifest_dir(directory: str) -> tuple[Optional[str], bool]:
         current = os.path.join(directory, MANIFEST_DIR)
         if os.path.isdir(current):
             return current, False
@@ -528,8 +552,8 @@ class gitrepo:
         return None, False
 
     @staticmethod
-    def _records_in(manifest_dir: str) -> Dict[str, Pin]:
-        records = {}
+    def _records_in(manifest_dir: str) -> dict[str, Pin]:
+        records: dict[str, Pin] = {}
         for filename in sorted(os.listdir(manifest_dir)):
             if not filename.endswith(GITREPO):
                 continue
@@ -543,11 +567,11 @@ class npm:
     """package.json's `dependencies`, the only part suede has an opinion about."""
 
     @staticmethod
-    def declared_in(directory: str) -> Dict[str, str]:
+    def declared_in(directory: str) -> dict[str, str]:
         return npm.read(os.path.join(directory, "package.json"))
 
     @staticmethod
-    def read(path: str) -> Dict[str, str]:
+    def read(path: str) -> dict[str, str]:
         if not os.path.isfile(path):
             return {}
         try:
@@ -556,7 +580,11 @@ class npm:
         except (ValueError, OSError):
             return {}
         declared = document.get("dependencies")
-        return dict(declared) if isinstance(declared, dict) else {}
+        if not isinstance(declared, dict):
+            return {}
+        # npm writes package -> version range. A package.json that says otherwise
+        # is not ours to repair, and copying it out unchanged is the honest read.
+        return dict(cast("dict[str, str]", declared))
 
 
 # --------------------------------------------------------------------------- #
@@ -566,7 +594,7 @@ class npm:
 
 class context:
     @staticmethod
-    def repo_name(root: str, override: Optional[str]) -> Tuple[str, Tuple[str, ...]]:
+    def repo_name(root: str, override: Optional[str]) -> tuple[str, tuple[str, ...]]:
         """Classification hinges on knowing this verbatim, and forks and local
         renames are exactly where the two automatic sources disagree."""
         if override:
@@ -595,7 +623,7 @@ class context:
         )
 
     @staticmethod
-    def separator(root: str, repo: str, override: Optional[str]) -> Tuple[str, str]:
+    def separator(root: str, repo: str, override: Optional[str]) -> tuple[str, str]:
         for resolve in (
             lambda: (override, "flag"),
             lambda: (context._declared_separator(root), "file"),
@@ -617,7 +645,7 @@ class context:
 
     @staticmethod
     def _majority_separator(root: str, repo: str) -> Optional[str]:
-        votes = Counter()
+        votes: Counter[str] = Counter()
         for name in os.listdir(root):
             for separator in LEGAL_SEPARATORS:
                 if name.startswith(repo + separator):
@@ -627,7 +655,7 @@ class context:
     @staticmethod
     def _inferred_separator(root: str) -> Optional[str]:
         """Tracked files only, so .gitignore is respected for free."""
-        votes = Counter()
+        votes: Counter[str] = Counter()
         for path in git.tracked_files(cwd=root):
             separator = SEPARATOR_BY_EXTENSION.get(path.rsplit(".", 1)[-1].lower())
             if separator:
@@ -635,7 +663,7 @@ class context:
         return context._winner(votes)
 
     @staticmethod
-    def _winner(votes: Counter) -> Optional[str]:
+    def _winner(votes: Counter[str]) -> Optional[str]:
         ranked = votes.most_common()
         if not ranked:
             return None
@@ -679,10 +707,10 @@ def scan(root: str, repo: str, sep: str, sep_source: str) -> World:
     )
 
 
-def _find_installs(root: str) -> Dict[str, Install]:
+def _find_installs(root: str) -> dict[str, Install]:
     """Every directory holding a `.gitrepo`, outside `release/`. Code inside
     `release/` ships verbatim and so can never satisfy an edge."""
-    installs = {}
+    installs: dict[str, Install] = {}
     for directory in _walk_outside_release(root):
         install = _read_install(root, directory)
         if install:
@@ -710,13 +738,13 @@ def _read_install(root: str, directory: str) -> Optional[Install]:
     return Install(path=os.path.relpath(directory, root), pin=pin, parent=gitrepo.parent(path))
 
 
-def _find_vendored(root: str) -> Tuple[str, ...]:
+def _find_vendored(root: str) -> tuple[str, ...]:
     """A subrepo inside `release/` ships with the release branch, source and
     all. Nothing to install - but a nested subrepo should never be a surprise."""
     release = os.path.join(root, RELEASE_DIR)
     if not os.path.isdir(release):
         return ()
-    found = []
+    found: list[str] = []
     for directory, subdirs, _ in os.walk(release):
         subdirs[:] = sorted(d for d in subdirs if d not in NEVER_WALK)
         # `release/.gitrepo` is the pointer for release/ itself - the folder
@@ -729,12 +757,12 @@ def _find_vendored(root: str) -> Tuple[str, ...]:
     return tuple(found)
 
 
-def _find_entries(root: str, installs: Mapping[str, Install]) -> Dict[str, Entry]:
+def _find_entries(root: str, installs: Mapping[str, Install]) -> dict[str, Entry]:
     """Root entries, plus the siblings of any install that lives elsewhere -
     an edge is satisfied next to its dependent, wherever that dependent is."""
     directories = {""}
     directories.update(os.path.dirname(path) for path in installs)
-    entries = {}
+    entries: dict[str, Entry] = {}
     for directory in sorted(directories):
         for entry in _entries_in(root, directory):
             entries[entry.path] = entry
@@ -771,8 +799,8 @@ def _target(root: str, absolute: str) -> Optional[str]:
     return os.path.relpath(os.path.realpath(absolute), os.path.realpath(root))
 
 
-def _read_edges(root: str, installs: Mapping[str, Install]) -> Tuple[Edge, ...]:
-    edges = []
+def _read_edges(root: str, installs: Mapping[str, Install]) -> tuple[Edge, ...]:
+    edges: list[Edge] = []
     for path in sorted(installs):
         manifest = gitrepo.read_manifest(os.path.join(root, path))
         for entry_name in sorted(manifest.edges):
@@ -810,17 +838,17 @@ class declarations:
         )
 
     @staticmethod
-    def _separators(world: World) -> Tuple[str, ...]:
+    def _separators(world: World) -> tuple[str, ...]:
         if world.sep in LEGAL_SEPARATORS:
             return LEGAL_SEPARATORS
         return LEGAL_SEPARATORS + (world.sep,)
 
     @staticmethod
-    def root_entries(world: World) -> Dict[str, Entry]:
+    def root_entries(world: World) -> dict[str, Entry]:
         return {path: entry for path, entry in world.entries.items() if os.path.dirname(path) == ""}
 
     @staticmethod
-    def prefixed_entries(world: World) -> Dict[str, Entry]:
+    def prefixed_entries(world: World) -> dict[str, Entry]:
         return {
             name: entry
             for name, entry in declarations.root_entries(world).items()
@@ -828,9 +856,9 @@ class declarations:
         }
 
     @staticmethod
-    def by_name(world: World) -> Dict[str, Install]:
+    def by_name(world: World) -> dict[str, Install]:
         """Entry name -> the install it declares, for every release dependency."""
-        declared = {}
+        declared: dict[str, Install] = {}
         for name, entry in declarations.prefixed_entries(world).items():
             install = declarations.backing_install(world, entry)
             if install and not declarations.is_machinery(install.path):
@@ -843,16 +871,16 @@ class declarations:
         return world.installs.get(backing) if backing else None
 
     @staticmethod
-    def by_remote(world: World) -> Dict[str, Dict[Pin, str]]:
+    def by_remote(world: World) -> dict[str, dict[Pin, str]]:
         """Remote -> {pin: entry name}. The planner's view of what is already
         resolved, and the reason a coexist install stays addressable."""
-        grouped = {}
+        grouped: dict[str, dict[Pin, str]] = {}
         for name, install in sorted(declarations.by_name(world).items()):
             grouped.setdefault(install.pin.remote, {}).setdefault(install.pin, name)
         return grouped
 
     @staticmethod
-    def backing_paths(world: World) -> Dict[str, str]:
+    def backing_paths(world: World) -> dict[str, str]:
         """Install path -> the root entry declaring it."""
         return {install.path: name for name, install in declarations.by_name(world).items()}
 
@@ -881,7 +909,7 @@ class declarations:
         return None
 
     @staticmethod
-    def _sibling_candidates(world: World, dependent: Pin, entry_name: str) -> Tuple[str, ...]:
+    def _sibling_candidates(world: World, dependent: Pin, entry_name: str) -> tuple[str, ...]:
         homes = {os.path.dirname(path) for path, install in world.installs.items()
                  if install.pin == dependent}
         homes.add("")
@@ -902,9 +930,9 @@ class declarations:
 
 @dataclass(frozen=True)
 class Staged:
-    manifests: Mapping[Pin, Manifest] = field(default_factory=dict)
-    trees: Mapping[Pin, str] = field(default_factory=dict)  # pin -> directory holding its bytes
-    ancestry: Mapping[Tuple[str, str], bool] = field(default_factory=dict)
+    manifests: Mapping[Pin, Manifest] = field(default_factory=dict[Pin, Manifest])
+    trees: Mapping[Pin, str] = field(default_factory=dict[Pin, str])  # pin -> directory holding its bytes
+    ancestry: Mapping[tuple[str, str], bool] = field(default_factory=dict[tuple[str, str], bool])
 
 
 def stage(world: World, pins: Sequence[Pin], use_cache: bool = True) -> Staged:
@@ -913,8 +941,8 @@ def stage(world: World, pins: Sequence[Pin], use_cache: bool = True) -> Staged:
     block name a dependency's dependencies before anything is installed."""
     cache.prune(world.root)
     installed = _installed_manifests(world)
-    manifests: Dict[Pin, Manifest] = {}
-    trees: Dict[Pin, str] = {}
+    manifests: dict[Pin, Manifest] = {}
+    trees: dict[Pin, str] = {}
     queue = deque(pins)
     while queue:
         pin = queue.popleft()
@@ -926,7 +954,7 @@ def stage(world: World, pins: Sequence[Pin], use_cache: bool = True) -> Staged:
     return Staged(manifests=manifests, trees=trees, ancestry=_ancestry(world, manifests, use_cache))
 
 
-def _installed_manifests(world: World) -> Dict[Pin, Manifest]:
+def _installed_manifests(world: World) -> dict[Pin, Manifest]:
     """An installed copy is authoritative for its own manifest and saves a
     clone, which is what makes a re-run on a satisfied tree work offline."""
     return {
@@ -935,12 +963,12 @@ def _installed_manifests(world: World) -> Dict[Pin, Manifest]:
     }
 
 
-def _fetch(world: World, pin: Pin, trees: Dict[Pin, str], use_cache: bool) -> Manifest:
+def _fetch(world: World, pin: Pin, trees: dict[Pin, str], use_cache: bool) -> Manifest:
     trees[pin] = cache.fetch(world.root, pin, use_cache)
     return gitrepo.read_manifest(trees[pin])
 
 
-def _wanted_by(world: World, dependent: Pin, manifest: Manifest) -> List[Pin]:
+def _wanted_by(world: World, dependent: Pin, manifest: Manifest) -> list[Pin]:
     """Following the consumer's own resolution here is what keeps staging from
     cloning a dependency they have already replaced."""
     return [
@@ -1010,10 +1038,10 @@ def _slug(remote: str) -> str:
 
 def _ancestry(
     world: World, manifests: Mapping[Pin, Manifest], use_cache: bool
-) -> Dict[Tuple[str, str], bool]:
+) -> dict[tuple[str, str], bool]:
     """"Newer" is a question about history, never about dates - so answer it
     with `merge-base`, and only for the remotes that actually disagree."""
-    table = {}
+    table: dict[tuple[str, str], bool] = {}
     for remote, pins in _remotes_wanted_twice(world, manifests).items():
         repository = cache.history(world.root, remote, pins[0].branch) if use_cache else None
         if not repository:
@@ -1029,8 +1057,8 @@ def _ancestry(
 
 def _remotes_wanted_twice(
     world: World, manifests: Mapping[Pin, Manifest]
-) -> Dict[str, List[Pin]]:
-    by_remote = {}
+) -> dict[str, list[Pin]]:
+    by_remote: dict[str, list[Pin]] = {}
     for pin in _every_pin(world, manifests):
         by_remote.setdefault(pin.remote, [])
         if pin not in by_remote[pin.remote]:
@@ -1072,7 +1100,7 @@ class Names:
     newcomer that wants a taken name gets the suffix instead."""
 
     def __init__(self, taken: Iterable[str]):
-        self._taken = set(taken)
+        self._taken: set[str] = set(taken)
 
     def clone(self) -> "Names":
         return Names(self._taken)
@@ -1091,11 +1119,11 @@ class Names:
 class Resolution:
     """Which entry backs each pin, and what remains unresolved."""
 
-    entry_of: Dict[Pin, str] = field(default_factory=dict)
-    pin_of_entry: Dict[str, Pin] = field(default_factory=dict)
-    installs: List[Tuple[Pin, str]] = field(default_factory=list)
-    reuses: List[Tuple[Pin, str]] = field(default_factory=list)
-    conflicts: List[Conflict] = field(default_factory=list)
+    entry_of: dict[Pin, str] = field(default_factory=dict)
+    pin_of_entry: dict[str, Pin] = field(default_factory=dict)
+    installs: list[tuple[Pin, str]] = field(default_factory=list)
+    reuses: list[tuple[Pin, str]] = field(default_factory=list)
+    conflicts: list[Conflict] = field(default_factory=list)
 
     def satisfy(self, pin: Pin, entry: str, backed_by: Pin) -> None:
         self.entry_of[pin] = entry
@@ -1111,7 +1139,7 @@ def plan(
     request: Request,
     policy: Policy,
     manifests: Mapping[Pin, Manifest],
-    ancestry: Optional[Mapping[Tuple[str, str], bool]] = None,
+    ancestry: Optional[Mapping[tuple[str, str], bool]] = None,
 ) -> Plan:
     blockers = _preconditions(world)
     if blockers:
@@ -1124,12 +1152,12 @@ def plan(
         conflicts=tuple(sorted(resolution.conflicts, key=lambda conflict: conflict.remote)),
         warnings=tuple(warnings)
         + tuple(_legacy_manifest_warnings(manifests))
-        + _situational_warnings(world, request, resolution),
+        + _situational_warnings(world, request),
         blockers=tuple(_npm_blockers(world, policy, manifests)),
     )
 
 
-def _preconditions(world: World) -> Tuple[str, ...]:
+def _preconditions(world: World) -> tuple[str, ...]:
     if world.head is None:
         return (
             "this repository has no commits yet. Install would write an empty `parent`"
@@ -1141,11 +1169,11 @@ def _preconditions(world: World) -> Tuple[str, ...]:
 
 def _closure(
     world: World, request: Request, manifests: Mapping[Pin, Manifest]
-) -> Tuple[Tuple[Pin, ...], Tuple[Demand, ...]]:
+) -> tuple[tuple[Pin, ...], tuple[Demand, ...]]:
     """Every pin reachable from the request, and the demand that reached it.
     The visited set is what makes a cycle terminate rather than a promise."""
-    pins: List[Pin] = []
-    demands: List[Demand] = []
+    pins: list[Pin] = []
+    demands: list[Demand] = []
     queue = deque(request.pins)
     while queue:
         pin = queue.popleft()
@@ -1178,7 +1206,7 @@ def _resolve(
     policy: Policy,
     pins: Sequence[Pin],
     demands: Sequence[Demand],
-    ancestry: Mapping[Tuple[str, str], bool],
+    ancestry: Mapping[tuple[str, str], bool],
 ) -> Resolution:
     resolution = Resolution()
     naming = Naming(
@@ -1207,8 +1235,8 @@ def _resolve(
     return resolution
 
 
-def _wanted_by_remote(pins: Sequence[Pin]) -> Dict[str, List[Pin]]:
-    wanted: Dict[str, List[Pin]] = {}
+def _wanted_by_remote(pins: Sequence[Pin]) -> dict[str, list[Pin]]:
+    wanted: dict[str, list[Pin]] = {}
     for pin in pins:
         wanted.setdefault(pin.remote, [])
         if pin not in wanted[pin.remote]:
@@ -1216,7 +1244,7 @@ def _wanted_by_remote(pins: Sequence[Pin]) -> Dict[str, List[Pin]]:
     return wanted
 
 
-def _claims(remote: str, request: Request, demands: Sequence[Demand]) -> Tuple[Claim, ...]:
+def _claims(remote: str, request: Request, demands: Sequence[Demand]) -> tuple[Claim, ...]:
     claims = [Claim(dependent=None, pin=pin) for pin in request.pins if pin.remote == remote]
     claims += [
         Claim(dependent=demand.dependent.name, pin=demand.effective)
@@ -1230,11 +1258,11 @@ def _resolve_remote(
     remote: str,
     wanted: Sequence[Pin],
     declared: Mapping[Pin, str],
-    claims: Tuple[Claim, ...],
+    claims: tuple[Claim, ...],
     involves_root: bool,
     naming: Naming,
     policy: Policy,
-    ancestry: Mapping[Tuple[str, str], bool],
+    ancestry: Mapping[tuple[str, str], bool],
     names: Names,
     resolution: Resolution,
 ) -> None:
@@ -1259,9 +1287,9 @@ def _resolve_remote(
 
 def _reuse_exact_matches(
     wanted: Sequence[Pin], declared: Mapping[Pin, str], resolution: Resolution
-) -> List[Pin]:
+) -> list[Pin]:
     """An exact commit match is always the answer, whatever else is declared."""
-    unmatched = []
+    unmatched: list[Pin] = []
     for pin in wanted:
         if pin in declared:
             resolution.satisfy(pin, declared[pin], pin)
@@ -1285,11 +1313,11 @@ def _defer_to_the_consumer(
 def _resolve_competing_commits(
     remote: str,
     unmatched: Sequence[Pin],
-    claims: Tuple[Claim, ...],
+    claims: tuple[Claim, ...],
     involves_root: bool,
     naming: Naming,
     policy: Policy,
-    ancestry: Mapping[Tuple[str, str], bool],
+    ancestry: Mapping[tuple[str, str], bool],
     names: Names,
     resolution: Resolution,
 ) -> None:
@@ -1319,7 +1347,7 @@ def _placed_pin(option: Option, entry: str) -> Pin:
 
 
 def _policy_choice(
-    policy: Policy, conflict: Conflict, ancestry: Mapping[Tuple[str, str], bool]
+    policy: Policy, conflict: Conflict, ancestry: Mapping[tuple[str, str], bool]
 ) -> Optional[Option]:
     if conflict.remote in policy.choices:
         return _chosen(conflict, policy.choices[conflict.remote])
@@ -1345,7 +1373,7 @@ def _option_by_id(conflict: Conflict, wanted: str) -> Optional[Option]:
 
 
 def _newest_unify_option(
-    conflict: Conflict, ancestry: Mapping[Tuple[str, str], bool]
+    conflict: Conflict, ancestry: Mapping[tuple[str, str], bool]
 ) -> Optional[Option]:
     unifications = [option for option in conflict.options if option.id == "unify"]
     newest = _newest([option.pin for option in unifications if option.pin], ancestry)
@@ -1354,7 +1382,7 @@ def _newest_unify_option(
     return next(option for option in unifications if option.pin == newest)
 
 
-def _newest(pins: Sequence[Pin], ancestry: Mapping[Tuple[str, str], bool]) -> Optional[Pin]:
+def _newest(pins: Sequence[Pin], ancestry: Mapping[tuple[str, str], bool]) -> Optional[Pin]:
     """The one every other commit is an ancestor of. Diverged history has no
     newest, and guessing one is how a dependent silently gets a commit its
     author never tested."""
@@ -1373,22 +1401,22 @@ def _newest(pins: Sequence[Pin], ancestry: Mapping[Tuple[str, str], bool]) -> Op
 def _conflict(
     remote: str,
     unmatched: Sequence[Pin],
-    claims: Tuple[Claim, ...],
+    claims: tuple[Claim, ...],
     involves_root: bool,
     naming: Naming,
-    ancestry: Mapping[Tuple[str, str], bool],
+    ancestry: Mapping[tuple[str, str], bool],
     names: Names,
 ) -> Conflict:
     return Conflict(
         remote=remote,
         claims=claims,
         ancestry=_describe_ancestry(unmatched, ancestry),
-        options=_options(unmatched, claims, involves_root, naming, ancestry, names),
+        options=_options(unmatched, claims, naming, ancestry, names),
         involves_root=involves_root,
     )
 
 
-def _describe_ancestry(pins: Sequence[Pin], ancestry: Mapping[Tuple[str, str], bool]) -> str:
+def _describe_ancestry(pins: Sequence[Pin], ancestry: Mapping[tuple[str, str], bool]) -> str:
     if len(pins) != 2:
         return "unknown"
     first, second = pins[0].commit, pins[1].commit
@@ -1403,12 +1431,11 @@ def _describe_ancestry(pins: Sequence[Pin], ancestry: Mapping[Tuple[str, str], b
 
 def _options(
     unmatched: Sequence[Pin],
-    claims: Tuple[Claim, ...],
-    involves_root: bool,
+    claims: tuple[Claim, ...],
     naming: Naming,
-    ancestry: Mapping[Tuple[str, str], bool],
+    ancestry: Mapping[tuple[str, str], bool],
     names: Names,
-) -> Tuple[Option, ...]:
+) -> tuple[Option, ...]:
     """Every option states its concrete filesystem outcome and its own risk.
     Nothing is preselected; when the root project is a claimant, coexist leads,
     because unifying changes what its own source compiles against."""
@@ -1420,7 +1447,7 @@ def _options(
     return tuple(offers)
 
 
-def _newest_first(pins: Sequence[Pin], ancestry: Mapping[Tuple[str, str], bool]) -> List[Pin]:
+def _newest_first(pins: Sequence[Pin], ancestry: Mapping[tuple[str, str], bool]) -> list[Pin]:
     newest = _newest(pins, ancestry)
     if newest is None:
         return list(pins)
@@ -1442,7 +1469,7 @@ def _coexist(unmatched: Sequence[Pin], naming: Naming, names: Names) -> Option:
 
 
 def _unify(
-    pin: Pin, unmatched: Sequence[Pin], claims: Tuple[Claim, ...], naming: Naming, names: Names
+    pin: Pin, unmatched: Sequence[Pin], claims: tuple[Claim, ...], naming: Naming, names: Names
 ) -> Option:
     entry = names.clone().reserve(naming.preferred(pin), pin.short)
     return Option(
@@ -1455,7 +1482,7 @@ def _unify(
     )
 
 
-def _unify_risk(pin: Pin, claims: Tuple[Claim, ...]) -> str:
+def _unify_risk(pin: Pin, claims: tuple[Claim, ...]) -> str:
     losers = sorted({claim.dependent or "this project" for claim in claims if claim.pin != pin})
     if not losers:
         return ""
@@ -1473,7 +1500,7 @@ def _defer() -> Option:
 
 
 def _ambiguous(
-    remote: str, claims: Tuple[Claim, ...], declared: Mapping[Pin, str], involves_root: bool
+    remote: str, claims: tuple[Claim, ...], declared: Mapping[Pin, str], involves_root: bool
 ) -> Conflict:
     """Several root-declared entries share this remote and none matches the
     commit asked for. Coexist installs are only resolvable downstream because
@@ -1513,7 +1540,7 @@ def _acts(
     manifests: Mapping[Pin, Manifest],
     demands: Sequence[Demand],
     resolution: Resolution,
-) -> Tuple[List[Act], List[str]]:
+) -> tuple[list[Act], list[str]]:
     layout = Layout(target=request.target, link_mode=request.link_mode)
     edges, warnings = _edge_acts(world, demands, resolution, layout)
     acts = (
@@ -1526,7 +1553,7 @@ def _acts(
     return _drop_notes_when_nothing_changes(acts), warnings
 
 
-def _drop_notes_when_nothing_changes(acts: List[Act]) -> List[Act]:
+def _drop_notes_when_nothing_changes(acts: list[Act]) -> list[Act]:
     """`reuse` and `override` explain a change; with no change to explain, a
     re-run on a satisfied tree should say nothing at all."""
     return acts if any(act.op in MUTATING_OPS for act in acts) else []
@@ -1534,7 +1561,7 @@ def _drop_notes_when_nothing_changes(acts: List[Act]) -> List[Act]:
 
 def _install_acts(
     request: Request, demands: Sequence[Demand], resolution: Resolution, layout: Layout
-) -> List[Act]:
+) -> list[Act]:
     return [
         Act(
             op="install",
@@ -1556,7 +1583,7 @@ def _why(pin: Pin, request: Request, demands: Sequence[Demand]) -> str:
     return "flattening"
 
 
-def _reuse_acts(world: World, resolution: Resolution) -> List[Act]:
+def _reuse_acts(world: World, resolution: Resolution) -> list[Act]:
     declared = declarations.by_name(world)
     return [
         Act(
@@ -1572,9 +1599,9 @@ def _reuse_acts(world: World, resolution: Resolution) -> List[Act]:
 
 def _edge_acts(
     world: World, demands: Sequence[Demand], resolution: Resolution, layout: Layout
-) -> Tuple[List[Act], List[str]]:
-    acts: List[Act] = []
-    warnings: List[str] = []
+) -> tuple[list[Act], list[str]]:
+    acts: list[Act] = []
+    warnings: list[str] = []
     for demand in demands:
         acts += _override_act(demand, resolution)
         for path in _edge_paths(world, demand, resolution, layout):
@@ -1586,7 +1613,7 @@ def _edge_acts(
 
 def _edge_paths(
     world: World, demand: Demand, resolution: Resolution, layout: Layout
-) -> Tuple[str, ...]:
+) -> tuple[str, ...]:
     dependent = resolution.entry_of.get(demand.dependent)
     if dependent is None or demand.effective not in resolution.entry_of:
         return ()
@@ -1596,7 +1623,7 @@ def _edge_paths(
 
 def _one_edge(
     world: World, path: str, demand: Demand, resolution: Resolution, layout: Layout
-) -> Tuple[List[Act], List[str]]:
+) -> tuple[list[Act], list[str]]:
     install = _where(world, resolution.entry_of[demand.effective], layout)
     existing = world.entries.get(path)
     if existing is None:
@@ -1626,7 +1653,7 @@ def _where(world: World, entry: str, layout: Layout) -> str:
     return layout.install_path(entry)
 
 
-def _override_act(demand: Demand, resolution: Resolution) -> List[Act]:
+def _override_act(demand: Demand, resolution: Resolution) -> list[Act]:
     """A consumer who resolved an edge differently gets told, not challenged."""
     entry = resolution.entry_of.get(demand.effective)
     backing = resolution.pin_of_entry.get(entry) if entry else None
@@ -1644,7 +1671,7 @@ def _override_act(demand: Demand, resolution: Resolution) -> List[Act]:
     ]
 
 
-def _record_acts(world: World, resolution: Resolution) -> List[Act]:
+def _record_acts(world: World, resolution: Resolution) -> list[Act]:
     """A project records its whole transitive closure as its own release
     dependencies - which is what makes its manifest a complete recipe."""
     if not world.has_release:
@@ -1661,7 +1688,7 @@ def _record_acts(world: World, resolution: Resolution) -> List[Act]:
     ]
 
 
-def _npm_acts(world: World, policy: Policy, manifests: Mapping[Pin, Manifest]) -> List[Act]:
+def _npm_acts(world: World, policy: Policy, manifests: Mapping[Pin, Manifest]) -> list[Act]:
     additions, _ = _npm_diff(world, policy, manifests)
     return [
         Act(op="npm", entry="%s@%s" % (package, wanted), reason="new")
@@ -1671,11 +1698,11 @@ def _npm_acts(world: World, policy: Policy, manifests: Mapping[Pin, Manifest]) -
 
 def _npm_diff(
     world: World, policy: Policy, manifests: Mapping[Pin, Manifest]
-) -> Tuple[Dict[str, str], Dict[str, Tuple[str, str]]]:
+) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
     """Missing entries are additions; a range that disagrees is a conflict, and
     unifying ranges is a different problem with its own semantics."""
-    additions: Dict[str, str] = {}
-    conflicts: Dict[str, Tuple[str, str]] = {}
+    additions: dict[str, str] = {}
+    conflicts: dict[str, tuple[str, str]] = {}
     if not policy.npm:
         return additions, conflicts
     for manifest in manifests.values():
@@ -1690,7 +1717,7 @@ def _npm_diff(
 
 def _npm_blockers(
     world: World, policy: Policy, manifests: Mapping[Pin, Manifest]
-) -> List[str]:
+) -> list[str]:
     _, conflicts = _npm_diff(world, policy, manifests)
     return [
         "npm dependency %s: a dependency asks for %s, your package.json declares %s."
@@ -1699,7 +1726,7 @@ def _npm_blockers(
     ]
 
 
-def _legacy_manifest_warnings(manifests: Mapping[Pin, Manifest]) -> List[str]:
+def _legacy_manifest_warnings(manifests: Mapping[Pin, Manifest]) -> list[str]:
     """Its entry names were chosen before the `$repo$SEP` rule, so the siblings
     it asks for are not the ones its own code imports. Reading it is better
     than being blind, but only republishing fixes it."""
@@ -1713,8 +1740,8 @@ def _legacy_manifest_warnings(manifests: Mapping[Pin, Manifest]) -> List[str]:
     ]
 
 
-def _situational_warnings(world: World, request: Request, resolution: Resolution) -> Tuple[str, ...]:
-    warnings = []
+def _situational_warnings(world: World, request: Request) -> tuple[str, ...]:
+    warnings: list[str] = []
     if world.dirty:
         warnings.append(
             "working tree is dirty. Install is fine with that, but `git subrepo pull` is not."
@@ -1732,7 +1759,7 @@ def _situational_warnings(world: World, request: Request, resolution: Resolution
     return tuple(warnings)
 
 
-def _ordered(acts: List[Act]) -> Tuple[Act, ...]:
+def _ordered(acts: list[Act]) -> tuple[Act, ...]:
     return tuple(sorted(acts, key=lambda act: (OP_ORDER.index(act.op), act.entry)))
 
 
@@ -1751,13 +1778,13 @@ def announce(world: World, plan: Plan, request: Request, evidence: str = "") -> 
     return "\n".join(lines)
 
 
-def _titled(title: str, lines: Sequence[str]) -> List[str]:
+def _titled(title: str, lines: Sequence[str]) -> list[str]:
     if not lines:
         return []
     return [title, ""] + ["  " + line for line in lines] + [""]
 
 
-def _header(world: World, request: Request, evidence: str) -> List[str]:
+def _header(world: World, request: Request, evidence: str) -> list[str]:
     subject = ", ".join(pin.name for pin in request.pins) or world.repo
     return [
         "suede - %s" % subject,
@@ -1777,7 +1804,7 @@ def _separator_note(world: World, evidence: str) -> str:
     return world.sep_source
 
 
-def _act_lines(plan: Plan) -> List[str]:
+def _act_lines(plan: Plan) -> list[str]:
     if not plan.acts:
         return ["Nothing to do - every declared dependency is already installed.", ""]
     lines = ["PLAN", ""]
@@ -1795,8 +1822,8 @@ def _render(act: Act) -> str:
     return (body + ("   " + act.reason if act.reason else "")).rstrip()
 
 
-def _conflict_lines(plan: Plan) -> List[str]:
-    lines: List[str] = []
+def _conflict_lines(plan: Plan) -> list[str]:
+    lines: list[str] = []
     for conflict in plan.conflicts:
         lines += conflict_prompt(conflict).splitlines() + [""]
     return lines
@@ -1830,7 +1857,7 @@ def _ancestry_sentence(conflict: Conflict) -> str:
     return described.get(conflict.ancestry, "the relationship between the commits is unknown.")
 
 
-def _option_lines(index: int, option: Option) -> List[str]:
+def _option_lines(index: int, option: Option) -> list[str]:
     lines = ["  %d) %-16s %s" % (index, option.id.capitalize(), option.label)]
     lines += ["       -> %s @ %s" % (entry, pin.short) for pin, entry in option.placements]
     if option.risk:
@@ -1853,8 +1880,8 @@ def plan_json(world: World, plan: Plan, request: Request) -> str:
     return json.dumps(document, indent=2, sort_keys=False)
 
 
-def _act_json(act: Act) -> Dict[str, object]:
-    document: Dict[str, object] = {"op": act.op, "entry": act.entry}
+def _act_json(act: Act) -> dict[str, object]:
+    document: dict[str, object] = {"op": act.op, "entry": act.entry}
     if act.pin:
         document["pin"] = _pin_json(act.pin)
     for key, value in (("dest", act.dest), ("target", act.target), ("reason", act.reason)):
@@ -1863,11 +1890,11 @@ def _act_json(act: Act) -> Dict[str, object]:
     return document
 
 
-def _pin_json(pin: Pin) -> Dict[str, str]:
+def _pin_json(pin: Pin) -> dict[str, str]:
     return {"remote": pin.remote, "branch": pin.branch, "commit": pin.commit}
 
 
-def _conflict_json(conflict: Conflict) -> Dict[str, object]:
+def _conflict_json(conflict: Conflict) -> dict[str, object]:
     return {
         "remote": conflict.remote,
         "kind": conflict.kind,
@@ -1927,9 +1954,9 @@ class tty:
                     return given
 
 
-def choose_resolutions(conflicts: Sequence[Conflict], out) -> Dict[str, int]:
+def choose_resolutions(conflicts: Sequence[Conflict], out: TextIO) -> dict[str, int]:
     """Nothing is preselected: silent version selection is not a feature."""
-    choices = {}
+    choices: dict[str, int] = {}
     for conflict in conflicts:
         out.write(conflict_prompt(conflict) + "\n")
         numbers = [str(index) for index in range(1, len(conflict.options) + 1)]
@@ -1937,7 +1964,7 @@ def choose_resolutions(conflicts: Sequence[Conflict], out) -> Dict[str, int]:
     return choices
 
 
-def confirm(out) -> bool:
+def confirm() -> bool:
     if not tty.available():
         return False
     return tty.ask("Proceed? [Y/n] ", ("y", "n"), default="y") == "y"
@@ -1953,9 +1980,9 @@ class Journal:
     we created and exactly what we overwrote, and undo only that."""
 
     def __init__(self, root: str):
-        self.root = root
-        self._created: List[str] = []
-        self._original: Dict[str, Optional[str]] = {}
+        self.root: str = root
+        self._created: list[str] = []
+        self._original: dict[str, Optional[str]] = {}
 
     def creating(self, path: str) -> str:
         self._created.append(path)
@@ -1997,11 +2024,11 @@ def _remove(path: str) -> None:
         shutil.rmtree(path, ignore_errors=True)
 
 
-def apply(world: World, plan: Plan, staged: Staged) -> Tuple[str, ...]:
+def apply(world: World, plan: Plan, staged: Staged) -> tuple[str, ...]:
     """Acts arrive in OP_ORDER, which is also the only safe order to run them:
     real installs, then the entries pointing at them, then the manifest."""
     journal = Journal(world.root)
-    touched: List[str] = []
+    touched: list[str] = []
     try:
         for act in plan.acts:
             touched += APPLIERS.get(act.op, _apply_nothing)(world, act, staged, journal)
@@ -2012,40 +2039,45 @@ def apply(world: World, plan: Plan, staged: Staged) -> Tuple[str, ...]:
     return tuple(touched)
 
 
-def _apply_nothing(world: World, act: Act, staged: Staged, journal: Journal) -> List[str]:
+# Every applier takes the same four arguments so APPLIERS can dispatch on op
+# alone; the ones an op has no use for are named with a leading underscore.
+def _apply_nothing(_world: World, _act: Act, _staged: Staged, _journal: Journal) -> list[str]:
     return []
 
 
-def _apply_install(world: World, act: Act, staged: Staged, journal: Journal) -> List[str]:
-    destination = journal.creating(act.dest)
+def _apply_install(world: World, act: Act, staged: Staged, journal: Journal) -> list[str]:
+    destination = journal.creating(act.required_dest)
     shutil.copytree(
-        staged.trees[act.pin], destination, ignore=shutil.ignore_patterns(".git"), symlinks=True
+        staged.trees[act.required_pin],
+        destination,
+        ignore=shutil.ignore_patterns(".git"),
+        symlinks=True,
     )
-    gitrepo.write(os.path.join(destination, GITREPO), act.pin, parent=world.head)
-    return [act.dest]
+    gitrepo.write(os.path.join(destination, GITREPO), act.required_pin, parent=world.head)
+    return [act.required_dest]
 
 
-def _apply_link(world: World, act: Act, staged: Staged, journal: Journal) -> List[str]:
+def _apply_link(world: World, act: Act, _staged: Staged, journal: Journal) -> list[str]:
     path = journal.creating(act.entry)
     os.makedirs(os.path.dirname(path) or world.root, exist_ok=True)
-    os.symlink(act.target, path)
+    os.symlink(act.required_target, path)
     return [act.entry]
 
 
-def _apply_copy(world: World, act: Act, staged: Staged, journal: Journal) -> List[str]:
+def _apply_copy(world: World, act: Act, _staged: Staged, journal: Journal) -> list[str]:
     path = journal.creating(act.entry)
-    shutil.copytree(os.path.join(world.root, act.dest), path, symlinks=True)
+    shutil.copytree(os.path.join(world.root, act.required_dest), path, symlinks=True)
     return [act.entry]
 
 
-def _apply_record(world: World, act: Act, staged: Staged, journal: Journal) -> List[str]:
-    path = act.dest
+def _apply_record(world: World, act: Act, _staged: Staged, journal: Journal) -> list[str]:
+    path = act.required_dest
     absolute = journal.modifying(path) if os.path.exists(os.path.join(world.root, path)) else journal.creating(path)
-    gitrepo.write_manifest_record(absolute, act.pin)
+    gitrepo.write_manifest_record(absolute, act.required_pin)
     return [path]
 
 
-def _apply_npm(world: World, act: Act, staged: Staged, journal: Journal) -> List[str]:
+def _apply_npm(_world: World, act: Act, _staged: Staged, journal: Journal) -> list[str]:
     """Never touches package-lock.json - that is `npm install`'s job."""
     package, wanted = act.entry.rsplit("@", 1)
     path = journal.modifying("package.json")
@@ -2071,7 +2103,7 @@ APPLIERS = {
 LEVEL_ORDER = ("FAIL", "WARN", "INFO")
 
 
-def check(world: World) -> Tuple[Finding, ...]:
+def check(world: World) -> tuple[Finding, ...]:
     findings = list(_edge_findings(world)) + list(_entry_findings(world))
     return tuple(sorted(findings, key=lambda f: (LEVEL_ORDER.index(f.level), f.where, f.code)))
 
@@ -2085,7 +2117,7 @@ def _edge_findings(world: World) -> Iterable[Finding]:
         if backing is None:
             yield _missing_edge(edge, path, entry)
         elif backing not in declared:
-            yield _undeclared_edge(edge, path, backing)
+            yield _undeclared_edge(path, backing)
         else:
             for finding in _pin_notes(world, edge, path, backing):
                 yield finding
@@ -2112,7 +2144,7 @@ def _missing_edge(edge: Edge, path: str, entry: Optional[Entry]) -> Finding:
     )
 
 
-def _undeclared_edge(edge: Edge, path: str, backing: str) -> Finding:
+def _undeclared_edge(path: str, backing: str) -> Finding:
     """The declaration invariant. It compares no remotes and no commits - only
     that a resolution was declared, which is what frees the pin notes below to
     stay informational."""
@@ -2152,7 +2184,7 @@ def _entry_findings(world: World) -> Iterable[Finding]:
     for name, entry in sorted(declarations.prefixed_entries(world).items()):
         if declarations.backing_install(world, entry) is None:
             yield _dangling(name, entry)
-    for lowered, names in sorted(_by_lowercase(world).items()):
+    for _, names in sorted(_by_lowercase(world).items()):
         if len(names) > 1:
             yield _case_collision(names)
 
@@ -2168,8 +2200,8 @@ def _dangling(name: str, entry: Entry) -> Finding:
     )
 
 
-def _by_lowercase(world: World) -> Dict[str, List[str]]:
-    grouped: Dict[str, List[str]] = {}
+def _by_lowercase(world: World) -> dict[str, list[str]]:
+    grouped: dict[str, list[str]] = {}
     for name in declarations.root_entries(world):
         grouped.setdefault(name.lower(), []).append(name)
     return grouped
@@ -2213,7 +2245,7 @@ class Listing:
     pin: Optional[Pin]
 
 
-def listing(world: World) -> Tuple[Listing, ...]:
+def listing(world: World) -> tuple[Listing, ...]:
     """Classification is implicit in naming, so a one-command view of what the
     tree currently means is the cheapest fix for 'naming is promotion'."""
     declared = declarations.backing_paths(world)
@@ -2263,7 +2295,7 @@ def listing_json(rows: Sequence[Listing]) -> str:
     )
 
 
-def extract(world: World) -> Tuple[str, ...]:
+def extract(world: World) -> tuple[str, ...]:
     """Write `release/.suede/.dependencies/` from the classification. A pure
     application has no `release/`, publishes nothing, and so needs none of it."""
     if not world.has_release:
@@ -2274,14 +2306,14 @@ def extract(world: World) -> Tuple[str, ...]:
     return tuple(written) + _prune_stale_records(world, destination)
 
 
-def _write_records(world: World, destination: str) -> List[str]:
+def _write_records(world: World, destination: str) -> list[str]:
     for name, install in sorted(declarations.by_name(world).items()):
         gitrepo.write_manifest_record(os.path.join(destination, name + GITREPO), install.pin)
     return [name + GITREPO for name in sorted(declarations.by_name(world))]
 
 
-def _copy_dependency_files(world: World, destination: str) -> List[str]:
-    written = []
+def _copy_dependency_files(world: World, destination: str) -> list[str]:
+    written: list[str] = []
     if world.npm:
         _write_text(
             os.path.join(destination, "package.json"),
@@ -2295,9 +2327,9 @@ def _copy_dependency_files(world: World, destination: str) -> List[str]:
     return written
 
 
-def _prune_stale_records(world: World, destination: str) -> Tuple[str, ...]:
+def _prune_stale_records(world: World, destination: str) -> tuple[str, ...]:
     expected = {name + GITREPO for name in declarations.by_name(world)}
-    removed = []
+    removed: list[str] = []
     for filename in sorted(os.listdir(destination)):
         if filename.endswith(GITREPO) and filename not in expected:
             os.remove(os.path.join(destination, filename))
@@ -2310,10 +2342,10 @@ class Divergence:
     entry: str
     path: str
     pin: Pin
-    changed: Tuple[str, ...]
+    changed: tuple[str, ...]
 
 
-def divergence_targets(world: World) -> Tuple[Tuple[str, Install], ...]:
+def divergence_targets(world: World) -> tuple[tuple[str, Install], ...]:
     """Release dependencies only.
 
     A release dependency must match its pinned commit - that is what makes the
@@ -2324,8 +2356,8 @@ def divergence_targets(world: World) -> Tuple[Tuple[str, Install], ...]:
     return tuple(sorted(declarations.by_name(world).items()))
 
 
-def diff(world: World, use_cache: bool = True) -> Tuple[Divergence, ...]:
-    diverged = []
+def diff(world: World, use_cache: bool = True) -> tuple[Divergence, ...]:
+    diverged: list[Divergence] = []
     for entry, install in divergence_targets(world):
         pinned = cache.fetch(world.root, install.pin, use_cache)
         changed = _changed_files(pinned, os.path.join(world.root, install.path))
@@ -2336,7 +2368,7 @@ def diff(world: World, use_cache: bool = True) -> Tuple[Divergence, ...]:
     return tuple(diverged)
 
 
-def _changed_files(pinned: str, local: str) -> Tuple[str, ...]:
+def _changed_files(pinned: str, local: str) -> tuple[str, ...]:
     """`.gitrepo` is excluded: it is local metadata and always differs."""
     before, after = _digests(pinned), _digests(local)
     return tuple(sorted(set(before) ^ set(after) | {
@@ -2344,8 +2376,8 @@ def _changed_files(pinned: str, local: str) -> Tuple[str, ...]:
     }))
 
 
-def _digests(directory: str) -> Dict[str, str]:
-    digests = {}
+def _digests(directory: str) -> dict[str, str]:
+    digests: dict[str, str] = {}
     for parent, subdirs, filenames in os.walk(directory):
         subdirs[:] = sorted(name for name in subdirs if name != ".git")
         for filename in filenames:
@@ -2369,7 +2401,7 @@ def _digest(path: str) -> str:
 def render_divergence(diverged: Sequence[Divergence]) -> str:
     if not diverged:
         return "diff: every release dependency matches its pinned commit"
-    lines = []
+    lines: list[str] = []
     for divergence in diverged:
         lines.append(
             "%s has local modifications relative to %s (%s)"
@@ -2388,8 +2420,8 @@ def render_divergence(diverged: Sequence[Divergence]) -> str:
 @dataclass(frozen=True)
 class Removal:
     entry: str
-    removed: Tuple[str, ...]
-    orphans: Tuple[str, ...]
+    removed: tuple[str, ...]
+    orphans: tuple[str, ...]
 
 
 def plan_removal(world: World, entry: str) -> Removal:
@@ -2403,12 +2435,12 @@ def plan_removal(world: World, entry: str) -> Removal:
     return Removal(entry=entry, removed=tuple(removed), orphans=_orphans_without(world, install))
 
 
-def _records_for(world: World, entry: str) -> List[str]:
+def _records_for(world: World, entry: str) -> list[str]:
     record = os.path.join(RELEASE_DIR, MANIFEST_DIR, entry + GITREPO)
     return [record] if entry in world.records else []
 
 
-def _orphans_without(world: World, removed: Install) -> Tuple[str, ...]:
+def _orphans_without(world: World, removed: Install) -> tuple[str, ...]:
     still_wanted = {
         edge.pin for edge in world.edges if edge.dependent != removed.path
     }
@@ -2427,7 +2459,7 @@ def _orphans_without(world: World, removed: Install) -> Tuple[str, ...]:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="suede", description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog="suede", description=(__doc__ or "").splitlines()[0])
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--repo-name", help="override $repo detection")
     common.add_argument("--separator", help="override $SEP for this project's own entries")
@@ -2437,7 +2469,13 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _install_parser(commands, common: argparse.ArgumentParser) -> None:
+# `argparse._SubParsersAction` is what add_subparsers() returns and argparse
+# exports no public name for it. Annotations are strings here, so naming it
+# costs nothing at runtime.
+def _install_parser(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+    common: argparse.ArgumentParser,
+) -> None:
     install = commands.add_parser("install", parents=[common], help="install a suede dependency")
     source = install.add_mutually_exclusive_group(required=True)
     source.add_argument("--repo", help="OWNER/REPO, or any git remote URL")
@@ -2460,7 +2498,10 @@ def _install_parser(commands, common: argparse.ArgumentParser) -> None:
     install.add_argument("--commit", action="store_true", help="commit the result")
 
 
-def _audit_parsers(commands, common: argparse.ArgumentParser) -> None:
+def _audit_parsers(
+    commands: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
+    common: argparse.ArgumentParser,
+) -> None:
     check_command = commands.add_parser("check", parents=[common], help="audit the tree")
     check_command.add_argument("--plan-json", action="store_true")
     list_command = commands.add_parser("list", parents=[common], help="show every dependency")
@@ -2475,7 +2516,7 @@ def _audit_parsers(commands, common: argparse.ArgumentParser) -> None:
     remove.add_argument("--yes", action="store_true")
 
 
-def _open_world(args) -> Tuple[World, Tuple[str, ...]]:
+def _open_world(args: argparse.Namespace) -> tuple[World, tuple[str, ...]]:
     root = git.toplevel()
     os.chdir(root)
     repo, notes = context.repo_name(root, args.repo_name)
@@ -2494,7 +2535,7 @@ def remote_from(repo: str) -> str:
     raise Usage("--repo wants OWNER/REPO or a git remote URL (got %s)" % repo)
 
 
-def _requested_pin(args) -> Pin:
+def _requested_pin(args: argparse.Namespace) -> Pin:
     if args.gitrepo:
         return _pin_from_gitrepo(args.gitrepo)
     remote = remote_from(args.repo)
@@ -2517,7 +2558,7 @@ def _stdin_to_temporary_file() -> str:
     return handle.name
 
 
-def _request(args) -> Request:
+def _request(args: argparse.Namespace) -> Request:
     return Request(
         pins=(_requested_pin(args),),
         name=args.name,
@@ -2527,12 +2568,12 @@ def _request(args) -> Request:
     )
 
 
-def _policy(args) -> Policy:
+def _policy(args: argparse.Namespace) -> Policy:
     fallback = "ask" if tty.available() else "defer"
     return Policy(on_conflict=args.on_conflict or fallback, npm=not args.no_npm)
 
 
-def install_command(args) -> int:
+def install_command(args: argparse.Namespace) -> int:
     world, notes = _open_world(args)
     request = _request(args)
     policy = _policy(args)
@@ -2544,7 +2585,7 @@ def install_command(args) -> int:
     _report(notes, announce(world, proposal, request, context.evidence(world.root, world.sep, world.sep_source)))
     if proposal.blockers or proposal.conflicts or args.dry_run or not proposal.mutates:
         return _plan_exit_code(proposal)
-    if not (args.yes or confirm(sys.stdout)):
+    if not (args.yes or confirm()):
         return Exit.UNRESOLVED
     return _carry_out(world, proposal, staged, args)
 
@@ -2573,7 +2614,7 @@ def _report(notes: Sequence[str], text: str) -> None:
     print(text)
 
 
-def _carry_out(world: World, proposal: Plan, staged: Staged, args) -> int:
+def _carry_out(world: World, proposal: Plan, staged: Staged, args: argparse.Namespace) -> int:
     apply(world, proposal, staged)
     _persist_separator(world)
     if args.commit:
@@ -2605,28 +2646,28 @@ def _verify(world: World) -> int:
     return Exit.OK
 
 
-def diff_command(args) -> int:
+def diff_command(args: argparse.Namespace) -> int:
     world, notes = _open_world(args)
     diverged = diff(world, use_cache=not args.no_cache)
     _report(notes, render_divergence(diverged))
     return Exit.CHECK_FAILED if diverged else Exit.OK
 
 
-def check_command(args) -> int:
+def check_command(args: argparse.Namespace) -> int:
     world, notes = _open_world(args)
     findings = check(world)
     _report(notes, findings_json(findings) if args.plan_json else render_findings(findings))
     return Exit.CHECK_FAILED if worst(findings) == "FAIL" else Exit.OK
 
 
-def list_command(args) -> int:
+def list_command(args: argparse.Namespace) -> int:
     world, notes = _open_world(args)
     rows = listing(world)
     _report(notes, listing_json(rows) if args.json else render_listing(rows))
     return Exit.OK
 
 
-def extract_command(args) -> int:
+def extract_command(args: argparse.Namespace) -> int:
     world, _ = _open_world(args)
     if not world.has_release:
         print("no release/ directory - nothing to extract")
@@ -2636,11 +2677,11 @@ def extract_command(args) -> int:
     return Exit.OK
 
 
-def remove_command(args) -> int:
+def remove_command(args: argparse.Namespace) -> int:
     world, _ = _open_world(args)
     removal = plan_removal(world, args.entry)
     print(_render_removal(removal))
-    if not (args.yes or confirm(sys.stdout)):
+    if not (args.yes or confirm()):
         return Exit.UNRESOLVED
     for path in removal.removed:
         _remove(os.path.join(world.root, path))
