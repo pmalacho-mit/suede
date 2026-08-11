@@ -140,6 +140,27 @@ class Classification(unittest.TestCase):
         self.assertEqual(suede.check(tree), ())
 
 
+class SuedeMachinery(unittest.TestCase):
+    """A dependency vendors its workflows and core scripts from suede itself.
+    Those are subrepos too, and they are not dependencies."""
+
+    def test_the_vendored_core_is_not_a_dependency(self):
+        tree = world(installs={".suede/core": C, ".suede/devcontainers-suede": B})
+
+        self.assertEqual([row.path for row in suede.listing(tree)], [".suede/devcontainers-suede"])
+
+    def test_vendored_workflows_are_not_a_dependency(self):
+        tree = world(installs={".github/workflows": C}, vendored=("release/.suede/core",))
+
+        self.assertEqual(suede.listing(tree), ())
+
+    def test_the_rule_is_the_path_not_the_name(self):
+        self.assertTrue(suede.declarations.is_machinery(".suede/core"))
+        self.assertTrue(suede.declarations.is_machinery("release/.suede/core"))
+        self.assertFalse(suede.declarations.is_machinery(".suede/core-utils"))
+        self.assertFalse(suede.declarations.is_machinery("my.core"))
+
+
 class DivergenceTargets(unittest.TestCase):
     """The asymmetry that keeps the vendor escape hatch working."""
 

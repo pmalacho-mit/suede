@@ -1,21 +1,42 @@
 # Migrating a suede dependency to v2
 
 Copy the file for your repository into it (as `MIGRATION.md`), then work
-through it. Each one is self-contained and states what that repository looks
-like today, so you can tell whether anything drifted before you start.
+through it.
 
-| Repository | Document | Order |
-| --- | --- | --- |
-| `sqlmodel-utils-suede` | [sqlmodel-utils-suede.md](./sqlmodel-utils-suede.md) | any time — it depends on nothing |
-| `browser-control-container-suede` | [browser-control-container-suede.md](./browser-control-container-suede.md) | **before** sweater-vest |
-| `sweater-vest-suede` | [sweater-vest-suede.md](./sweater-vest-suede.md) | **last** |
+**[`any-suede-dependency.md`](./any-suede-dependency.md) is the general
+procedure** — it covers every shape a suede repository is currently in, and is
+the one to copy into repositories that have no document of their own. The
+per-repository files below record what that repository actually looks like
+today and what is specific to it; the three oldest also restate the steps in
+full.
 
-**The order matters in one direction only.** `sweater-vest-suede` consumes
-`browser-control-container-suede`. A dependency's manifest is what tells a
-consumer which siblings to create, so migrate the dependency first and the
-consumer second. Nothing breaks if you get it wrong — the installer reports a
-stale manifest rather than acting on it — but you would have to redo the
-consumer.
+## The order
+
+A dependency must be migrated before anything that consumes it: its manifest is
+what tells a consumer which siblings to create. Waves, not a strict sequence —
+everything within a wave is independent.
+
+| Wave | Repository | Shape | Note |
+| --- | --- | --- | --- |
+| **1** | [`programmatic-docker-suede`](./programmatic-docker-suede.md) | pre-upgrade | root of the longest chain |
+| **1** | [`dockview-svelte-suede`](./dockview-svelte-suede.md) | pre-upgrade | two dead manifest directories |
+| **1** | [`typescript-cli-suede`](./typescript-cli-suede.md) | **already upgraded** | shortest path of the six |
+| **1** | [`sqlmodel-utils-suede`](./sqlmodel-utils-suede.md) | pre-upgrade | independent; Python, so `__` |
+| **2** | [`browser-control-container-suede`](./browser-control-container-suede.md) | pre-upgrade | needs programmatic-docker first |
+| **3** | [`sweater-vest-suede`](./sweater-vest-suede.md) | pre-upgrade | needs all of wave 1 and 2 |
+
+```
+programmatic-docker ──> browser-control ──┐
+dockview-svelte ──────────────────────────┼──> sweater-vest
+typescript-cli ───────────────────────────┘
+sqlmodel-utils (independent)
+```
+
+Nothing breaks if you get the order wrong — the installer reports a stale
+manifest rather than acting on it — but you would migrate the consumer twice.
+
+For the rest of the estate, [`any-suede-dependency.md`](./any-suede-dependency.md)
+step 1 shows how to derive the same ordering from `suede list`.
 
 ---
 
@@ -48,8 +69,8 @@ dependency. v2 requires a root entry named `$repo` **plus a separator** —
 `.` or `__`. In a repo named `suede`, a sibling folder `suede-extras/` used to
 be silently promoted; now it is not.
 
-All three of these repositories already use the prefixed naming, so this costs
-you nothing. Run `suede list` to confirm before and after.
+Every repository in the table above already uses the prefixed naming, so this
+costs nothing. Run `suede list` to confirm before and after.
 
 ### 3. Every transitive dependency is declared at your root
 
@@ -93,6 +114,14 @@ repository gets fixes by pulling the subrepo rather than by you editing YAML.
 
 `.suede/core/suede.py` is the installer itself, vendored, so the guard runs
 with no network beyond git.
+
+### 6. suede's own plumbing is no longer classified as a dependency
+
+`.suede/core` and `.github/workflows` are subrepos, so they used to appear in
+`list` as development or vendored dependencies. They are how a dependency gets
+its workflows, not something it depends on, and they are now excluded. Expect
+`list` to show only your real dependencies — for most repositories that means
+`.suede/devcontainers-suede` as `development`, and nothing else.
 
 ---
 
