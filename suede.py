@@ -92,6 +92,12 @@ CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 
 NEVER_WALK = (".git", "node_modules")
 
+# suede's own vendored machinery. These are subrepos, so they look exactly like
+# dependencies, but they are how a dependency gets its workflows and core
+# scripts - not something it depends on. Classifying them would put suede's
+# plumbing in every `list` and announce it as vendored code on every install.
+MACHINERY = (os.path.join(".suede", "core"), os.path.join(".github", "workflows"))
+
 SUBREPO_METHOD = "merge"
 SUBREPO_CMDVER = "0.4.9"
 
@@ -789,6 +795,13 @@ class declarations:
     """
 
     @staticmethod
+    def is_machinery(path: str) -> bool:
+        """suede's own vendored plumbing. A subrepo like any other on disk,
+        which is why scan reports it - but not something the project depends
+        on, so nothing downstream should treat it as one."""
+        return any(path == place or path.endswith(os.sep + place) for place in MACHINERY)
+
+    @staticmethod
     def is_prefixed(world: World, name: str) -> bool:
         return any(
             name.startswith(world.repo + separator)
@@ -820,7 +833,7 @@ class declarations:
         declared = {}
         for name, entry in declarations.prefixed_entries(world).items():
             install = declarations.backing_install(world, entry)
-            if install:
+            if install and not declarations.is_machinery(install.path):
                 declared[name] = install
         return declared
 
@@ -1713,6 +1726,8 @@ def _situational_warnings(world: World, request: Request, resolution: Resolution
             " do not. If your build resolves neither, you own the fix."
         )
     for path in world.vendored:
+        if declarations.is_machinery(path):
+            continue
         warnings.append("%s is vendored inside release/ - it ships as source, nothing to install" % path)
     return tuple(warnings)
 
@@ -2206,9 +2221,11 @@ def listing(world: World) -> Tuple[Listing, ...]:
         Listing(entry=declared.get(path, ""), kind=declarations.classify(world, install),
                 path=path, pin=install.pin)
         for path, install in sorted(world.installs.items())
+        if not declarations.is_machinery(path)
     ]
     rows += [Listing(entry="", kind="vendored", path=path, pin=_vendored_pin(world, path))
-             for path in world.vendored]
+             for path in world.vendored
+             if not declarations.is_machinery(path)]
     return tuple(rows)
 
 
