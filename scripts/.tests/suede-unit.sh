@@ -5,20 +5,21 @@
 #   python3 -m unittest discover .tests/unit -t .tests/unit
 # This wrapper exists so one command runs the whole suite and one transcript
 # carries the result — a suite you have to remember to run separately is a
-# suite that stops being run.
+# suite that stops being run. Which is also why the modules are discovered
+# rather than listed: a hand-kept list is the same problem one level down.
 set -euo pipefail
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$TESTS_DIR/../.." && pwd)"
 HARNESS="$(cd "$ROOT_DIR/.tests/harness" && pwd)"
 source "$HARNESS/runner.sh"; source "$HARNESS/color-logging.sh"
+SUITE_DIR="$ROOT_DIR/.tests/unit"
 
 # One harness test per module, so a failure names the area rather than "python".
-module() {
-  python3 -m unittest discover "$ROOT_DIR/.tests/unit" -t "$ROOT_DIR/.tests/unit" -p "$1.py"
-}
+declare -a MODULES=()
+for path in "$SUITE_DIR"/test_*.py; do
+  name="$(basename "$path" .py)"
+  eval "${name}() { python3 -m unittest discover '$SUITE_DIR' -t '$SUITE_DIR' -p '${name}.py'; }"
+  MODULES+=("$name")
+done
 
-planner_scenarios()      { module test_planner; }
-check_and_classification() { module test_check; }
-the_pure_boundary()      { module test_purity; }
-
-run_test_suite planner_scenarios check_and_classification the_pure_boundary
+run_test_suite "${MODULES[@]}"

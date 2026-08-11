@@ -93,6 +93,12 @@ CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 
 NEVER_WALK = (".git", "node_modules")
 
+# Prompts go here, never to stdin: the bootstrap pipes a .gitrepo into stdin.
+TERMINAL = "/dev/tty"
+# A person mistypes a few times; a prompt that has read nothing usable this
+# many times is not talking to a person, and should say so rather than spin.
+MAX_PROMPTS = 10
+
 # suede's own vendored machinery. These are subrepos, so they look exactly like
 # dependencies, but they are how a dependency gets its workflows and core
 # scripts - not something it depends on. Classifying them would put suede's
@@ -1939,19 +1945,50 @@ class tty:
 
     @staticmethod
     def available() -> bool:
-        return os.path.exists("/dev/tty") and sys.stdin.isatty()
+        return os.path.exists(TERMINAL) and sys.stdin.isatty()
 
     @staticmethod
-    def ask(question: str, answers: Sequence[str], default: Optional[str] = None) -> str:
-        with open("/dev/tty", "r+") as terminal:
-            while True:
-                terminal.write(question)
-                terminal.flush()
-                given = terminal.readline().strip().lower()
-                if not given and default:
-                    return default
-                if given in answers:
-                    return given
+    def ask(
+        question: str,
+        answers: Sequence[str],
+        default: Optional[str] = None,
+        path: str = TERMINAL,
+    ) -> str:
+        """Two handles, not one opened "r+": a terminal is not seekable, and
+        Python's buffered random-access mode refuses to wrap anything that
+        isn't. `path` is a parameter so this can be exercised against a real
+        pty instead of only in someone's terminal."""
+        with open(path, "r") as reading, open(path, "w") as writing:
+            return tty._answer(question, answers, default, reading, writing)
+
+    @staticmethod
+    def _answer(
+        question: str,
+        answers: Sequence[str],
+        default: Optional[str],
+        reading: TextIO,
+        writing: TextIO,
+    ) -> str:
+        for _ in range(MAX_PROMPTS):
+            writing.write(question)
+            writing.flush()
+            line = reading.readline()
+            if not line:
+                return tty._no_answer(default)
+            given = line.strip().lower()
+            if not given and default:
+                return default
+            if given in answers:
+                return given
+        return tty._no_answer(default)
+
+    @staticmethod
+    def _no_answer(default: Optional[str]) -> str:
+        """The terminal closed. Taking silence for consent is how an unattended
+        run installs something nobody agreed to."""
+        if default:
+            return default
+        raise SuedeError("no usable answer from the terminal; nothing was applied")
 
 
 def choose_resolutions(conflicts: Sequence[Conflict], out: TextIO) -> dict[str, int]:
