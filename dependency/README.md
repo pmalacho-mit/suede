@@ -41,17 +41,12 @@ There is a top-level folder for each branch of a suede dependency — [`main`](.
 In a fully initialized dependency repo, you'd have the following branch & folder structure
 
 - `main` (branch)
-  - .devcontainer
-    - devcontainer.json (symlink to /.suede/devcontainers-suede/common.json)
   - .github/workflows/
     - .gitrepo (points to [dependency/main/workflows](https://github.com/pmalacho-mit/suede/tree/dependency/main/workflows))
     - ... files ...
   - .suede/
     - core/
       - .gitrepo (points to [dependency/main/core](https://github.com/pmalacho-mit/suede/tree/dependency/main/core))
-      - ... files ...
-    - devcontainers-suede/
-      - .gitrepo (points to `release` branch of [pmalacho-mit/devcontainers-suede](https://github.com/pmalacho-mit/devcontainers-suede))
       - ... files ...
   - release/
     - .gitrepo (points to `release` branch of dependency repo)
