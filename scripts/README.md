@@ -52,6 +52,19 @@ was hard-coded. `suede.py` has no such restriction — `git clone` and
 `git ls-remote` take a remote verbatim — so GitLab, Codeberg and self-hosted
 git work.
 
+## `create/`
+
+### `create/dependency.sh`
+
+Creates a dependency repository from the template, applies the settings the
+template README asks for, dispatches the initialization workflow and follows it
+to completion — the scripted form of [Creating a
+Dependency](../README.md#creating-a-dependency). Needs an authenticated `gh`.
+
+```bash
+./scripts/create/dependency.sh <name> [public|private] [--org <org>] [--cleanup]
+```
+
 ## `install/`
 
 ### `install/release.sh`
@@ -78,11 +91,11 @@ Writes installation instructions to README.md by parsing the git remote origin U
 
 ## `upgrade/`
 
-### `upgrade/README.md`
+### `upgrade/v1.md`
 
 Step-by-step manual instructions for migrating a repository created with an earlier version of the suede workflow onto the current subrepo layout, where `.suede/core` and `.github/workflows` are vendored from dedicated suede library branches. Rewires both `release` and `main` and drops obsolete generated files (the old per-branch workflow on each side, plus `initialize.yml` on main).
 
-See [upgrade/README.md](upgrade/README.md).
+See [upgrade/v1.md](upgrade/v1.md) — and [`migration/`](../migration/) instead if you are also moving to v2, which folds these steps in.
 
 ## Subrepo helpers
 

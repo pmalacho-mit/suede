@@ -72,8 +72,8 @@ const index = `<!DOCTYPE html>
 		<code>.sh</code> or <code>.py</code> are served verbatim.</p>
 
 		<h2>Examples</h2>
-		<pre><code>curl -fsSL https://suede.sh/utils/degit
-curl -fsSL https://suede.sh/suede            # -> scripts/suede.py
+		<pre><code>curl -fsSL https://suede.sh/suede            # -> scripts/suede.py
+curl -fsSL https://suede.sh/install/release  # the install bootstrap
 curl -fsSL https://suede.sh/suede?ref=v2.0.0 # pinned to a tag</code></pre>
 
 		<h2>Pinning</h2>

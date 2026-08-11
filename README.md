@@ -205,6 +205,11 @@ Follow the below steps when setting up a codebase that will behave as a dependen
 2. **Follow the setup steps in your repository's README.** Once your repository is created from the template, its [`README.md`](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/README.md) will instruct you on next steps, which include:
    - Enabling certain Github Action workflow permissions
    - Dispatching the [initialization workflow](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/initialize.yml)
+> [!TIP]
+> [`scripts/create/dependency.sh`](./scripts/create/dependency.sh) does steps 1
+> and 2 in one command (it needs an authenticated [`gh`](https://cli.github.com/)):
+> `./scripts/create/dependency.sh <name> [public|private] [--org <org>]`
+
 3. **Share your dependency.** Once you complete the setup steps, your repository can now be distributed as a suede dependency. The [initialization workflow](https://github.com/pmalacho-mit/suede-dependency-template/blob/main/.github/workflows/initialize.yml) will automatically update your repo's `README.md` to instruct users on how to install your dependency, which will follow the format:
    > `bash <(curl https://suede.sh/install/release) --repo owner/name`
 
