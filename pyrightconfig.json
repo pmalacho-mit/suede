@@ -1,0 +1,20 @@
+{
+  // suede targets Python 3.9 - macOS ships 3.9.6 with the Command Line Tools.
+  "pythonVersion": "3.9",
+  "typeCheckingMode": "strict",
+
+  // basedpyright's `recommended` mode adds three rules that argue with this
+  // codebase's style rather than finding bugs in it. Each is off for a stated
+  // reason, not to bring a count down.
+
+  // json.loads is Any by definition; the places that read a parsed document
+  // guard with isinstance where the shape actually matters.
+  "reportAny": false,
+
+  // Adjacent string literals are how every multi-line message here is written.
+  "reportImplicitStringConcatenation": false,
+
+  // git.run, print and parser.add_argument are called for their effect.
+  // `_ =` on twenty-five lines would be noise, not information.
+  "reportUnusedCallResult": false
+}
