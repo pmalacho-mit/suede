@@ -19,6 +19,11 @@
       "version": "0.0.1",
       "resolved": "ghcr.io/guiyomh/features/vim@sha256:53c64a458fe88f40862ad5f94ea3f8d7fdf46c3fb42bdaa8a6a09f7d44f182f7",
       "integrity": "sha256:53c64a458fe88f40862ad5f94ea3f8d7fdf46c3fb42bdaa8a6a09f7d44f182f7"
+    },
+    "ghcr.io/pmalacho-mit/devcontainer-features/git-subrepo:latest": {
+      "version": "1.0.1",
+      "resolved": "ghcr.io/pmalacho-mit/devcontainer-features/git-subrepo@sha256:83279871da9922f57be228af1c316cc47367c85cb2087d3ff233a2dbdc738719",
+      "integrity": "sha256:83279871da9922f57be228af1c316cc47367c85cb2087d3ff233a2dbdc738719"
     }
   }
 }

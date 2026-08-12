@@ -39,8 +39,8 @@ import subprocess  # noqa: E402
 import tempfile  # noqa: E402
 import time  # noqa: E402
 from collections import Counter, deque  # noqa: E402
-from collections.abc import Iterable, Mapping, Sequence  # noqa: E402
-from dataclasses import dataclass, field  # noqa: E402
+from collections.abc import Callable, Iterable, Mapping, Sequence  # noqa: E402
+from dataclasses import dataclass, field, replace  # noqa: E402
 from typing import Final, Optional, TextIO, cast  # noqa: E402
 
 # --------------------------------------------------------------------------- #
@@ -116,8 +116,13 @@ GITREPO_HEADER = (
     ";\n"
 )
 
-OP_ORDER = ("install", "reuse", "link", "copy", "record", "override", "npm")
-MUTATING_OPS = ("install", "link", "copy", "record", "npm")
+OP_ORDER = ("install", "reuse", "link", "copy", "record", "override", "npm", "pip")
+MUTATING_OPS = ("install", "link", "copy", "record", "npm", "pip")
+
+# What a blocker tells you to do when a dependency's package declarations
+# disagree with your own. Naming the flag is the whole point: the alternative
+# is a refusal with no way past it.
+ALLOW_CONFLICTS_FLAG = "--allow-conflicting-packages"
 
 
 class Exit:
@@ -204,6 +209,8 @@ class Edge:
 class Manifest:
     edges: Mapping[str, Pin] = field(default_factory=dict[str, Pin])
     npm: Mapping[str, str] = field(default_factory=dict[str, str])
+    python: Mapping[str, str] = field(default_factory=dict[str, str])
+    python_extras: tuple[str, ...] = ()  # requirements.txt lines that name no package
     legacy: bool = False  # published at the pre-2.0 path
 
 
@@ -224,6 +231,7 @@ class World:
     edges: tuple[Edge, ...] = ()
     vendored: tuple[str, ...] = ()
     npm: Mapping[str, str] = field(default_factory=dict[str, str])
+    python: Mapping[str, str] = field(default_factory=dict[str, str])
     records: Mapping[str, Pin] = field(default_factory=dict[str, Pin])  # what release/ already ships
 
 
@@ -320,6 +328,10 @@ class Request:
 class Policy:
     on_conflict: str = "defer"  # ask | coexist | unify-newest | defer
     npm: bool = True
+    python: bool = True
+    # A dependency declaring a package version you already declare differently
+    # stops the install. This says: keep mine, install the rest anyway.
+    allow_package_conflicts: bool = False
     choices: Mapping[str, int] = field(default_factory=dict[str, int])  # remote -> option index
 
 
@@ -541,9 +553,12 @@ class gitrepo:
         published, legacy = gitrepo._manifest_dir(directory)
         if published is None:
             return EMPTY_MANIFEST
+        requirements, extras = pip.declared_in(published)
         return Manifest(
             edges=gitrepo._records_in(published),
             npm=npm.declared_in(published),
+            python=requirements,
+            python_extras=extras,
             legacy=legacy,
         )
 
@@ -591,6 +606,95 @@ class npm:
         # npm writes package -> version range. A package.json that says otherwise
         # is not ours to repair, and copying it out unchanged is the honest read.
         return dict(cast("dict[str, str]", declared))
+
+
+class pip:
+    """`requirements.txt`, read the way `pip install -r` reads it: one
+    requirement per line, `#` starts a comment, a trailing backslash continues.
+
+    Keyed by the PEP 503 normalized name, because `Foo_Bar` and `foo-bar` name
+    the same distribution and a merge that thinks otherwise declares it twice.
+    The value is the line verbatim - extras and environment markers are part of
+    the requirement, and re-assembling them from parts is how they get lost.
+    """
+
+    @staticmethod
+    def declared_in(directory: str) -> tuple[dict[str, str], tuple[str, ...]]:
+        return pip.read(os.path.join(directory, "requirements.txt"))
+
+    @staticmethod
+    def read(path: str) -> tuple[dict[str, str], tuple[str, ...]]:
+        """(requirements, the lines that are not requirements). pip's own
+        options - `-r`, `-e`, `--index-url` - name no package, so there is
+        nothing to compare them against and nothing to merge them into. They
+        are reported rather than dropped in silence."""
+        if not os.path.isfile(path):
+            return {}, ()
+        try:
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+        except OSError:
+            return {}, ()
+        requirements: dict[str, str] = {}
+        others: list[str] = []
+        for line in pip._logical_lines(text):
+            name = pip._name(line)
+            if name is None:
+                others.append(line)
+            else:
+                requirements[name] = line
+        return requirements, tuple(others)
+
+    @staticmethod
+    def _logical_lines(text: str) -> Iterable[str]:
+        for raw in text.replace("\\\n", " ").splitlines():
+            line = pip._without_comment(raw).strip()
+            if line:
+                yield line
+
+    @staticmethod
+    def _without_comment(line: str) -> str:
+        """A `#` ends the line, except the one in a URL fragment - which is
+        never the character after a space."""
+        if line.lstrip().startswith("#"):
+            return ""
+        cut = line.find(" #")
+        return line if cut < 0 else line[:cut]
+
+    # What may follow a name: extras, a version specifier, an environment
+    # marker, or the `@` of a direct reference.
+    NAME_ENDS = "[<>=!~;@(,"
+
+    @staticmethod
+    def _name(line: str) -> Optional[str]:
+        """The distribution a requirement names, or None where the line opens
+        with something else. Anything else is the important half: `git+https://`
+        opens with letters, and reading them as a name would have suede merging
+        a package called `git`."""
+        head = ""
+        for char in line:
+            if char.isalnum() or char in "-_.":
+                head += char
+            elif char.isspace() or char in pip.NAME_ENDS:
+                break
+            else:
+                return None
+        if not head or not head[0].isalnum():
+            return None
+        return pip.normalize(head)
+
+    @staticmethod
+    def normalize(name: str) -> str:
+        """PEP 503: lowercase, and runs of `-`, `_` and `.` collapse to one `-`."""
+        collapsed: list[str] = []
+        for char in name.lower():
+            if char in "-_.":
+                if collapsed[-1:] == ["-"]:
+                    continue
+                collapsed.append("-")
+            else:
+                collapsed.append(char)
+        return "".join(collapsed).strip("-")
 
 
 # --------------------------------------------------------------------------- #
@@ -709,6 +813,7 @@ def scan(root: str, repo: str, sep: str, sep_source: str) -> World:
         edges=_read_edges(root, installs),
         vendored=_find_vendored(root),
         npm=npm.read(os.path.join(root, "package.json")),
+        python=pip.read(os.path.join(root, "requirements.txt"))[0],
         records=gitrepo.read_manifest(os.path.join(root, RELEASE_DIR)).edges,
     )
 
@@ -1150,16 +1255,18 @@ def plan(
     blockers = _preconditions(world)
     if blockers:
         return Plan(blockers=blockers)
+    merge = _package_merge(world, policy, manifests)
     pins, demands = _closure(world, request, manifests)
     resolution = _resolve(world, request, policy, pins, demands, ancestry or {})
-    acts, warnings = _acts(world, request, policy, manifests, demands, resolution)
+    acts, warnings = _acts(world, request, demands, resolution, merge.acts)
     return Plan(
         acts=_ordered(acts),
         conflicts=tuple(sorted(resolution.conflicts, key=lambda conflict: conflict.remote)),
         warnings=tuple(warnings)
         + tuple(_legacy_manifest_warnings(manifests))
+        + merge.warnings
         + _situational_warnings(world, request),
-        blockers=tuple(_npm_blockers(world, policy, manifests)),
+        blockers=merge.blockers,
     )
 
 
@@ -1542,10 +1649,9 @@ def _ambiguous(
 def _acts(
     world: World,
     request: Request,
-    policy: Policy,
-    manifests: Mapping[Pin, Manifest],
     demands: Sequence[Demand],
     resolution: Resolution,
+    package_acts: Sequence[Act],
 ) -> tuple[list[Act], list[str]]:
     layout = Layout(target=request.target, link_mode=request.link_mode)
     edges, warnings = _edge_acts(world, demands, resolution, layout)
@@ -1554,7 +1660,7 @@ def _acts(
         + _reuse_acts(world, resolution)
         + edges
         + _record_acts(world, resolution)
-        + _npm_acts(world, policy, manifests)
+        + list(package_acts)
     )
     return _drop_notes_when_nothing_changes(acts), warnings
 
@@ -1694,41 +1800,157 @@ def _record_acts(world: World, resolution: Resolution) -> list[Act]:
     ]
 
 
-def _npm_acts(world: World, policy: Policy, manifests: Mapping[Pin, Manifest]) -> list[Act]:
-    additions, _ = _npm_diff(world, policy, manifests)
+@dataclass(frozen=True)
+class Ecosystem:
+    """One package manager's half of the merge. Both halves work the same way -
+    take what a dependency declares, add what is missing, refuse to guess at
+    what disagrees - so they differ only in where the declarations live and how
+    a single one of them reads."""
+
+    op: str  # the act's op, and the word the plan prints
+    noun: str  # how a blocker names one of its packages
+    file: str  # the consumer file the merge writes into
+    declared: Callable[[World], Mapping[str, str]]
+    wanted: Callable[[Manifest], Mapping[str, str]]
+    enabled: Callable[[Policy], bool]
+    render: Callable[[str, str], str]  # package, declaration -> the act's entry
+
+
+ECOSYSTEMS = (
+    Ecosystem(
+        op="npm",
+        noun="npm dependency",
+        file="package.json",
+        declared=lambda world: world.npm,
+        wanted=lambda manifest: manifest.npm,
+        enabled=lambda policy: policy.npm,
+        render=lambda package, declaration: "%s@%s" % (package, declaration),
+    ),
+    Ecosystem(
+        op="pip",
+        noun="python dependency",
+        file="requirements.txt",
+        declared=lambda world: world.python,
+        wanted=lambda manifest: manifest.python,
+        enabled=lambda policy: policy.python,
+        # A requirement is already one string. Splitting it into name and
+        # specifier only to paste it back together is how extras and markers
+        # get lost, so the whole line travels.
+        render=lambda _package, declaration: declaration,
+    ),
+)
+
+
+@dataclass(frozen=True)
+class PackageMerge:
+    """What merging every dependency's package declarations comes to."""
+
+    acts: tuple[Act, ...] = ()
+    warnings: tuple[str, ...] = ()
+    blockers: tuple[str, ...] = ()
+
+
+def _package_merge(
+    world: World, policy: Policy, manifests: Mapping[Pin, Manifest]
+) -> PackageMerge:
+    acts: list[Act] = []
+    warnings: list[str] = []
+    conflicts: list[str] = []
+    for ecosystem in ECOSYSTEMS:
+        additions, disagreements, rivals = _package_diff(ecosystem, world, policy, manifests)
+        acts += [
+            Act(op=ecosystem.op, entry=ecosystem.render(package, wanted), reason="new")
+            for package, wanted in sorted(additions.items())
+        ]
+        warnings += rivals
+        conflicts += _conflict_sentences(ecosystem, disagreements)
+    if policy.python:
+        warnings += _unmergeable_requirement_warnings(manifests)
+    if conflicts and policy.allow_package_conflicts:
+        # The install proceeds and your file is left exactly as it was. Saying
+        # so is the point: the dependency is now running against a version you
+        # chose and it never saw.
+        return PackageMerge(tuple(acts), tuple(warnings + _kept_sentences(conflicts)), ())
+    return PackageMerge(tuple(acts), tuple(warnings), tuple(_blocked(conflicts)))
+
+
+def _package_diff(
+    ecosystem: Ecosystem, world: World, policy: Policy, manifests: Mapping[Pin, Manifest]
+) -> tuple[dict[str, str], dict[str, tuple[str, str]], list[str]]:
+    """Missing packages are additions; a declaration that disagrees with yours
+    is a conflict, and unifying two version ranges is a different problem with
+    its own semantics.
+
+    Two dependencies disagreeing with each other is not that problem: neither
+    range is yours, nothing of yours is at stake, and refusing to install would
+    leave you with no way to reconcile them. The first in pin order wins and
+    the rest are reported.
+    """
+    additions: dict[str, str] = {}
+    conflicts: dict[str, tuple[str, str]] = {}
+    rivals: list[str] = []
+    if not ecosystem.enabled(policy):
+        return additions, conflicts, rivals
+    declared_here = ecosystem.declared(world)
+    asked_by: dict[str, str] = {}
+    for pin, manifest in sorted(manifests.items()):
+        for package, wanted in sorted(ecosystem.wanted(manifest).items()):
+            declared = declared_here.get(package)
+            if declared is not None:
+                if declared != wanted:
+                    conflicts[package] = (wanted, declared)
+                continue
+            if additions.setdefault(package, wanted) != wanted:
+                rivals.append(
+                    "%s %s: %s asks for %s, %s asks for %s. Adding %s - reconcile them yourself."
+                    % (
+                        ecosystem.noun,
+                        package,
+                        asked_by[package],
+                        additions[package],
+                        pin.name,
+                        wanted,
+                        additions[package],
+                    )
+                )
+                continue
+            asked_by.setdefault(package, pin.name)
+    return additions, conflicts, rivals
+
+
+def _conflict_sentences(
+    ecosystem: Ecosystem, disagreements: Mapping[str, tuple[str, str]]
+) -> list[str]:
     return [
-        Act(op="npm", entry="%s@%s" % (package, wanted), reason="new")
-        for package, wanted in sorted(additions.items())
+        "%s %s: a dependency asks for %s, your %s declares %s."
+        % (ecosystem.noun, package, wanted, ecosystem.file, declared)
+        for package, (wanted, declared) in sorted(disagreements.items())
     ]
 
 
-def _npm_diff(
-    world: World, policy: Policy, manifests: Mapping[Pin, Manifest]
-) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
-    """Missing entries are additions; a range that disagrees is a conflict, and
-    unifying ranges is a different problem with its own semantics."""
-    additions: dict[str, str] = {}
-    conflicts: dict[str, tuple[str, str]] = {}
-    if not policy.npm:
-        return additions, conflicts
-    for manifest in manifests.values():
-        for package, wanted in manifest.npm.items():
-            declared = world.npm.get(package)
-            if declared is None:
-                additions[package] = wanted
-            elif declared != wanted:
-                conflicts[package] = (wanted, declared)
-    return additions, conflicts
+def _blocked(conflicts: Sequence[str]) -> list[str]:
+    if not conflicts:
+        return []
+    return list(conflicts) + [
+        "Unify the versions yourself - suede will not guess - or re-run with %s to keep"
+        " your own declarations and install the rest anyway." % ALLOW_CONFLICTS_FLAG
+    ]
 
 
-def _npm_blockers(
-    world: World, policy: Policy, manifests: Mapping[Pin, Manifest]
-) -> list[str]:
-    _, conflicts = _npm_diff(world, policy, manifests)
+def _kept_sentences(conflicts: Sequence[str]) -> list[str]:
+    return [conflict + " Kept yours (%s)." % ALLOW_CONFLICTS_FLAG for conflict in conflicts]
+
+
+def _unmergeable_requirement_warnings(manifests: Mapping[Pin, Manifest]) -> list[str]:
+    """A requirements.txt is not only requirements. Options and bare URLs name
+    no package, so there is nothing to compare or merge - but a dependency that
+    needs one needs it whether or not suede can carry it across."""
     return [
-        "npm dependency %s: a dependency asks for %s, your package.json declares %s."
-        " Unify the range yourself - suede will not guess." % (package, wanted, declared)
-        for package, (wanted, declared) in sorted(conflicts.items())
+        "%s publishes requirements.txt lines that name no package, so they are not merged: %s."
+        " Copy them into your own requirements.txt if you need them."
+        % (pin.name, ", ".join(manifest.python_extras))
+        for pin, manifest in sorted(manifests.items())
+        if manifest.python_extras
     ]
 
 
@@ -2124,12 +2346,24 @@ def _apply_npm(_world: World, act: Act, _staged: Staged, journal: Journal) -> li
     return ["package.json"]
 
 
+def _apply_pip(_world: World, act: Act, _staged: Staged, journal: Journal) -> list[str]:
+    """Appends. The order of a requirements file is meaningful to whoever wrote
+    it, and rewriting one to be tidy would lose the comments that explain it."""
+    path = journal.modifying("requirements.txt")
+    existing = _read_text(path) or ""
+    if existing and not existing.endswith("\n"):
+        existing += "\n"
+    _write_text(path, existing + act.entry + "\n")
+    return ["requirements.txt"]
+
+
 APPLIERS = {
     "install": _apply_install,
     "link": _apply_link,
     "copy": _apply_copy,
     "record": _apply_record,
     "npm": _apply_npm,
+    "pip": _apply_pip,
 }
 
 
@@ -2528,6 +2762,15 @@ def _install_parser(
     install.add_argument("--link-mode", choices=("symlink", "copy"), default="symlink")
     install.add_argument("--on-conflict", choices=("ask", "coexist", "unify-newest", "defer"))
     install.add_argument("--no-npm", action="store_true", help="do not merge npm dependencies")
+    install.add_argument(
+        "--no-python", action="store_true", help="do not merge requirements.txt dependencies"
+    )
+    install.add_argument(
+        ALLOW_CONFLICTS_FLAG,
+        action="store_true",
+        help="install even where a dependency's npm or python versions disagree with yours,"
+        " keeping your own declarations",
+    )
     install.add_argument("--no-cache", action="store_true", help="ignore .git/suede-cache")
     install.add_argument("--dry-run", action="store_true", help="plan and announce, change nothing")
     install.add_argument("--plan-json", action="store_true", help="emit the plan as JSON")
@@ -2607,7 +2850,12 @@ def _request(args: argparse.Namespace) -> Request:
 
 def _policy(args: argparse.Namespace) -> Policy:
     fallback = "ask" if tty.available() else "defer"
-    return Policy(on_conflict=args.on_conflict or fallback, npm=not args.no_npm)
+    return Policy(
+        on_conflict=args.on_conflict or fallback,
+        npm=not args.no_npm,
+        python=not args.no_python,
+        allow_package_conflicts=args.allow_conflicting_packages,
+    )
 
 
 def install_command(args: argparse.Namespace) -> int:
@@ -2631,11 +2879,7 @@ def _propose(world: World, request: Request, policy: Policy, staged: Staged) -> 
     proposal = plan(world, request, policy, staged.manifests, staged.ancestry)
     if not (proposal.conflicts and policy.on_conflict == "ask" and tty.available()):
         return proposal
-    chosen = Policy(
-        on_conflict="ask",
-        npm=policy.npm,
-        choices=choose_resolutions(proposal.conflicts, sys.stdout),
-    )
+    chosen = replace(policy, choices=choose_resolutions(proposal.conflicts, sys.stdout))
     return plan(world, request, chosen, staged.manifests, staged.ancestry)
 
 

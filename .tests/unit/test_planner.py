@@ -316,6 +316,104 @@ class NpmDependencies(unittest.TestCase):
         self.assertEqual(ops(plan, "npm"), [])
 
 
+class PythonDependencies(unittest.TestCase):
+    def test_missing_requirements_are_added_verbatim(self):
+        manifests = {A: manifest(python={"sqlmodel": "sqlmodel[async]>=0.0.14; python_version<'3.13'"})}
+
+        plan = suede.plan(world(), request(A), suede.Policy(), manifests)
+
+        self.assertEqual(
+            entries_of(plan, "pip"), ["sqlmodel[async]>=0.0.14; python_version<'3.13'"]
+        )
+
+    def test_a_requirement_that_disagrees_stops_the_plan(self):
+        manifests = {A: manifest(python={"sqlmodel": "sqlmodel>=0.0.14"})}
+
+        plan = suede.plan(
+            world(python={"sqlmodel": "sqlmodel==0.0.9"}), request(A), suede.Policy(), manifests
+        )
+
+        self.assertTrue(plan.blockers)
+        self.assertEqual(ops(plan, "pip"), [])
+
+    def test_no_python_leaves_requirements_alone(self):
+        manifests = {A: manifest(python={"sqlmodel": "sqlmodel>=0.0.14"})}
+
+        plan = suede.plan(world(), request(A), suede.Policy(python=False), manifests)
+
+        self.assertEqual(ops(plan, "pip"), [])
+
+    def test_lines_naming_no_package_are_reported_rather_than_merged(self):
+        manifests = {A: manifest(python_extras=("-r base.txt",))}
+
+        plan = suede.plan(world(), request(A), suede.Policy(), manifests)
+
+        self.assertEqual(ops(plan, "pip"), [])
+        self.assertTrue(any("-r base.txt" in warning for warning in plan.warnings))
+
+
+class ConflictingPackages(unittest.TestCase):
+    """The blocker must name its own way out, and taking it must change nothing
+    about what the consumer already declared."""
+
+    CONFLICTED = {
+        A: manifest(npm={"svelte": "^5.41.0"}, python={"sqlmodel": "sqlmodel>=0.0.14"})
+    }
+
+    def declared(self):
+        return world(npm={"svelte": "^4.0.0"}, python={"sqlmodel": "sqlmodel==0.0.9"})
+
+    def test_the_blocker_names_the_flag_that_gets_past_it(self):
+        plan = suede.plan(self.declared(), request(A), suede.Policy(), self.CONFLICTED)
+
+        self.assertTrue(
+            any(suede.ALLOW_CONFLICTS_FLAG in blocker for blocker in plan.blockers),
+            plan.blockers,
+        )
+
+    def test_the_flag_installs_and_keeps_every_declaration_of_yours(self):
+        allowed = suede.Policy(allow_package_conflicts=True)
+
+        plan = suede.plan(self.declared(), request(A), allowed, self.CONFLICTED)
+
+        self.assertEqual(plan.blockers, ())
+        self.assertTrue(entries_of(plan, "install"))
+        self.assertEqual(ops(plan, "npm"), [])
+        self.assertEqual(ops(plan, "pip"), [])
+
+    def test_what_was_kept_is_said_out_loud(self):
+        allowed = suede.Policy(allow_package_conflicts=True)
+
+        plan = suede.plan(self.declared(), request(A), allowed, self.CONFLICTED)
+
+        kept = [warning for warning in plan.warnings if "Kept yours" in warning]
+        self.assertEqual(len(kept), 2, plan.warnings)
+        self.assertTrue(any("svelte" in warning for warning in kept))
+        self.assertTrue(any("sqlmodel" in warning for warning in kept))
+
+    def test_the_flag_leaves_agreeing_packages_merging_as_usual(self):
+        manifests = {
+            A: manifest(npm={"svelte": "^5.41.0", "zod": "^3.0.0"}),
+        }
+        allowed = suede.Policy(allow_package_conflicts=True)
+
+        plan = suede.plan(world(npm={"svelte": "^4.0.0"}), request(A), allowed, manifests)
+
+        self.assertEqual(entries_of(plan, "npm"), ["zod@^3.0.0"])
+
+    def test_two_dependencies_disagreeing_with_each_other_never_blocks(self):
+        manifests = {
+            A: manifest(npm={"svelte": "^5.41.0"}),
+            B: manifest(npm={"svelte": "^4.0.0"}),
+        }
+
+        plan = suede.plan(world(), request(A, B), suede.Policy(), manifests)
+
+        self.assertEqual(plan.blockers, ())
+        self.assertEqual(entries_of(plan, "npm"), ["svelte@^5.41.0"])
+        self.assertTrue(any("reconcile them yourself" in w for w in plan.warnings), plan.warnings)
+
+
 class Determinism(unittest.TestCase):
     def test_acts_are_ordered_by_operation_then_entry(self):
         manifests = {A: manifest({"A.B": B}), B: manifest({"B.C": C}), C: manifest()}

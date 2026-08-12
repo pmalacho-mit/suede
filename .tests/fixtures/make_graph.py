@@ -38,10 +38,16 @@ class Node:
         return self.commits[-1 - int(revision.split("~")[1])]
 
 
-def build(graph, directory):
+def build(graph, directory, publishes=None):
+    """`publishes` maps a node to extra files for its `.suede/.dependencies/`
+    - `package.json`, `requirements.txt` - as text, so a fixture publishes what
+    a real dependency publishes rather than a mock of it."""
+    published = publishes or {}
     nodes = {}
     for name in _dependency_order(graph):
-        nodes[name] = _build_node(name, graph[name], nodes, directory)
+        nodes[name] = _build_node(
+            name, graph[name], nodes, directory, published.get(name, {})
+        )
     return nodes
 
 
@@ -61,14 +67,16 @@ def _dependency_order(graph):
     return ordered
 
 
-def _build_node(name, dependencies, built, directory):
+def _build_node(name, dependencies, built, directory, published):
     remote = os.path.join(directory, name + ".git")
     work = os.path.join(directory, "work", name)
     git("init", "--quiet", "--bare", "--initial-branch=release", remote)
     git("init", "--quiet", "--initial-branch=release", work)
     commits = [_commit_content(work, name, index) for index in range(COMMITS_PER_NODE)]
-    if dependencies:
+    if dependencies or published:
         _write_manifest(work, dependencies, built)
+        for filename, content in sorted(published.items()):
+            write(os.path.join(work, ".suede", ".dependencies", filename), content)
         commits.append(_commit(work, "declare dependencies"))
     git("push", "--quiet", remote, "release", cwd=work)
     return Node(name=name, remote=remote, commits=commits)

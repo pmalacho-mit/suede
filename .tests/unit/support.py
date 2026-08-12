@@ -24,8 +24,13 @@ def pin(name, commit, remote=None, branch="release"):
     )
 
 
-def manifest(edges=None, npm=None):
-    return suede.Manifest(edges=dict(edges or {}), npm=dict(npm or {}))
+def manifest(edges=None, npm=None, python=None, python_extras=()):
+    return suede.Manifest(
+        edges=dict(edges or {}),
+        npm=dict(npm or {}),
+        python=dict(python or {}),
+        python_extras=tuple(python_extras),
+    )
 
 
 def world(
@@ -37,6 +42,7 @@ def world(
     edges=None,
     records=None,
     npm=None,
+    python=None,
     has_release=True,
     head="0" * 40,
     dirty=False,
@@ -60,6 +66,7 @@ def world(
         edges=tuple(suede.Edge(*edge) for edge in (edges or [])),
         vendored=tuple(vendored),
         npm=dict(npm or {}),
+        python=dict(python or {}),
         records=dict(records or {}),
     )
 

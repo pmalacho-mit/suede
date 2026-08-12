@@ -129,6 +129,31 @@ and [INSTALL.md](./INSTALL.md) for the full algorithm.
 Installs are **staged, not committed** — review them, then `git commit`, or
 pass `--commit`.
 
+### Third-party packages
+
+A dependency also declares what it needs from npm and PyPI. The installer
+merges those declarations into your `package.json` and `requirements.txt` —
+adding what is missing, and never touching a lockfile.
+
+A package **you already declare at a different version** stops the install
+rather than being resolved silently: unifying two version ranges is a judgment
+call about your code, not the installer's. The refusal names the way past it:
+
+```
+BLOCKED
+
+  python dependency sqlmodel: a dependency asks for sqlmodel>=0.0.14, your
+  requirements.txt declares sqlmodel==0.0.9.
+  Unify the versions yourself - suede will not guess - or re-run with
+  --allow-conflicting-packages to keep your own declarations and install the
+  rest anyway.
+```
+
+With `--allow-conflicting-packages`, your declaration is kept verbatim, every
+non-conflicting package still merges, and each conflict is reported as a
+warning — the dependency now runs against a version it never saw, which is your
+call to make. `--no-npm` and `--no-python` skip either merge entirely.
+
 ### The other commands
 
 ```bash
@@ -139,9 +164,10 @@ suede extract               # write release/.suede/.dependencies/ (what the acti
 ```
 
 Useful install flags: `--dry-run`, `--plan-json`, `--yes`, `--commit`,
-`--on-conflict coexist|unify-newest|defer`, `--separator`, `--target`,
-`--name`. Exit codes: `0` success, `2` usage, `3` precondition, `4` unresolved
-conflict, `5` `check` found a failure.
+`--on-conflict coexist|unify-newest|defer`, `--allow-conflicting-packages`,
+`--no-npm`, `--no-python`, `--separator`, `--target`, `--name`. Exit codes: `0`
+success, `2` usage, `3` precondition, `4` unresolved conflict, `5` `check`
+found a failure.
 
 You then have the dependency's source code [vendored](https://htmx.org/essays/vendoring/) into your repository. You can modify and track changes to it the same as any other code in your repository and only need to amend your typical development workflow when you want to:
 - Sync the dependency (see [upgrading](#upgrading-ie-pulling)).

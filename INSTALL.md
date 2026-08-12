@@ -176,7 +176,9 @@ PLAN
   override  sweater-vest-suede.mixin-suede pins 3ac9f00; you declare 9bb0e41
 
   record    2 new entries in release/.suede/.dependencies/
-  npm       svelte@^5.41.0, html-to-image@^1.11.13     (2 new, 0 conflicting)
+  npm       svelte@^5.41.0                            (new)
+  npm       html-to-image@^1.11.13                    (new)
+  pip       SQLModel[async] >= 0.0.14                 (new)
 
 Proceed? [Y/n/d(etails)]
 ```
@@ -216,6 +218,11 @@ suede install --gitrepo <path|->  [options]
 
   --on-conflict coexist|unify-newest|defer   default: ask (tty) / defer (non-tty)
 
+  --no-npm                    do not merge package.json dependencies
+  --no-python                 do not merge requirements.txt dependencies
+  --allow-conflicting-packages   install where a dependency's npm or python
+                              versions disagree with your own, keeping yours
+
   --dry-run                   plan and announce, change nothing
   --plan-json                 emit the plan as JSON
   --yes                       accept the plan
@@ -237,9 +244,26 @@ Flattening creates orphans: remove `B` and `C` stays declared, possibly unrefere
 
 ---
 
-## 9. npm dependencies
+## 9. Third-party packages (npm and PyPI)
 
-Same flattening principle. `install` merges a dependency's `.suede/.dependencies/package.json` into the consumer's `package.json`, detecting semver-range conflicts and surfacing them in the announce block. A range conflict is a conflict like any other.
+Same flattening principle, and the two ecosystems work identically. `install` merges a dependency's `.suede/.dependencies/package.json` into the consumer's `package.json`, and its `.suede/.dependencies/requirements.txt` into the consumer's `requirements.txt`. Missing packages are added; lockfiles are never touched.
+
+Requirements are keyed by the **PEP 503 normalized name** (`Foo_Bar` and `foo-bar` are one distribution) and merged as whole lines, so extras and environment markers survive. A published line that names no package — `-r`, `-e`, `--index-url`, a bare URL — is reported as a warning rather than merged or dropped in silence.
+
+**A version you already declare differently is a blocker, not a resolution.** Unifying two ranges is a judgment call about the consumer's code, and the installer cannot see its imports. The refusal names its own way out:
+
+```
+BLOCKED
+
+  npm dependency svelte: a dependency asks for ^5.41.0, your package.json declares ^4.0.0.
+  python dependency sqlmodel: a dependency asks for sqlmodel>=0.0.14, your requirements.txt declares sqlmodel==0.0.9.
+  Unify the versions yourself - suede will not guess - or re-run with
+  --allow-conflicting-packages to keep your own declarations and install the rest anyway.
+```
+
+`--allow-conflicting-packages` keeps every declaration of the consumer's verbatim, merges everything that does not conflict, and downgrades each conflict to a warning. It is deliberately one flag for both ecosystems: the decision it encodes — *my declarations win* — is the same one either way.
+
+Two **dependencies** disagreeing with each other is a different case and never blocks: neither range is the consumer's, and refusing would leave nothing to reconcile with. The first in pin order is added and the rest are reported.
 
 ---
 

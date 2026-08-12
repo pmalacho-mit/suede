@@ -4,6 +4,8 @@ These cover what a literal `World` cannot: that the tree suede writes is the
 tree it planned. Anything provable without git belongs in `.tests/unit/`.
 """
 
+import contextlib
+import io
 import os
 import shutil
 import subprocess
@@ -28,13 +30,14 @@ CHAIN = {
 
 class Fixture(unittest.TestCase):
     graph = CHAIN
+    publishes = {}
     release = False
 
     def setUp(self):
         self.directory = tempfile.mkdtemp(prefix="suede-test-")
         self.addCleanup(shutil.rmtree, self.directory, True)
         self.addCleanup(os.chdir, os.getcwd())
-        self.nodes = make_graph.build(self.graph, self.directory)
+        self.nodes = make_graph.build(self.graph, self.directory, self.publishes)
         self.consumer = make_graph.consumer(self.directory, release=self.release)
         os.chdir(self.consumer)
 
@@ -287,6 +290,78 @@ class Listing(Fixture):
 
     def _world(self):
         return suede.scan(self.consumer, "app", ".", "flag")
+
+
+class PackageDeclarations(Fixture):
+    """`orm` publishes both a package.json and a requirements.txt, the way a
+    dependency that needs third-party packages does."""
+
+    graph = {"orm": {}}
+    publishes = {
+        "orm": {
+            "package.json": '{"dependencies": {"zod": "^3.0.0"}}\n',
+            "requirements.txt": "# what the library needs\nSQLModel[async] >= 0.0.14\n-r base.txt\n",
+        }
+    }
+
+    def declare(self, filename, content):
+        make_graph.write(self.path(filename), content)
+
+    def read(self, filename):
+        with open(self.path(filename), encoding="utf-8") as handle:
+            return handle.read()
+
+    def announced(self, *extra):
+        captured = io.StringIO()
+        with contextlib.redirect_stdout(captured):
+            code = self.install("orm", *extra)
+        return code, captured.getvalue()
+
+    def test_a_published_requirement_is_merged_verbatim(self):
+        self.assertEqual(self.install("orm"), suede.Exit.OK)
+
+        self.assertEqual(self.read("requirements.txt"), "SQLModel[async] >= 0.0.14\n")
+
+    def test_merging_appends_rather_than_rewrites(self):
+        self.declare("requirements.txt", "# mine\nrich==13.7.0\n")
+
+        self.install("orm")
+
+        self.assertEqual(self.read("requirements.txt"), "# mine\nrich==13.7.0\nSQLModel[async] >= 0.0.14\n")
+
+    def test_a_requirement_you_already_declare_differently_blocks_and_names_the_flag(self):
+        self.declare("requirements.txt", "sqlmodel==0.0.9\n")
+
+        code, output = self.announced()
+
+        self.assertEqual(code, suede.Exit.PRECONDITION)
+        self.assertIn(suede.ALLOW_CONFLICTS_FLAG, output)
+        self.assertEqual(self.read("requirements.txt"), "sqlmodel==0.0.9\n")
+        self.assertFalse(self.exists("app.orm"))
+
+    def test_the_flag_installs_and_leaves_your_own_declaration_alone(self):
+        self.declare("requirements.txt", "sqlmodel==0.0.9\n")
+        self.declare("package.json", '{"dependencies": {"zod": "^2.0.0"}}\n')
+
+        self.assertEqual(self.install("orm", suede.ALLOW_CONFLICTS_FLAG), suede.Exit.OK)
+
+        self.assertTrue(self.exists("app.orm"))
+        self.assertEqual(self.read("requirements.txt"), "sqlmodel==0.0.9\n")
+        self.assertEqual(self.read("package.json"), '{"dependencies": {"zod": "^2.0.0"}}\n')
+
+    def test_a_line_naming_no_package_is_reported_rather_than_merged(self):
+        code, output = self.announced()
+
+        self.assertEqual(code, suede.Exit.OK)
+        self.assertIn("-r base.txt", output)
+        self.assertNotIn("-r base.txt", self.read("requirements.txt"))
+
+    def test_no_python_leaves_requirements_txt_untouched(self):
+        self.declare("requirements.txt", "sqlmodel==0.0.9\n")
+
+        self.assertEqual(self.install("orm", "--no-python"), suede.Exit.OK)
+
+        self.assertEqual(self.read("requirements.txt"), "sqlmodel==0.0.9\n")
 
 
 class DeclarationInvariant(Fixture):
