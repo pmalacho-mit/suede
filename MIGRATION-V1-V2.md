@@ -28,7 +28,7 @@ ls -d release/.suede/.dependencies   # D: current manifest?
 | — | absent | **3 — consumer** | nothing to publish; only the tree matters |
 
 Most repositories that have never run
-[`scripts/upgrade/v1.md`](../scripts/upgrade/v1.md) are shape 1. A repository
+[`scripts/upgrade/v1.md`](./scripts/upgrade/v1.md) are shape 1. A repository
 that has is shape 2, and its migration is much shorter.
 
 `ls -d .dependencies` at the *root* is worth running too: an early layout put
