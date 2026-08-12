@@ -5,11 +5,29 @@ means it ships, and a consumer who installs your dependency finds these at
 `<dependency>/.suede/core/`. They are the tools for working with an installed
 dependency.
 
-The maintainer's half (the publish guard, `diff`, `vendor`, and the installer
-itself) is vendored from `dependency/main/core` onto `main`, at the same path.
+The maintainer's half (the publish guard, `vendor`, the project-wide divergence
+audit and the installer itself) is vendored from `dependency/main/core` onto
+`main`, at the same path.
 
 This folder is a [git-subrepo](https://github.com/ingydotnet/git-subrepo) of the
-suede library, so you get fixes by pulling: `git subrepo pull .suede/core`.
+suede library, so you get fixes by pulling. **From `main`**, where it lives at
+`release/.suede/core` — like everything else that ships, it reaches the
+`release` branch through `main`, and there is never a reason to check `release`
+out:
+
+```bash
+git subrepo pull release/.suede/core
+```
+
+That leaves two things behind which stop the next `git subrepo push release`: a
+branch `subrepo/release/%2esuede/core` (refs are directories, so `subrepo/release`
+becomes uncreatable) and a scratch directory under `.git/tmp/subrepo/release`
+(where the push wants its worktree). `push-release.sh` clears both on every
+publish, so CI is fine; if you publish by hand, clear them yourself first:
+
+```bash
+git subrepo clean release/.suede/core && rm -rf .git/tmp/subrepo
+```
 
 ## [upstream](./upstream)
 
@@ -74,6 +92,43 @@ your dependencies are symlinks by default.
 
 `git subrepo pull` also requires a clean working tree, while installing does
 not. If you have just installed something, commit before syncing.
+
+## [diff](./diff)
+
+What your copy of this dependency differs from — in either direction.
+
+```bash
+bash <dependency>/.suede/core/diff          # what you would propose
+bash <dependency>/.suede/core/diff --sync   # what you would receive
+```
+
+By default the pinned commit is on the left and your working tree on the right,
+so `+` lines are yours: this is the change [`upstream`](#upstream) would
+propose. With `--sync` your tree is on the left and the current tip of the
+remote's `release` branch on the right, so `+` lines are incoming: this is what
+[`sync`](#sync) would bring you. `--sync` also names the two commits, and says
+so outright when your pin *is* the tip and a sync would bring nothing.
+
+A sync merges rather than overwrites, so under `--sync` the `-` lines are your
+own local work — which a sync keeps, and which is why they are labelled rather
+than left to be read as deletions.
+
+Your side is the files as they are on disk: uncommitted edits and files you
+have only just created are in, and anything your `.gitignore` excludes is out.
+`.gitrepo` is dropped from both sides — it is local bookkeeping and always
+differs.
+
+Anything else you pass goes to `git diff`, so `--stat`, `--name-only` and `-w`
+work as usual. Exit codes are `0` for no difference and `1` for a difference,
+as `git diff` reports them, with `2` reserved for "could not run at all" so a
+caller can tell an answer from a failure.
+
+Unlike its neighbours it needs no git-subrepo — just `git` and the ability to
+reach the remote.
+
+> The maintainer's side has a `diff.sh` of its own, vendored onto `main`. That
+> one audits *every* release dependency of a project against its pin before a
+> publish. This one is about the single dependency it ships inside.
 
 ## If `git subrepo` is not found
 
