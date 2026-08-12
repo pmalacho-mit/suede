@@ -2,8 +2,8 @@
 
 <!-- TOKEN-STATUS:START -->
 > [!TIP]
-> 🟢 The deploy token (`SUEDE_DEPENDENCY_TEMPLATE_PAT`) is good for **88 more days** (2026-11-08).
-> _Last checked: 2026-08-11 (UTC)._
+> 🟢 The deploy token (`SUEDE_DEPENDENCY_TEMPLATE_PAT`) is good for **87 more days** (2026-11-08).
+> _Last checked: 2026-08-12 (UTC)._
 <!-- TOKEN-STATUS:END -->
 
 <sub>git-</sub>***Su***<sub>br</sub>***e***<sub>po based</sub> ***de***<sub>pendency management</sub>
@@ -535,8 +535,8 @@ workflow will fill that spot from then on:
 ```md
 <!-- TOKEN-STATUS:START -->
 > [!TIP]
-> 🟢 The deploy token (`SUEDE_DEPENDENCY_TEMPLATE_PAT`) is good for **88 more days** (2026-11-08).
-> _Last checked: 2026-08-11 (UTC)._
+> 🟢 The deploy token (`SUEDE_DEPENDENCY_TEMPLATE_PAT`) is good for **87 more days** (2026-11-08).
+> _Last checked: 2026-08-12 (UTC)._
 <!-- TOKEN-STATUS:END -->
 ```
 
