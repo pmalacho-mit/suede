@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tier C: the five things only a forge can answer.
+# Tier C: what only a forge can answer about the push-to-release flow.
 #
 #   .tests/actions/bootstrap.sh && .tests/actions/scenarios.sh
 #

@@ -241,6 +241,63 @@ class Publishing(Fixture):
         self.assertEqual(sorted(manifest.edges), ["app.dockview"])
 
 
+class RecordedSpelling(unittest.TestCase):
+    """Which URL each kind of `.gitrepo` records.
+
+    A live one drives `git subrepo pull` and `push` on the installed folder, so
+    it records SSH — the only spelling that can still authenticate a write. A
+    published one is resolved by consumers and by CI runners holding no key of
+    ours, so it records HTTPS. The graph fixtures use local paths, which have a
+    single spelling, so this is the only place the split is observable.
+    """
+
+    HTTPS = "https://github.com/pmalacho-mit/programmatic-docker-suede"
+    SSH = "git@github.com:pmalacho-mit/programmatic-docker-suede.git"
+
+    def setUp(self):
+        self.directory = tempfile.mkdtemp(prefix="suede-test-")
+        self.addCleanup(shutil.rmtree, self.directory, True)
+        self.pin = suede.Pin(remote=self.HTTPS, commit="a" * 40)
+
+    def recorded(self, write, name, pin=None):
+        path = os.path.join(self.directory, name)
+        write(path, pin or self.pin)
+        return suede.git.config_get(path, "subrepo.remote")
+
+    def test_a_live_gitrepo_records_ssh(self):
+        self.assertEqual(self.recorded(suede.gitrepo.write, "live"), self.SSH)
+
+    def test_a_published_record_keeps_https(self):
+        self.assertEqual(self.recorded(suede.gitrepo.write_manifest_record, "published"), self.HTTPS)
+
+    def test_the_spelling_it_was_given_does_not_decide_what_is_written(self):
+        over_ssh = suede.Pin(remote=self.SSH, commit="a" * 40)
+
+        self.assertEqual(self.recorded(suede.gitrepo.write, "live", over_ssh), self.SSH)
+        self.assertEqual(
+            self.recorded(suede.gitrepo.write_manifest_record, "published", over_ssh), self.HTTPS
+        )
+
+    def test_both_read_back_as_the_same_pin(self):
+        live = os.path.join(self.directory, "live")
+        published = os.path.join(self.directory, "published")
+        suede.gitrepo.write(live, self.pin)
+        suede.gitrepo.write_manifest_record(published, self.pin)
+
+        self.assertEqual(suede.gitrepo.read(live), suede.gitrepo.read(published))
+
+    def test_a_remote_with_one_spelling_is_written_verbatim_either_way(self):
+        """Local paths and addresses carrying a port cannot be rewritten, and
+        must not be: the fixtures, a self-hosted forge and the Gitea harness all
+        depend on the URL surviving untouched."""
+        local = suede.Pin(remote=os.path.join(self.directory, "dep.git"), commit="a" * 40)
+
+        self.assertEqual(self.recorded(suede.gitrepo.write, "live", local), local.remote)
+        self.assertEqual(
+            self.recorded(suede.gitrepo.write_manifest_record, "published", local), local.remote
+        )
+
+
 class Vendoring(Fixture):
     release = True
 

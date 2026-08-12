@@ -225,6 +225,69 @@ class ConsumerResolution(unittest.TestCase):
         self.assertEqual(ops(plan, "link"), [])
 
 
+class MixedSpellings(unittest.TestCase):
+    """A live `.gitrepo` records SSH so a bare `git subrepo push` has a route
+    upstream; a published manifest records HTTPS so a consumer with no key can
+    resolve it. So the two spellings meet on any tree that installs a
+    dependency of a dependency, and every one of these would break if the
+    planner compared the strings it was handed."""
+
+    SSH_C = pin("C", "c", remote="git@example.test:acme/C.git")
+
+    def test_an_install_recorded_over_ssh_satisfies_an_edge_published_over_https(self):
+        installed_over_ssh = world(
+            installs={"app.C": self.SSH_C},
+            records={"app.C": self.SSH_C},
+        )
+
+        plan = suede.plan(
+            installed_over_ssh, request(B), suede.Policy(), {B: manifest({"B.C": C}), C: manifest()}
+        )
+
+        self.assertEqual(entries_of(plan, "install"), ["app.B"])
+        self.assertEqual(entries_of(plan, "reuse"), ["app.C"])
+        self.assertEqual(plan.conflicts, ())
+
+    def test_it_is_not_an_override_either(self):
+        """An override announces that the consumer repointed an edge. Saying so
+        because of a spelling would train everyone to ignore the message."""
+        installed_over_ssh = world(installs={"app.C": self.SSH_C}, records={"app.C": self.SSH_C})
+
+        plan = suede.plan(
+            installed_over_ssh, request(B), suede.Policy(), {B: manifest({"B.C": C}), C: manifest()}
+        )
+
+        self.assertEqual(ops(plan, "override"), [])
+
+    def test_two_dependents_spelling_it_differently_share_one_install(self):
+        manifests = {
+            A: manifest({"A.B": B, "A.D": D}),
+            B: manifest({"B.C": self.SSH_C}),
+            D: manifest({"D.C": C}),
+            C: manifest(),
+        }
+
+        plan = suede.plan(world(), request(A), suede.Policy(), manifests)
+
+        self.assertEqual(entries_of(plan, "install"), ["app.A", "app.B", "app.C", "app.D"])
+        self.assertEqual(plan.conflicts, ())
+
+    def test_a_satisfied_tree_written_the_other_way_still_plans_nothing(self):
+        """Idempotency across the migration: re-running after the spelling
+        changed must not reinstall the world."""
+        satisfied = world(
+            installs={"app.A": A, "app.C": self.SSH_C},
+            links={"A.C": "app.C"},
+            records={"app.A": A, "app.C": self.SSH_C},
+        )
+
+        plan = suede.plan(
+            satisfied, request(A), suede.Policy(), {A: manifest({"A.C": C}), C: manifest()}
+        )
+
+        self.assertEqual(plan.acts, ())
+
+
 class Naming(unittest.TestCase):
     def test_each_dependent_keeps_its_own_separator_verbatim(self):
         manifests = {

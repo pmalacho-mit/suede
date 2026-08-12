@@ -9,7 +9,7 @@ tested with a git repository.
 | `unit/` | The planner and `check`, pure over literal `World`s — no repos, no network, no fixtures |
 | `integration/` | That the tree suede writes is the tree it planned, against generated local repos |
 | colocated `**/.tests/*.sh` | The shell surface: the bootstrap's argument translation, the release-flow scripts, the publish guard |
-| `actions/` | Tier C — the two flows that need a real forge, run offline against Gitea |
+| `actions/` | Tier C — what needs a real forge, run offline against Gitea |
 
 **One command runs the first three.** `scripts/.tests/suede-unit.sh` and
 `suede-integration.sh` are thin wrappers that hand the Python suites to the
@@ -24,6 +24,13 @@ tests exercise the actual manifest format rather than a mock of it.
 `unit/test_purity.py` replaces the git layer with an object that raises on any
 use, so the pure boundary fails loudly if it ever leaks. That boundary is the
 reason the scenario matrix stays cheap.
+
+`integration/test_subrepo.py` is the one suite that runs **git-subrepo itself**,
+against a tree suede installed. An install hand-writes its `.gitrepo` instead of
+going through `git subrepo clone`, and every other assertion here is about the
+tree suede writes — all of them would stay green if git-subrepo changed what it
+expects of that tree. It skips when git-subrepo is absent, which is why CI runs
+the suite against a pinned version and against `main`.
 
 Colocated tests are discovered by `.tests/harness/run-all.sh`: any `*.sh` whose
 immediate parent is a `.tests/` directory. One placement rule — anything under
@@ -69,6 +76,39 @@ of truth — Docker can silently drop a container's final buffered stdout on exi
 > The image *build* fetches git-subrepo once over the network; the test *run*
 > needs none.
 
+### When the build cannot reach the network
+
+The build's one network step is the `git clone` of git-subrepo, and it fails
+like this behind a TLS-intercepting proxy:
+
+```
+fatal: unable to access 'https://github.com/ingydotnet/git-subrepo/':
+       server certificate verification failed. CAfile: none CRLfile: none
+```
+
+The tell is that the *same* clone works in your shell and fails in the build: a
+container trusts CAs from its own image, so a host that has the interceptor's CA
+installed succeeds where a stock base image cannot. Confirm which one you have
+with `openssl s_client -connect github.com:443 </dev/null | openssl x509 -noout
+-issuer` — an issuer that is not a public CA is an interceptor.
+
+If your devcontainer ships `/desolate-ca/trust-proxy-in-builds.sh`, it solves
+exactly this. Shadowing the tag is the mode that fits, because `run.sh` calls
+`docker build` directly and so has nowhere to accept a build-context override:
+
+```
+/desolate-ca/trust-proxy-in-builds.sh --image python:3.9-slim-bookworm --shadow
+.tests/run.sh                                    # then this, unchanged
+```
+
+Name the tag `.tests/Dockerfile` actually resolves — the `BASE_IMAGE` default,
+`python:3.9-slim-bookworm`. Every `FROM` of it in that daemon then gets a
+CA-trusting derivative; `--unshadow` puts the original back, and a `docker pull`
+of the base silently undoes it.
+
+Anywhere else, build a base carrying your CA and point `SUEDE_TEST_BASE_IMAGE`
+at it. That is the same fix delivered by hand.
+
 ## Run directly (if your shell has the tools)
 ```
 bash .tests/harness/run-all.sh           # all tests
@@ -80,11 +120,31 @@ starts and names anything missing, rather than letting half the run fail with
 above is the supported answer.
 
 The Python suites can also be run on their own — they need nothing but a
-stdlib `python3`:
+stdlib `python3` (plus git-subrepo, if you want `test_subrepo.py` to run rather
+than skip):
 ```
 python3 -m unittest discover .tests/unit -t .tests/unit
 python3 -m unittest discover .tests/integration -t .tests/integration
 ```
+
+## What CI runs
+
+[`.github/workflows/test.yml`](../.github/workflows/test.yml) supplies
+interpreters and git-subrepo versions and nothing else, so a green run there and
+a green run here mean the same thing. Three jobs:
+
+| Job | Covers |
+| --- | --- |
+| `python` | `py_compile`, then both Python suites on 3.9–3.13 × ubuntu + macOS |
+| `shell` | `run-all.sh` — every layer, through the orchestrator, on Linux |
+| `git-subrepo-main` | the same against unreleased git-subrepo; `continue-on-error` |
+
+macOS is not decoration: it is the only runner that catches a case-insensitive
+collision between two entry names, and it is what sets the 3.9 floor. The
+`shell` job is Linux-only because the harness wants bash 4 and macOS ships 3.2.
+
+Tier C is not wired into CI — it needs a Docker daemon and a forge, and it is
+run by hand.
 
 ## The report
 One pass/fail line per test file (with a passed/total count) plus a summary box
@@ -103,15 +163,21 @@ failure, so CI fails automatically.
 
 ## Tier C - the forge
 
-`actions/` boots Gitea plus an `act_runner` in Docker, so the two flows that are
-fundamentally cross-repository (push to `main` syncs `release`; a `subrepo push`
-into `release` opens a PR into `main`) can be exercised offline:
+`actions/` boots Gitea plus an `act_runner` in Docker, so the flows that are
+fundamentally cross-repository can be exercised offline:
 
 ```
 .tests/actions/bootstrap.sh      # boot the forge, seed repos, register a runner
 .tests/actions/scenarios.sh      # trigger and assert
 .tests/actions/bootstrap.sh --down
 ```
+
+`scenarios.sh` covers the push-to-`release` flow today: a push to `main` syncs
+the `release` branch, and a diverged release dependency stops the publish and
+leaves `release` where it was. The other cross-repository flow — a `subrepo
+push` into `release` reverting and opening a PR into `main` — has the harness
+but not yet the scenario; its pieces are covered at Layer 2 by
+`dependency/main/.tests/`.
 
 It needs a Docker daemon in this container. Everything a forge is *not* needed
 for - extraction, the divergence guard, `check`, the PR description - is

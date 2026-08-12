@@ -51,6 +51,16 @@ def build(graph, directory, publishes=None):
     return nodes
 
 
+def advance(directory, node, content):
+    """Publish one more commit on `node`'s release branch, as an upstream that
+    moved on after a consumer installed it."""
+    work = os.path.join(directory, "work", node.name)
+    write(os.path.join(work, "index.ts"), content)
+    node.commits.append(_commit(work, "%s: advance" % node.name))
+    git("push", "--quiet", node.remote, "release", cwd=work)
+    return node.commits[-1]
+
+
 def _dependency_order(graph):
     ordered, remaining = [], dict(graph)
     while remaining:

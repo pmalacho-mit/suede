@@ -91,6 +91,19 @@ class PinComparisons(unittest.TestCase):
         self.assertEqual(levels(findings, "remote-differs"), ["INFO"])
         self.assertEqual(suede.worst(findings), "INFO")
 
+    def test_the_ssh_spelling_of_the_same_remote_is_not_a_difference(self):
+        """The tree records SSH because that is what can be pushed; the
+        manifest records HTTPS because that is what can be read without a key.
+        Reporting that as a repointed edge would make the check noise on every
+        correctly installed tree."""
+        tree = world(
+            installs={"app.B": B, "app.C": pin("C", "c", remote="git@example.test:acme/C.git")},
+            links={"B.C": "app.C"},
+            edges=[("app.B", "B.C", C)],
+        )
+
+        self.assertEqual(suede.check(tree), ())
+
 
 class DanglingEntries(unittest.TestCase):
     def test_a_prefixed_entry_that_does_not_resolve_warns(self):
