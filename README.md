@@ -71,7 +71,7 @@ The `release` branch is a clean, distribution-only branch that contains:
 
 - **Only distributable code:** Just the files from the `./release/` folder on `main`
 - **`.gitrepo` file:** Tracks the subrepo metadata for consumers who install this dependency
-- **`.suede/core/`:** The consumer-facing tools — [`sync`](./dependency/release/core/sync) and [`upstream`](./dependency/release/core/upstream) — which ship inside the dependency and end up at `<dependency>/.suede/core/` in every consumer's repository.
+- **`.suede/core/`:** The consumer-facing tools — [`sync`](./dependency/release/core/sync), [`upstream`](./dependency/release/core/upstream) and [`diff`](./dependency/release/core/diff) — which ship inside the dependency and end up at `<dependency>/.suede/core/` in every consumer's repository.
 
 This branch is what consumers actually install. It's kept automatically synchronized with `./release/` on `main` via GitHub Actions, ensuring that the distributed code is always up-to-date.
 
@@ -218,6 +218,17 @@ This fetches and merges the newest commits from the dependency's `release` branc
 > `bash <path-to-dependency>/.suede/core/sync --force` works as git-subrepo
 > documents it.
 
+To see what a sync would bring before running one, ask the dependency:
+
+```bash
+bash <path-to-dependency>/.suede/core/diff --sync
+```
+
+That compares your copy — local edits and all — against the current tip of the
+dependency's `release` branch, names both commits, and says outright when your
+pin already *is* the tip. See [reviewing your own changes](#reviewing-your-own-changes)
+for the other direction.
+
 > [!IMPORTANT]
 > `git subrepo pull` requires a clean working tree, while installing does not.
 > If you have just installed something, commit before syncing.
@@ -231,6 +242,16 @@ git diff HEAD~1 HEAD
 #### Modifying (i.e. contributing back)
 
 One of the advantages of this workflow is that you can treat your dependency's code as if it were your own source code. If you need to modify the dependency (e.g., fix a bug or add a feature), you can edit the dependency's files directly and test those changes in the context of your project. All such changes will be tracked in your main project's history.
+
+##### Reviewing your own changes
+
+Because the dependency's history is not in your repository, `git log` on that folder shows your commits but nothing to compare them against. `diff` fills that in:
+
+```bash
+bash <path-to-dependency>/.suede/core/diff
+```
+
+It compares the commit your `.gitrepo` pins against your copy as it stands — uncommitted edits and brand-new files included, ignored files and the `.gitrepo` itself excluded. The `+` lines are yours, and they are exactly what `upstream` would propose. Extra arguments go to `git diff`, so `--stat` and `--name-only` work; it exits `0` when there is no difference and `1` when there is.
 
 If you then want to offer those changes back to the dependency, commit them and run the `upstream` script that shipped inside it:
 

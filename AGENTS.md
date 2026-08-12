@@ -170,14 +170,23 @@ Sync and contribute back (these live on the release side and ship inside every
 installed dependency):
 
 ```bash
+bash <dep>/.suede/core/diff        # pinned commit -> your tree: what you would propose
+bash <dep>/.suede/core/diff --sync # your tree -> release tip: what you would receive
 bash <dep>/.suede/core/sync        # git subrepo pull, symlink- and cwd-safe
 bash <dep>/.suede/core/upstream    # propose local edits back as a PR
 ```
 
-Neither takes a target: each acts on the dependency it lives inside. Extra
-arguments to `sync` are forwarded to `git subrepo pull`, so `sync --force` and
-the rest of git-subrepo's options work. If `git subrepo` is not on `PATH` but
-`GIT_SUBREPO_ROOT` is set, both source `$GIT_SUBREPO_ROOT/.rc` before giving up.
+None of them takes a target: each acts on the dependency it lives inside. Extra
+arguments are forwarded — to `git subrepo pull` for `sync`, to `git diff` for
+`diff` — so `sync --force` and `diff --stat` work. If `git subrepo` is not on
+`PATH` but `GIT_SUBREPO_ROOT` is set, `sync` and `upstream` source
+`$GIT_SUBREPO_ROOT/.rc` before giving up; `diff` needs only `git`.
+
+`diff` is how you inspect a dependency you have edited: its history is not in
+this repository, so `git log` on that folder has nothing to compare against.
+It reads your files as they are on disk (uncommitted edits and new files in,
+`.gitignore`d files and `.gitrepo` out) and exits `0` for no difference, `1`
+for a difference, `2` if it could not run at all.
 
 Maintainer tools on `main`: `.suede/core/diff.sh`, `.suede/core/vendor.sh`, and
 `.suede/core/push-release.sh` (what CI runs; `DRY_RUN=1` stops after the guard).
@@ -189,13 +198,15 @@ whole closure, installs each dependency once flat at the root, creates the edge
 symlinks, and **stages without committing**. Review, then commit. Do not
 hand-clone a repo and hand-write a `.gitrepo`.
 
-**Update a dependency.** `bash <dep>/.suede/core/sync`. The working tree must
-be clean first — `git subrepo pull` refuses a dirty tree even though install
-does not. Never run `git subrepo pull` on a symlink path; it fails outright,
-which is why `sync` exists.
+**Update a dependency.** Preview it with `bash <dep>/.suede/core/diff --sync`,
+then `bash <dep>/.suede/core/sync`. The working tree must be clean before the
+sync — `git subrepo pull` refuses a dirty tree even though install does not.
+Never run `git subrepo pull` on a symlink path; it fails outright, which is why
+`sync` exists.
 
 **Modify a dependency you consume.** Edit the files in place and commit — that
-is the design. The change lives in your repo's history. To offer it back to the
+is the design. The change lives in your repo's history. Review it with
+`bash <dep>/.suede/core/diff` (the `+` lines are yours). To offer it back to the
 library, commit first, then `bash <dep>/.suede/core/upstream`. That splits your
 commits onto a `downstream/**` branch on the dependency's remote and opens a PR
 against its `main`. **The `release` branch is never modified**, so other
