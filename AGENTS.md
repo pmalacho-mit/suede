@@ -47,7 +47,8 @@ main branch                                  release branch  (generated — do n
 ├── src/  tests/  docs/        (dev only)    └── index.ts
 └── release/                                 ▲
     ├── .gitrepo                             └── exactly the contents of main's release/,
-    ├── .suede/.dependencies/                    lifted to the branch root
+    ├── .suede/core/           (subrepo)         lifted to the branch root
+    ├── .suede/.dependencies/
     └── index.ts
 ```
 
@@ -188,8 +189,17 @@ It reads your files as they are on disk (uncommitted edits and new files in,
 `.gitignore`d files and `.gitrepo` out) and exits `0` for no difference, `1`
 for a difference, `2` if it could not run at all.
 
-Maintainer tools on `main`: `.suede/core/diff.sh`, `.suede/core/vendor.sh`, and
-`.suede/core/push-release.sh` (what CI runs; `DRY_RUN=1` stops after the guard).
+Maintainer tools on `main`: `.suede/core/sync.sh`, `.suede/core/diff.sh`,
+`.suede/core/vendor.sh`, and `.suede/core/push-release.sh` (what CI runs;
+`DRY_RUN=1` stops after the guard).
+
+`sync.sh` updates every subrepo the dependency vendors from the suede library —
+`.suede/core`, `release/.suede/core`, `.github/workflows`,
+`release/.github/workflows` — and leaves `./release` alone. Use it instead of
+pulling those individually: the workflow subrepos come from the repository
+*template*, so their recorded `parent` names a commit that does not exist in
+this history and a plain `git subrepo pull` refuses. `sync.sh` repairs that and
+clears the leftovers that block the next publish.
 
 ## 7. Task recipes
 
@@ -280,7 +290,8 @@ Never:
 - Commit to the `release` branch, or edit anything under `release/.suede/.dependencies/` by hand — both are generated.
 - Put tests, examples or docs inside `release/`.
 - Hand-edit a `.gitrepo` file, or hand-write one to fake an install.
-- Edit files inside a vendored subrepo you should be *pulling* instead (`.suede/core/`, `.github/workflows/` in a dependency) — the fix belongs in the suede library.
+- Edit files inside a vendored subrepo you should be *pulling* instead (`.suede/core/`, `release/.suede/core/`, `.github/workflows/` in a dependency) — the fix belongs in the suede library.
+- Check out the `release` branch to change something on it. Everything on it, including the `.suede/core` that ships to consumers, lives on `main` and is published from there. `git subrepo pull release/.suede/core` on `main` is how that core is updated.
 - `git subrepo pull` a symlink path, or run any subrepo command on a dirty tree.
 - `git subrepo push` onto a dependency's `release` branch; use `upstream`.
 - Rename a root entry, the repository, or the separator casually — every import and every downstream consumer keys on those names.

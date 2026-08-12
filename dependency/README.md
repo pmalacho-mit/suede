@@ -50,6 +50,9 @@ In a fully initialized dependency repo, you'd have the following branch & folder
       - ... files ...
   - release/
     - .gitrepo (points to `release` branch of dependency repo)
+    - .suede/core/
+      - .gitrepo (points to [dependency/release/core](https://github.com/pmalacho-mit/suede/tree/dependency/release/core))
+      - ... files ...
     - ... files (see below) ...
 - `release` (branch)
   - .github/workflows
@@ -58,3 +61,17 @@ In a fully initialized dependency repo, you'd have the following branch & folder
   - .suede/core
     - .gitrepo (points to [dependency/release/core](https://github.com/pmalacho-mit/suede/tree/dependency/release/core))
     - ... files ...
+
+> [!IMPORTANT]
+> The `release` branch's `.suede/core` is **not** cloned onto that branch. It is
+> a subrepo of `main`'s `release/.suede/core`, and arrives on `release` the way
+> every other piece of release content does — pushed out of `main` by
+> `subrepo-push-release`. That is what keeps the rule intact: *nothing* about
+> developing a dependency requires checking `release` out. Updating it is
+> `git subrepo pull release/.suede/core` on `main`.
+>
+> A subrepo nested inside another one is a sharp edge in git-subrepo: a pull of
+> the inner one leaves a `subrepo/release/%2esuede/core` branch and a
+> `.git/tmp/subrepo/release` scratch directory, and either will stop the next
+> `git subrepo push release`. [`push-release.sh`](./main/core/push-release.sh)
+> clears both before every publish.

@@ -61,6 +61,7 @@ The `main` branch serves as the primary development branch where all work happen
   - Parent commit information for tracking history
 - **`./release/.suede/.dependencies/` folder:** The **published manifest** — one `.gitrepo` pointer per [release dependency](#dependencies-of-dependencies), plus a `package.json` and/or `requirements.txt` naming the third-party packages your code needs. It is **generated** by `suede extract` and refreshed on every publish; never edit it by hand.
 - **`./.suede/core/` folder:** The maintainer's tools and the scripts CI runs, vendored as a subrepo of this library. Update them with `git subrepo pull .suede/core` rather than by editing them.
+- **`./release/.suede/core/` folder:** The consumer-facing tools ([`sync`](./dependency/release/core/sync), [`upstream`](./dependency/release/core/upstream), [`diff`](./dependency/release/core/diff)), vendored *inside* `release/` so they ship with it. They live on `main` like everything else you develop, and reach the `release` branch through it — update them with `git subrepo pull release/.suede/core`, never by checking `release` out.
 - **`./.suede/.dependencies/separator` file:** One line recording your project's [separator](#dependencies-of-dependencies). It lives at the root and is **never** copied into `release/` — a consumer's separator is their own choice.
 
 When you push changes to `main`, the [subrepo-push-release](./dependency/main/workflows/subrepo-push-release.yml) GitHub Action automatically syncs the contents of `./release/` to the `release` branch.
@@ -314,7 +315,12 @@ After your dependency repository is set up, you can maintain and develop it as y
   If `diff` reports divergence you have three honest options: revert the changes, [upstream](#modifying-ie-contributing-back) them, or [vendor](#dependencies-of-dependencies) the dependency with `bash .suede/core/vendor.sh <entry>` so the source actually ships.
 - **Avoid direct commits to the `release` branch.** All changes flow from `main` → `release` via the automated workflow. The only time you'd interact with `release` manually is if something went wrong and you need to fix merge conflicts (which should be rare).
 - **Handle contributions as pull requests.** Consumers propose changes with [`upstream`](#modifying-ie-contributing-back), which opens a PR into `main` without ever touching `release`. Review and merge those as you would any other PR; merging republishes through the normal path.
-- **Update the vendored machinery by pulling.** `.suede/core` and `.github/workflows` are subrepos of this library. Get fixes with `git subrepo pull .suede/core` rather than by editing the files in place.
+- **Update the vendored machinery with one command, on `main`.** `.suede/core`, `release/.suede/core`, `.github/workflows` and `release/.github/workflows` are all subrepos of this library. Get fixes by pulling them, never by editing the files in place:
+  ```bash
+  bash .suede/core/sync.sh
+  ```
+> [!NOTE]
+> There is a reason this is a script rather than four `git subrepo pull`s. The workflow subrepos were cloned into the **template** your repository was created from, and a repository made from a template starts a fresh history — so their recorded `parent` names a commit that does not exist in it, and a plain pull refuses. (They live in the template because an Action is restricted in what it may do to `.github/workflows`.) `sync.sh` repairs the parent and retries. It also clears the leftovers that pulling a subrepo nested inside `release/` leaves behind, which would otherwise stop the next publish. See [`.suede/core`'s README](./dependency/main/core/README.md#syncsh).
 
 In summary, do your day-to-day development on `main` (or a sub-branch), keep the `./release` folder up-to-date with the code you want to distribute, and let the automation handle syncing that code to the `release` branch.
 

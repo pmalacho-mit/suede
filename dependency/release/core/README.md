@@ -10,7 +10,24 @@ audit and the installer itself) is vendored from `dependency/main/core` onto
 `main`, at the same path.
 
 This folder is a [git-subrepo](https://github.com/ingydotnet/git-subrepo) of the
-suede library, so you get fixes by pulling: `git subrepo pull .suede/core`.
+suede library, so you get fixes by pulling. **From `main`**, where it lives at
+`release/.suede/core` — like everything else that ships, it reaches the
+`release` branch through `main`, and there is never a reason to check `release`
+out:
+
+```bash
+git subrepo pull release/.suede/core
+```
+
+That leaves two things behind which stop the next `git subrepo push release`: a
+branch `subrepo/release/%2esuede/core` (refs are directories, so `subrepo/release`
+becomes uncreatable) and a scratch directory under `.git/tmp/subrepo/release`
+(where the push wants its worktree). `push-release.sh` clears both on every
+publish, so CI is fine; if you publish by hand, clear them yourself first:
+
+```bash
+git subrepo clean release/.suede/core && rm -rf .git/tmp/subrepo
+```
 
 ## [upstream](./upstream)
 

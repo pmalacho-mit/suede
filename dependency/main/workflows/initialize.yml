@@ -1,17 +1,20 @@
 name: Initialize
 #
 # Lives on `main`. Run once, manually, right after creating a repo from the
-# dependency template. In order:
-#   1. On `release`: clone the `core` dependency into .suede/core and push
-#      (scripts/actions/init-release-core.sh).
-#   2. On `main`: clone the `core` dependency into .suede/core and push
-#      (scripts/actions/init-main-core.sh).
-#   3. Connect main's ./release folder to the repo's own `release` branch via
-#      git-subrepo, then publish main (scripts/actions/init-release-subrepo.sh).
-# core is subrepo-cloned at init time (rather than baked into the template) so
-# its .gitrepo links point at real commits. No devcontainer is installed: a
-# dependency's development environment is its own choice. The hosted scripts
-# are unit-tested; README population and self-deletion stay here in the action.
+# dependency template. Everything it does to the repository is in one hosted
+# script, scripts/actions/init.sh: vendor the maintainer's core at .suede/core,
+# connect ./release to the repo's own `release` branch, vendor the consumer's
+# core at ./release/.suede/core, and publish.
+#
+# It never checks out `release`. That is the point: the consumer-facing core
+# lives inside the release folder, so it reaches the `release` branch through
+# `main` like all other release content, and updating it later is a
+# `git subrepo pull release/.suede/core` on `main`.
+#
+# The cores are subrepo-cloned at init time (rather than baked into the
+# template) so their .gitrepo links point at real commits. No devcontainer is
+# installed: a dependency's development environment is its own choice. The
+# hosted script is tested; README population and self-deletion stay here.
 
 on:
   workflow_dispatch:
@@ -48,24 +51,12 @@ jobs:
           git config user.name "GitHub Action"
           git config user.email "action@github.com"
 
-      - name: Clone core dependency into .suede/core on the release branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch origin release
-          git checkout -B release origin/release
-          bash -c "$(curl -fsSL "$SUEDE_SCRIPTS/actions/init-release-core.sh")"
-
-      - name: Clone core dependency into .suede/core on the main branch
+      - name: Initialize the repository
         shell: bash
         run: |
           set -euo pipefail
           git checkout main
-          bash -c "$(curl -fsSL "$SUEDE_SCRIPTS/actions/init-main-core.sh")"
-
-      - name: Connect ./release to the release branch
-        shell: bash
-        run: bash -c "$(curl -fsSL "$SUEDE_SCRIPTS/actions/init-release-subrepo.sh")"
+          bash -c "$(curl -fsSL "$SUEDE_SCRIPTS/actions/init.sh")"
 
       - name: Populate README with installation details
         shell: bash

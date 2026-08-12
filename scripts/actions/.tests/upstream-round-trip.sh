@@ -4,8 +4,8 @@ TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HARNESS="$(cd "$TESTS_DIR/../../../.tests/harness" && pwd)"
 readonly EXTERNAL_UPSTREAM="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/upstream.sh"
 readonly LOCAL_UPSTREAM="$TESTS_DIR/../../upstream.sh"
-readonly EXTERNAL_INIT="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/actions/init-release-subrepo.sh"
-readonly LOCAL_INIT="$TESTS_DIR/../init-release-subrepo.sh"
+readonly EXTERNAL_INIT="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/actions/init.sh"
+readonly LOCAL_INIT="$TESTS_DIR/../init.sh"
 readonly EXTERNAL_REBUILD="https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/dependency/main/core/rebuild-pr-branch.sh"
 readonly LOCAL_REBUILD="$TESTS_DIR/../../../dependency/main/core/rebuild-pr-branch.sh"
 readonly ROOT_DIR="$(cd "$TESTS_DIR/../../.." && pwd)"
@@ -21,8 +21,14 @@ setup() {
   mock_curl_url "$EXTERNAL_REBUILD"  "$LOCAL_REBUILD"
   enable_url_mocking
   chain_seed_remote "$TEST_DIR/dep.git" "$TEST_DIR/seed"
+  chain_seed_library_branches "$TEST_DIR/suede.git" "$TEST_DIR/corework"
   git clone --quiet "$TEST_DIR/dep.git" "$TEST_DIR/main"
-  ( cd "$TEST_DIR/main"; git checkout --quiet main; ORIGIN_URL="$TEST_DIR/dep.git" bash <(curl -fsSL "$EXTERNAL_INIT") >/dev/null )
+  # Init for real, cores and all: the round trip then runs against a release
+  # folder with a subrepo nested inside it, which is what push-release.sh has
+  # to cope with on every publish.
+  ( cd "$TEST_DIR/main"; git checkout --quiet main
+    ORIGIN_URL="$TEST_DIR/dep.git" CORE_URL="$TEST_DIR/suede.git" \
+      bash <(curl -fsSL "$EXTERNAL_INIT") >/dev/null )
   chain_make_consumer "$TEST_DIR/dep.git" "$TEST_DIR/consumer"
 }
 cleanup() { [[ -n "${TEST_DIR:-}" && -d "$TEST_DIR" ]] && rm -rf "$TEST_DIR"; disable_url_mocking; }

@@ -33,6 +33,41 @@ chain_make_consumer() { # <bare> <consumer>
     git subrepo clone "$bare" -b release deps/foo --quiet )
 }
 
+# Stands in for this library's own dependency/{main,release}/{core,workflows}
+# branches: everything a dependency vendors from suede. Init clones the cores;
+# the workflows arrive with the template, which chain_make_template_repo does.
+chain_seed_library_branches() { # <bare> <work>
+  local bare="$1" work="$2" branch
+  git init --quiet --bare "$bare"
+  git init --quiet "$work"
+  ( cd "$work"
+    printf 'maintainer tools v1\n' > push-release.sh
+    git add -A; git commit --quiet -m "main core v1"; git branch -m dependency/main/core
+    git push --quiet "$bare" dependency/main/core
+    for branch in dependency/release/core dependency/main/workflows dependency/release/workflows; do
+      git checkout --quiet --orphan "$branch"
+      git rm -rq --cached . >/dev/null 2>&1 || true; rm -f ./*.sh ./*.yml sync 2>/dev/null || true
+      case "$branch" in
+        */core)      printf 'consumer tools v1\n' > sync ;;
+        */workflows) printf 'name: %s v1\n' "${branch##*/}" > subrepo-push-release.yml ;;
+      esac
+      git add -A; git commit --quiet -m "$branch v1"
+      git push --quiet "$bare" "$branch"
+    done )
+}
+
+# Publish a new commit on one of those branches, as the library moving on.
+chain_advance_library_branch() { # <bare> <work> <branch> <text>
+  ( cd "$2"
+    git checkout --quiet "$3"
+    case "$3" in
+      */core)      printf '%s\n' "$4" > sync ;;
+      */workflows) printf '%s\n' "$4" > subrepo-push-release.yml ;;
+    esac
+    git add -A; git commit --quiet -m "$3: $4"
+    git push --quiet "$1" "$3" )
+}
+
 # ---- assertions in the harness style (log_pass/log_failure, return 0/1) -----
 assert_file_matches() { # <file> <ere> [label]
   local file="$1" ere="$2" label="${3:-$1 matches /$2/}"

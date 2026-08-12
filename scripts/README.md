@@ -52,6 +52,33 @@ was hard-coded. `suede.py` has no such restriction — `git clone` and
 `git ls-remote` take a remote verbatim — so GitLab, Codeberg and self-hosted
 git work.
 
+## `actions/`
+
+Scripts a GitHub Action fetches by URL and runs. They live here rather than
+inside the workflow YAML so they can be tested against real local repositories
+without a runner ([`actions/.tests/`](./actions/.tests/)).
+
+### `actions/init.sh`
+
+Everything [`initialize.yml`](../dependency/main/workflows/initialize.yml) does
+to a new dependency repository, run once with `main` checked out: vendor the
+maintainer's core at `.suede/core`, connect `./release` to the repo's own
+`release` branch, vendor the consumer's core at `./release/.suede/core`, then
+publish and push.
+
+```bash
+ORIGIN_URL=<repo> CORE_URL=<suede> bash scripts/actions/init.sh
+```
+
+It never checks out `release`. The consumer-facing core is vendored *inside*
+the release folder so it reaches that branch the way all release content does —
+through `main` — which is what makes `git subrepo pull release/.suede/core` the
+whole of updating it later.
+
+It replaced three scripts (`init-release-core.sh`, `init-main-core.sh`,
+`init-release-subrepo.sh`); the first is gone entirely, since nothing needs to
+be cloned onto the `release` branch any more.
+
 ## `create/`
 
 ### `create/dependency.sh`
@@ -87,7 +114,7 @@ Writes installation instructions to README.md by parsing the git remote origin U
 ```
 
 > [!NOTE]  
-> Used in [initialize](../templates/dependency/main/.github/workflows/initialize.yml) Github Action
+> Used in [initialize](../dependency/main/workflows/initialize.yml) Github Action
 
 ## `upgrade/`
 
@@ -95,7 +122,7 @@ Writes installation instructions to README.md by parsing the git remote origin U
 
 Step-by-step manual instructions for migrating a repository created with an earlier version of the suede workflow onto the current subrepo layout, where `.suede/core` and `.github/workflows` are vendored from dedicated suede library branches. Rewires both `release` and `main` and drops obsolete generated files (the old per-branch workflow on each side, plus `initialize.yml` on main).
 
-See [upgrade/v1.md](upgrade/v1.md) — and [`migration/`](../migration/) instead if you are also moving to v2, which folds these steps in.
+See [upgrade/v1.md](upgrade/v1.md) — and [`MIGRATION-V1-V2.md`](../MIGRATION-V1-V2.md) instead if you are also moving to v2, which folds these steps in.
 
 ## Subrepo helpers
 

@@ -98,7 +98,6 @@ this library, and can be updated by pulling rather than by editing.
 git switch release && git pull
 git rm -r .github/workflows && git commit -m "suede v2: remove the old workflows"
 git subrepo clone https://github.com/pmalacho-mit/suede.git .github/workflows --branch=dependency/release/workflows
-git subrepo clone https://github.com/pmalacho-mit/suede.git .suede/core --branch=dependency/release/core
 git push origin release
 
 # then main
@@ -108,7 +107,14 @@ git rm -r .github/workflows && git commit -m "suede v2: remove the old workflows
 git subrepo clone https://github.com/pmalacho-mit/suede.git .github/workflows --branch=dependency/main/workflows
 git rm .github/workflows/initialize.yml && git commit -m "suede v2: drop the one-shot initialize workflow"
 git subrepo clone https://github.com/pmalacho-mit/suede.git .suede/core --branch=dependency/main/core
+
+# the consumer-facing core, vendored INSIDE release/ so it ships from main
+git subrepo clone https://github.com/pmalacho-mit/suede.git release/.suede/core --branch=dependency/release/core
 ```
+
+Note what is *not* in the `release` block: the consumer-facing core is cloned
+on `main`, under `release/`, and reaches the `release` branch when `main`
+publishes. See [The consumer-facing core lives on `main`](#the-consumer-facing-core-lives-on-main).
 
 `initialize.yml` runs once at repository creation; leaving it risks re-running
 it. Now continue with **Step 4**.
@@ -124,19 +130,84 @@ git subrepo pull .github/workflows
 git rm .github/workflows/initialize.yml 2>/dev/null && git commit -m "suede v2: drop the one-shot initialize workflow" || true
 
 git switch release && git pull
-git subrepo pull .suede/core
 git subrepo pull .github/workflows
 git push origin release
 git switch main && git subrepo pull release
 ```
 
-Then **Step 4**.
+Your `.suede/core` on `release` was cloned onto that branch, which is no longer
+where it belongs. Repoint it once — [The consumer-facing core lives on
+`main`](#the-consumer-facing-core-lives-on-main) — then **Step 4**.
 
 ### Shape 3 — a consumer, not a dependency
 
 A repository with no `release/` publishes nothing, so `extract` is a no-op and
 there is no manifest of its own. Skip to **Step 5** and just verify the tree.
 If `check` reports `undeclared-edge`, install what it names.
+
+---
+
+## The consumer-facing core lives on `main`
+
+*Dependencies only — a consumer has none of this.*
+
+`.suede/core` on the `release` branch is what someone finds inside a dependency
+they installed. It used to be cloned **onto** that branch, which made updating
+it a round trip across both: switch to `release`, pull, push, switch back to
+`main`, pull `release`, push. That is the one thing this workflow says you
+never have to do.
+
+It is now a subrepo of `main`'s **`release/.suede/core`**, and reaches the
+`release` branch the way all release content does — pushed out of `main` by
+`subrepo-push-release`. Updating it is one command, on `main`:
+
+```bash
+git subrepo pull release/.suede/core
+```
+
+### Updating it, and everything else suede vendors
+
+Once you are on the current core, one command does all of it, from `main`:
+
+```bash
+bash .suede/core/sync.sh
+```
+
+It pulls `.suede/core`, `release/.suede/core`, `.github/workflows` and
+`release/.github/workflows` — every subrepo whose remote is the suede library —
+and leaves `./release` alone, since publishing owns that one.
+
+It exists because three of those cannot simply be pulled in a repository that
+was created from a template. Their `.gitrepo` records a `parent` that is not a
+commit in this history, and `git subrepo pull` refuses rather than guessing:
+
+| Subrepo | Why its parent is wrong | What git-subrepo advises |
+| --- | --- | --- |
+| `.github/workflows`, `release/.github/workflows` | cloned into the **template**, and a repository made from a template starts a fresh history — the commit does not exist here at all | setting the parent to `''`, which is no advice at all |
+| `release/.suede/core` (initialized before the layout change) | its parent is a **`release`-branch** commit, so not an ancestor of `main` | a usable SHA |
+
+`sync.sh` repairs both — point `parent` at a commit that *is* in this history,
+then pull — and clears the `subrepo/…` branch and `.git/tmp/subrepo/…`
+directory that pulling a subrepo nested inside `release/` leaves behind, which
+would otherwise stop the next `git subrepo push release`.
+
+If you would rather do it by hand once, the repair is:
+
+```bash
+git subrepo pull release/.suede/core                      # refuses, and may name a SHA
+git config -f release/.suede/core/.gitrepo subrepo.parent <that SHA, or the last commit to touch the path>
+git commit -am "suede: repoint the nested core's parent at main"
+git subrepo pull release/.suede/core                      # succeeds
+git subrepo clean release/.suede/core && rm -rf .git/tmp/subrepo
+```
+
+### What has *not* moved
+
+`.github/workflows` on the `release` branch is still cloned onto that branch,
+and changing *which* commit it tracks still means `git switch release`. Workflow
+files are the one thing a `GITHUB_TOKEN` cannot push without `workflows: write`,
+so publishing them out of `main` is a separate question from this one — but
+`sync.sh` updates main's copy of both, which is where you read them.
 
 ---
 
@@ -254,6 +325,10 @@ correct: your devcontainer config is not part of what you publish.
 
 - Editing `release/.suede/.dependencies/` by hand. It is generated, and CI
   regenerates it on every publish.
+- Checking out `release` to update the core that ships to consumers. That is
+  [`bash .suede/core/sync.sh`](#updating-it-and-everything-else-suede-vendors),
+  on `main`. The `release` branch block in Step 3 exists only for
+  `.github/workflows`, which has not moved.
 - Copying `.suede/.dependencies/separator` into `release/`.
 - Renaming a backing folder to match its entry. Classification keys on the
   **entry** name; the folder can be called anything and live anywhere outside
