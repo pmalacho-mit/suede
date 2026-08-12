@@ -140,7 +140,7 @@ class Plan:
 | `scripts/suede.py` | The installer. Everything below is a thin shell around it |
 | `dependency/release/core/vendor.sh` | Release dep → vendored (spec'd, not yet written) |
 | `dependency/release/core/diff.sh` | Divergence check; the `subrepo-push-release` guard |
-| `dependency/release/core/sync.sh` | `git subrepo pull` from any cwd, dereferencing symlinks |
+| `dependency/release/core/sync` | `git subrepo pull` for the containing dependency, from any cwd, resolving symlinks |
 | `.github/workflows/test.yml` | Unit + integration + contract tests, Python matrix |
 | `.github/workflows/test-actions.yml` | Containerized workflow tests (§6, tier C) |
 | `.tests/unit/` | Pure planner/check tests (`unittest`) |

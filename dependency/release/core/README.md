@@ -51,19 +51,33 @@ no-op (it detects the already-open proposal).
 - Requires `git`, `curl`, and [`git-subrepo`](https://github.com/ingydotnet/git-subrepo).
 - Pass `-r`/`--remote <name>` to push to a remote other than the one tracked in
   the dependency's `.gitrepo`.
-## [sync](./sync.sh)
 
-`git subrepo pull`, runnable from any working directory.
+## [sync](./sync)
+
+`git subrepo pull` for **this** dependency, runnable from any working directory.
 
 ```bash
-bash <dependency>/.suede/core/sync.sh <path> [<path> ...]
+<dependency>/.suede/core/sync        # if executable
+bash <dependency>/.suede/core/sync
 ```
+
+Like [`upstream`](./upstream), it takes no target: the dependency it pulls is
+the one containing the script. Anything you do pass is handed straight to
+`git subrepo pull`, so `sync --force` and the rest of git-subrepo's options
+work as documented there.
 
 Two things it does that a bare `git subrepo pull` will not: it runs from the
 repository root with a root-relative path, so where you are does not matter; and
-it dereferences a symlink to the real folder first, because `git subrepo pull`
+it resolves symlinks to the real folder first, because `git subrepo pull`
 on a symlink path fails outright — and the edge entries suede creates between
 your dependencies are symlinks by default.
 
 `git subrepo pull` also requires a clean working tree, while installing does
 not. If you have just installed something, commit before syncing.
+
+## If `git subrepo` is not found
+
+Both scripts need it, and both look in one more place before giving up: if
+`GIT_SUBREPO_ROOT` is set, they source `$GIT_SUBREPO_ROOT/.rc` to bring the
+command into scope. That covers an install — a devcontainer feature, a login
+shell profile — whose `PATH` a non-interactive script never inherited.

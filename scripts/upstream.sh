@@ -43,7 +43,24 @@ done
 [ -n "$DIR" ] || { usage; exit 1; }
 command -v git  >/dev/null || die "git not found"
 command -v curl >/dev/null || die "curl not found"
-git subrepo --version >/dev/null 2>&1 || die "git-subrepo not installed (see suede README)"
+
+# The `.suede/core/upstream` stub does this too, but this script is documented
+# for direct use, so it cannot assume the stub ran. GIT_SUBREPO_ROOT is the
+# marker left by an install whose PATH a non-interactive shell never inherited.
+ensure_git_subrepo() {
+  git subrepo --version >/dev/null 2>&1 && return 0
+  [[ -n "${GIT_SUBREPO_ROOT-}" && -f "${GIT_SUBREPO_ROOT-}/.rc" ]] || return 1
+  # `.rc` ends by sourcing a completion script written for an interactive
+  # shell, so strictness comes off for the duration and the outcome is checked
+  # rather than trusted.
+  set +eu
+  # shellcheck disable=SC1091
+  source "$GIT_SUBREPO_ROOT/.rc"
+  set -eu
+  git subrepo --version >/dev/null 2>&1
+}
+
+ensure_git_subrepo || die "git-subrepo not installed (see suede README)"
 
 DIRABS="$(cd "$DIR" 2>/dev/null && pwd)" || die "no such directory: $DIR"
 TOP="$(git -C "$DIRABS" rev-parse --show-toplevel 2>/dev/null)" \

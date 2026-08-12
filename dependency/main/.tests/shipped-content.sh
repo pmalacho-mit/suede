@@ -46,9 +46,13 @@ every_core_script_is_documented() {
   local undocumented=""
   local core script name
   for core in "$ROOT_DIR"/dependency/*/core; do
-    for script in "$core"/*.sh "$core"/*.py "$core"/upstream; do
+    # Everything in the folder, not a list of extensions: `sync` and `upstream`
+    # ship without one, and a check that has to be remembered is a check that
+    # goes stale.
+    for script in "$core"/* ; do
       [[ -f "$script" ]] || continue
       name="$(basename "$script")"
+      [[ "$name" == "README.md" || "$name" == ".gitrepo" ]] && continue
       grep -q -- "$name" "$core/README.md" 2>/dev/null || undocumented+="${core#$ROOT_DIR/}/$name"$'\n'
     done
   done

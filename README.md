@@ -71,7 +71,7 @@ The `release` branch is a clean, distribution-only branch that contains:
 
 - **Only distributable code:** Just the files from the `./release/` folder on `main`
 - **`.gitrepo` file:** Tracks the subrepo metadata for consumers who install this dependency
-- **`.suede/core/`:** The consumer-facing tools — [`sync.sh`](./dependency/release/core/sync.sh) and [`upstream`](./dependency/release/core/upstream) — which ship inside the dependency and end up at `<dependency>/.suede/core/` in every consumer's repository.
+- **`.suede/core/`:** The consumer-facing tools — [`sync`](./dependency/release/core/sync) and [`upstream`](./dependency/release/core/upstream) — which ship inside the dependency and end up at `<dependency>/.suede/core/` in every consumer's repository.
 
 This branch is what consumers actually install. It's kept automatically synchronized with `./release/` on `main` via GitHub Actions, ensuring that the distributed code is always up-to-date.
 
@@ -197,22 +197,26 @@ To get the latest changes for a dependency, first confirm that your environment 
 git subrepo --version
 ```
 
-Then run the `sync` script that shipped inside the dependency, with the dependency's location as the argument:
+Then run the `sync` script that shipped inside the dependency. It takes no target — the dependency it pulls is the one it lives in:
 
 ```bash
-bash <path-to-dependency>/.suede/core/sync.sh <path-to-dependency>
+bash <path-to-dependency>/.suede/core/sync
 ```
 
-> For example: `bash ./my-app.some-suede/.suede/core/sync.sh ./my-app.some-suede`
+> For example: `bash ./my-app.some-suede/.suede/core/sync`
 
 This fetches and merges the newest commits from the dependency's `release` branch into your subrepo folder and applies them as a single commit.
 
 > [!TIP]
-> `sync.sh` is a wrapper around `git subrepo pull` that does two things a bare
+> `sync` is a wrapper around `git subrepo pull` that does two things a bare
 > pull will not: it runs from the repository root with a root-relative path, so
-> where you are does not matter, and it dereferences a symlink to the real
-> folder first — `git subrepo pull` on a symlink path fails outright, and the
-> edge entries between your dependencies are symlinks by default.
+> where you are does not matter, and it resolves a symlink to the real folder
+> first — `git subrepo pull` on a symlink path fails outright, and the edge
+> entries between your dependencies are symlinks by default.
+>
+> Anything you pass is handed straight to `git subrepo pull`, so
+> `bash <path-to-dependency>/.suede/core/sync --force` works as git-subrepo
+> documents it.
 
 > [!IMPORTANT]
 > `git subrepo pull` requires a clean working tree, while installing does not.
@@ -418,6 +422,13 @@ Copy the contents of [this file](https://github.com/pmalacho-mit/git-subrepo-dev
 #### On your system
 
 Install `git subrepo` on your system according to their [installation instructions](https://github.com/ingydotnet/git-subrepo?tab=readme-ov-file#installation).
+
+> [!NOTE]
+> git-subrepo is enabled by sourcing its `.rc` from your shell startup file, so
+> a script that does not run through your login shell can find it missing even
+> though it is installed. If `GIT_SUBREPO_ROOT` is set, [`sync`](./dependency/release/core/sync)
+> and [`upstream`](./dependency/release/core/upstream) source
+> `$GIT_SUBREPO_ROOT/.rc` themselves rather than failing.
 
 ## Why
 
