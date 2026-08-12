@@ -1,0 +1,84 @@
+name: test
+#
+# The suite itself lives in .tests/ and is described by .tests/README.md; this
+# file only supplies the interpreters and the git-subrepo versions it should be
+# run against. Nothing here does work of its own, so a green run locally and a
+# green run here mean the same thing.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The installer claims to run on python3 >= 3.9, on macOS as well as Linux.
+  # macOS is not optional: it is the only runner that catches a case-insensitive
+  # collision between two entry names, and it is what sets the 3.9 floor (that
+  # is what Command Line Tools ship).
+  python:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      # A version guard inside the file cannot save you from a SyntaxError: the
+      # interpreter parses the whole module before running a line of it.
+      - name: Compile
+        run: python -m py_compile scripts/suede.py
+
+      - name: Install git-subrepo
+        run: |
+          git clone --quiet --branch 0.4.9 --depth 1 \
+            https://github.com/ingydotnet/git-subrepo "$HOME/.git-subrepo"
+          echo "$HOME/.git-subrepo/lib" >> "$GITHUB_PATH"
+
+      - name: Unit
+        run: python -m unittest discover .tests/unit -t .tests/unit
+      - name: Integration
+        run: python -m unittest discover .tests/integration -t .tests/integration
+
+  # The shell surface, and the Python suites again through the orchestrator that
+  # reports them. Linux only: the harness is written for bash 4, and macOS ships
+  # bash 3.2.
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Install git-subrepo
+        run: |
+          git clone --quiet --branch 0.4.9 --depth 1 \
+            https://github.com/ingydotnet/git-subrepo "$HOME/.git-subrepo"
+          echo "$HOME/.git-subrepo/lib" >> "$GITHUB_PATH"
+      - run: bash .tests/harness/run-all.sh
+
+  # An install hand-writes its .gitrepo, so git-subrepo's assumptions about that
+  # file are a dependency of ours that nothing else would notice changing. This
+  # job is allowed to fail: it is an early warning about an unreleased
+  # git-subrepo, not a gate on merging.
+  git-subrepo-main:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - name: Install git-subrepo from main
+        run: |
+          git clone --quiet --branch main --depth 1 \
+            https://github.com/ingydotnet/git-subrepo "$HOME/.git-subrepo"
+          echo "$HOME/.git-subrepo/lib" >> "$GITHUB_PATH"
+      - run: bash .tests/harness/run-all.sh

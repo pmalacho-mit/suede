@@ -92,8 +92,6 @@ run_one() {
   name="$(basename "$file")"
   log="$LOG_DIR/$name.log"
 
-  [[ -x "$file" ]] || chmod +x "$file" 2>/dev/null || true
-
   # The whole point: output to a file, stdin from /dev/null — no pipe shared
   # with this orchestrator.
   bash "$file" </dev/null >"$log" 2>&1

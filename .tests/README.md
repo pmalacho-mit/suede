@@ -25,6 +25,13 @@ tests exercise the actual manifest format rather than a mock of it.
 use, so the pure boundary fails loudly if it ever leaks. That boundary is the
 reason the scenario matrix stays cheap.
 
+`integration/test_subrepo.py` is the one suite that runs **git-subrepo itself**,
+against a tree suede installed. An install hand-writes its `.gitrepo` instead of
+going through `git subrepo clone`, and every other assertion here is about the
+tree suede writes — all of them would stay green if git-subrepo changed what it
+expects of that tree. It skips when git-subrepo is absent, which is why CI runs
+the suite against a pinned version and against `main`.
+
 Colocated tests are discovered by `.tests/harness/run-all.sh`: any `*.sh` whose
 immediate parent is a `.tests/` directory. One placement rule — anything under
 `dependency/` holding a `.gitrepo` is vendored into every consumer, so tests
@@ -80,7 +87,8 @@ starts and names anything missing, rather than letting half the run fail with
 above is the supported answer.
 
 The Python suites can also be run on their own — they need nothing but a
-stdlib `python3`:
+stdlib `python3` (plus git-subrepo, if you want `test_subrepo.py` to run rather
+than skip):
 ```
 python3 -m unittest discover .tests/unit -t .tests/unit
 python3 -m unittest discover .tests/integration -t .tests/integration
