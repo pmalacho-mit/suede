@@ -41,7 +41,9 @@ import time  # noqa: E402
 from collections import Counter, deque  # noqa: E402
 from collections.abc import Callable, Iterable, Mapping, Sequence  # noqa: E402
 from dataclasses import dataclass, field, replace  # noqa: E402
-from typing import Final, Optional, TextIO, cast  # noqa: E402
+from typing import Final, Optional, TextIO, TypeVar, cast  # noqa: E402
+
+_T = TypeVar("_T")
 
 # --------------------------------------------------------------------------- #
 # 1. Constants                                                                 #
@@ -87,6 +89,20 @@ SEPARATOR_BY_EXTENSION = {
     "tsx": ".",
     "vue": ".",
 }
+
+# How suede's own git calls are allowed to fail: fast, and without asking
+# anyone anything.
+#
+# A network that DROPS port 22 rather than refusing it - which is most proxied
+# and corporate networks - turns an SSH attempt into a full TCP timeout. Left
+# unbounded that is over two minutes per remote, paid before the HTTPS spelling
+# is ever tried. BatchMode turns a missing key or an unknown host into an
+# immediate failure instead of a prompt nobody is there to answer.
+#
+# Neither setting reaches the user's own `git subrepo pull`: that is a separate
+# process with its own configuration. Both defer to a value already in the
+# environment.
+SSH_ATTEMPT = "ssh -o BatchMode=yes -o ConnectTimeout=5"
 
 CACHE_DIR = os.path.join(".git", "suede-cache")
 CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
@@ -160,11 +176,92 @@ class PlanError(SuedeError):
 # --------------------------------------------------------------------------- #
 
 
+class remotes:
+    """One repository, three spellings of its URL.
+
+    A developer pushes over SSH, because that is the only route left for
+    authenticating a write. A consumer - and every CI runner - reads over
+    HTTPS, because that needs no key. Both are the same dependency, so the
+    model compares neither: it compares `canonical`, and derives the other two
+    at the moment it writes a file or talks to a remote.
+
+    Anything that is not a host-and-path pair - a local directory, a `file://`
+    URL, an address carrying a port - has one spelling, which is itself.
+    """
+
+    @staticmethod
+    def canonical(url: str) -> str:
+        """The identity. Two spellings of one repository share it; nothing else
+        does."""
+        pair = remotes._host_and_path(url)
+        return url if pair is None else "https://%s/%s" % pair
+
+    @staticmethod
+    def ssh(url: str) -> str:
+        pair = remotes._host_and_path(url)
+        return url if pair is None else "git@%s:%s.git" % pair
+
+    @staticmethod
+    def https(url: str) -> str:
+        return remotes.canonical(url)
+
+    @staticmethod
+    def candidates(url: str) -> tuple[str, ...]:
+        """What to try, in order. SSH first: a key in the environment is the
+        only route to a private repository. HTTPS second: it is the only route
+        without one."""
+        pair = remotes._host_and_path(url)
+        if pair is None:
+            return (url,)
+        return (remotes.ssh(url), remotes.https(url))
+
+    @staticmethod
+    def name(url: str) -> str:
+        """The dependency's identity: the remote's basename, `.git` stripped."""
+        return url.rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1].removesuffix(".git")
+
+    @staticmethod
+    def _host_and_path(url: str) -> Optional[tuple[str, str]]:
+        pair = remotes._scheme_form(url) if "://" in url else remotes._scp_form(url)
+        if pair is None:
+            return None
+        host, path = pair
+        # A port means the two spellings cannot be derived from each other, and
+        # a host without a dot is a local path (`C:\repo`) or an alias, not an
+        # address we can rewrite. Refuse rather than invent a URL.
+        if ":" in host or "." not in host or not path:
+            return None
+        return host, path.rstrip("/").removesuffix(".git")
+
+    @staticmethod
+    def _scheme_form(url: str) -> Optional[tuple[str, str]]:
+        """`https://host/path`, `ssh://git@host/path`."""
+        for scheme in ("https://", "http://", "ssh://", "git://"):
+            if url.startswith(scheme):
+                authority, _, path = url[len(scheme) :].partition("/")
+                return authority.rsplit("@", 1)[-1], path
+        return None
+
+    @staticmethod
+    def _scp_form(url: str) -> Optional[tuple[str, str]]:
+        """`git@host:path`. The colon must precede any slash, or this is a
+        local path that happens to contain one."""
+        host, separator, path = url.partition(":")
+        if not separator or "/" in host:
+            return None
+        return host.rsplit("@", 1)[-1], path
+
+
 @dataclass(frozen=True, order=True)
 class Pin:
     remote: str
     commit: str
     branch: str = RELEASE_BRANCH
+
+    def __post_init__(self) -> None:
+        """Codified rather than documented: a Pin cannot hold a spelling the
+        rest of the model would fail to recognise as the same repository."""
+        object.__setattr__(self, "remote", remotes.canonical(self.remote))
 
     @property
     def short(self) -> str:
@@ -172,8 +269,7 @@ class Pin:
 
     @property
     def name(self) -> str:
-        """The dependency's identity: the remote's basename, `.git` stripped."""
-        return self.remote.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
+        return remotes.name(self.remote)
 
 
 @dataclass(frozen=True)
@@ -451,24 +547,70 @@ class git:
             return None
 
     @staticmethod
-    def resolve_branch(remote: str, branch: str) -> str:
-        listing = git.run("ls-remote", "--exit-code", remote, "refs/heads/" + branch)
-        return listing.split()[0]
+    def over(url: str, reach: Callable[[str], _T]) -> _T:
+        """Run `reach` against each spelling of `url` until one answers.
+
+        SSH is tried first so a key in the environment is enough for a private
+        repository; HTTPS is tried second so a runner holding no key still
+        works. A remote with only one spelling makes exactly one attempt, which
+        is every local path and every address carrying a port.
+        """
+        attempts = remotes.candidates(url)
+        for index, candidate in enumerate(attempts):
+            try:
+                return reach(candidate)
+            except SuedeError as failure:
+                if index == len(attempts) - 1:
+                    raise git._exhausted(url, attempts, failure)
+        raise git._exhausted(url, attempts, SuedeError("no spelling to try"))
 
     @staticmethod
-    def fetch_commit(remote: str, commit: str, branch: str, dest: str) -> None:
+    def _exhausted(url: str, attempts: Sequence[str], last: SuedeError) -> SuedeError:
+        if len(attempts) < 2:
+            return last
+        return SuedeError(
+            "could not reach %s over SSH or HTTPS.\n  tried: %s\n  %s"
+            % (url, ", ".join(attempts), last)
+        )
+
+    @staticmethod
+    def resolve_branch(url: str, branch: str) -> str:
+        def ls_remote(candidate: str) -> str:
+            listing = git.run("ls-remote", "--exit-code", candidate, "refs/heads/" + branch)
+            return listing.split()[0]
+
+        return git.over(url, ls_remote)
+
+    @staticmethod
+    def fetch_commit(url: str, commit: str, branch: str, dest: str) -> None:
         """Materialise one commit's tree at `dest`, history and all discarded."""
-        os.makedirs(dest, exist_ok=True)
-        git.run("init", "--quiet", cwd=dest)
-        git.run("remote", "add", "origin", remote, cwd=dest)
-        if not git.ok("fetch", "--quiet", "--depth", "1", "origin", commit, cwd=dest):
-            git.run("fetch", "--quiet", "origin", "refs/heads/" + branch, cwd=dest)
-        git.run("checkout", "--quiet", "--detach", commit, cwd=dest)
+
+        def fetch_from(candidate: str) -> None:
+            # Each attempt starts from nothing: a half-fetched directory left by
+            # the previous spelling would make this one fail for the wrong
+            # reason, and report the wrong fix.
+            shutil.rmtree(dest, ignore_errors=True)
+            os.makedirs(dest, exist_ok=True)
+            git.run("init", "--quiet", cwd=dest)
+            git.run("remote", "add", "origin", candidate, cwd=dest)
+            if not git.ok("fetch", "--quiet", "--depth", "1", "origin", commit, cwd=dest):
+                git.run("fetch", "--quiet", "origin", "refs/heads/" + branch, cwd=dest)
+            git.run("checkout", "--quiet", "--detach", commit, cwd=dest)
+
+        git.over(url, fetch_from)
 
     @staticmethod
-    def fetch_history(remote: str, branch: str, dest: str) -> None:
+    def fetch_history(url: str, branch: str, dest: str) -> None:
         """A blobless mirror - enough history to answer `is_ancestor`, no trees."""
-        git.run("clone", "--quiet", "--bare", "--filter=blob:none", "--branch", branch, remote, dest)
+
+        def clone_from(candidate: str) -> None:
+            shutil.rmtree(dest, ignore_errors=True)
+            git.run(
+                "clone", "--quiet", "--bare", "--filter=blob:none",
+                "--branch", branch, candidate, dest,
+            )
+
+        git.over(url, clone_from)
 
     @staticmethod
     def is_ancestor(older: str, newer: str, cwd: str) -> bool:
@@ -519,20 +661,26 @@ class gitrepo:
 
     @staticmethod
     def write(path: str, pin: Pin, parent: Optional[str] = None) -> None:
-        """A live `.gitrepo` - it drives `git subrepo pull` on the installed folder."""
+        """A live `.gitrepo` - it drives `git subrepo pull` on the installed
+        folder, and a bare `git subrepo push` sends your work back up it. So it
+        records the SSH spelling: pushing needs an authenticated write, and
+        HTTPS no longer offers one."""
         gitrepo._seed(path)
-        gitrepo._set_pin(path, pin)
+        gitrepo._set_pin(path, pin, remotes.ssh(pin.remote))
         git.config_set(path, "subrepo.parent", parent or "")
         git.config_set(path, "subrepo.method", SUBREPO_METHOD)
         git.config_set(path, "subrepo.cmdver", SUBREPO_CMDVER)
 
     @staticmethod
     def write_manifest_record(path: str, pin: Pin) -> None:
-        """A shipped pointer. `parent` is a SHA in *our* repository and is
-        meaningless downstream; `cmdver` records our local git-subrepo. Neither
-        belongs in something a consumer resolves."""
+        """A shipped pointer, so it records the HTTPS spelling: a consumer
+        resolving it has no key of ours, and neither does a CI runner.
+
+        `parent` is a SHA in *our* repository and is meaningless downstream;
+        `cmdver` records our local git-subrepo. Neither belongs in something a
+        consumer resolves."""
         gitrepo._seed(path)
-        gitrepo._set_pin(path, pin)
+        gitrepo._set_pin(path, pin, remotes.https(pin.remote))
 
     @staticmethod
     def _seed(path: str) -> None:
@@ -543,8 +691,8 @@ class gitrepo:
             handle.write(GITREPO_HEADER)
 
     @staticmethod
-    def _set_pin(path: str, pin: Pin) -> None:
-        git.config_set(path, "subrepo.remote", pin.remote)
+    def _set_pin(path: str, pin: Pin, remote: str) -> None:
+        git.config_set(path, "subrepo.remote", remote)
         git.config_set(path, "subrepo.branch", pin.branch)
         git.config_set(path, "subrepo.commit", pin.commit)
 
@@ -1136,9 +1284,11 @@ class cache:
 def _unreachable(pin: Pin, failure: SuedeError) -> str:
     return (
         "could not fetch %s@%s from %s.\n"
-        "  If the remote needs authentication, `git clone` it once by hand so your\n"
-        "  credential helper caches it. If the repository has no `%s` branch it is\n"
-        "  not a published suede dependency yet.\n%s"
+        "  A private repository needs an SSH key - `ssh -T git@<host>` should greet\n"
+        "  you by name. A public one needs none, but a credential helper that has\n"
+        "  never seen the host can still prompt; `git clone` it once by hand to\n"
+        "  settle that. If the repository has no `%s` branch it is not a published\n"
+        "  suede dependency yet.\n%s"
         % (pin.name, pin.short, pin.remote, pin.branch, failure)
     )
 
@@ -2991,7 +3141,13 @@ COMMANDS = {
 }
 
 
+def bound_the_network() -> None:
+    os.environ.setdefault("GIT_TERMINAL_PROMPT", "0")
+    os.environ.setdefault("GIT_SSH_COMMAND", SSH_ATTEMPT)
+
+
 def main(argv: Sequence[str]) -> int:
+    bound_the_network()
     parser = _parser()
     args = parser.parse_args(argv)
     if not args.command:

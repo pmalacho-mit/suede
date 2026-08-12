@@ -24,7 +24,7 @@
 | --- | --- |
 | **`$repo`** | Name of the current repository, without owner |
 | **`$SEP`** | Separator between `$repo` and a dependency name |
-| **Pin** | `(remote, branch, commit)`. `branch` is always `release`. Two pins are *identical* iff remote and commit both match; *conflicting* iff remote matches and commit doesn't |
+| **Pin** | `(remote, branch, commit)`. `branch` is always `release`. Two pins are *identical* iff remote and commit both match; *conflicting* iff remote matches and commit doesn't. `remote` is held **canonicalized** — see [Two spellings of one remote](#two-spellings-of-one-remote) — so an SSH and an HTTPS URL for the same repository are one remote, not two |
 | **Install** | A real directory containing a `.gitrepo`. Realizes exactly one pin |
 | **Entry** | A named filesystem entry (folder **or** symlink) satisfying a dependency reference |
 | **Edge** | `(dependent, entry-name, pin)`, read from `<dependent>/.suede/.dependencies/<entry-name>.gitrepo` |
@@ -76,6 +76,23 @@
 For each unsatisfied pin, `git clone --depth 1 --branch release <remote>` into `.git/suede-cache/<short-sha>/` and read its manifest from there.
 
 Staging under `.git/` means the cache is never accidentally committed, and — the point — **the planner can read a dependency's manifest before installing it**, which is what makes a complete, honest announce block possible.
+
+#### Two spellings of one remote
+
+One repository reaches the tool written two ways, because the two audiences need different things from it:
+
+| Where | Spelling | Why |
+| --- | --- | --- |
+| A live `.gitrepo` | `git@host:owner/name.git` | It drives a bare `git subrepo push`. Pushing needs an authenticated write, and HTTPS password auth no longer exists |
+| A published manifest record | `https://host/owner/name` | Consumers and CI runners resolve it holding no key of yours. A public dependency must stay readable anonymously |
+
+So both spellings are in circulation, and every install of a dependency-of-a-dependency meets both at once. Three rules keep that from becoming two dependencies:
+
+1. **A `Pin` canonicalizes its remote on construction** (to the HTTPS spelling). Identity is therefore structural — dedup, conflict detection and the declaration invariant all compare canonical forms without any call site having to remember to.
+2. **The spelling is re-derived at the moment of writing**, never carried through the model. The two writers above are the only places that choose one.
+3. **A remote that cannot be rewritten is left exactly alone**: a local path, a `file://` URL, or any address carrying a port. Refusing to derive beats inventing a URL that names a repository nobody asked for.
+
+Fetching tries **SSH first, then HTTPS** — a key in the environment is the only route into a private repository, and HTTPS is the only route without one. Both attempts are bounded (`BatchMode=yes`, `ConnectTimeout=5`, `GIT_TERMINAL_PROMPT=0`), because a network that *drops* port 22 rather than refusing it turns an unbounded SSH attempt into a multi-minute TCP timeout paid before HTTPS is ever tried. A remote with one spelling makes exactly one attempt, and its failure is reported as itself rather than as "tried SSH and HTTPS".
 
 ### Phase 3 — Plan (pure)
 

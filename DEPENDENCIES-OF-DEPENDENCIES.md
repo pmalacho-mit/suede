@@ -274,6 +274,8 @@ Python 3.9 is the floor, set by macOS Command Line Tools (pinned at 3.9.6). `mat
 
 All network access goes through `git` (`ls-remote`, `clone --depth 1`, sparse checkout) rather than HTTP. This works with any git host, inherits the user's existing auth, avoids API rate limits, and sidesteps `tarfile` extraction-filter differences across Python patch releases. `.gitrepo` files are read and written with `git config -f`, which is what git-subrepo itself uses.
 
+A live `.gitrepo` records the **SSH** spelling of the remote and a published manifest record the **HTTPS** one, because they answer to different people: a live pointer has to survive a bare `git subrepo push`, which needs an authenticated write, while a shipped pointer is resolved by consumers and CI runners holding no key of yours. A `Pin` canonicalizes its remote on construction so the two are one dependency rather than two, and fetching tries SSH before HTTPS so a key is enough for a private repository. See [Two spellings of one remote](./INSTALL.md#two-spellings-of-one-remote).
+
 `sync`, `vendor` and `upstream` remain bash — they are short wrappers around
 git commands, which is what shell is good at. `diff` is the exception: deciding
 *which* dependencies the divergence rule applies to is the classification rule

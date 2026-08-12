@@ -350,6 +350,14 @@ runtime dependencies, which is what lets you read
 `git` is required too, and does all the network access, so private
 repositories, SSH keys and credential helpers work with no extra setup.
 
+An installed dependency records the **SSH** URL of its remote, so `git subrepo
+push` from inside it has a route back upstream — HTTPS password authentication
+no longer offers one. What you *publish* records the HTTPS URL instead, so
+consumers and CI runners can resolve your dependencies without a key of yours.
+Fetching tries SSH first and falls back to HTTPS, and suede treats the two
+spellings as one repository, so a tree installed either way plans and checks
+identically.
+
 ### Install [git-subrepo](https://github.com/ingydotnet/git-subrepo) 
 
 #### Within a devcontainer (***RECOMMENDED***) 
