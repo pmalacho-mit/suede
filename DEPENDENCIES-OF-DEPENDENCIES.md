@@ -250,9 +250,8 @@ bash <(curl -fsSL https://suede.sh/install/release) --repo owner/some-suede-depe
 **Its dependencies are not doubled as yours.** This is the difference that matters, and it follows from the same rule. A release install flattens its whole closure into your root *and your manifest*, because your consumers have to resolve every pin you depend on. A development install has no consumers to inform, so its closure lands unprefixed and unrecorded:
 
 ```
-some-suede-dependency/                      ← real folder, no prefix
-its-own-dependency/                         ← likewise, unrecorded
-some-suede-dependency.its-own-dependency    → symlink to ./its-own-dependency
+some-suede-dependency/                       ← real folder, no prefix
+some-suede-dependency.its-own-dependency/    ← real folder too: the entry is the install
 ```
 
 If something already on disk satisfies one of those edges — a release dependency of yours, or a dev dependency installed earlier — the edge points at it and nothing is copied:
@@ -264,9 +263,9 @@ some-suede-dependency.dockview-svelte-suede → symlink to ./app.dockview-svelte
 
 Third-party packages follow the same logic: `devDependencies` and `requirements-dev.txt`, neither of which `extract` publishes.
 
-#### Fewer entries: `--edge-named`
+#### The entry is the install (and `--root-owned`, when you'd rather it weren't)
 
-A closure of five installs plus five edges is ten root entries. [The ownership rule](#the-ownership-rule) is what makes it ten, and its reason — the name that ships in a manifest must be backed by bytes, not by an indirection — does not apply to a dependency that ships no manifest. So `--dev --edge-named` (and `--vendor --edge-named`) names each transitive install after the edge that asks for it, and the entry *is* the install:
+Under [the ownership rule](#the-ownership-rule) a closure of five dependencies is ten root entries: five folders and five links. That rule's reason — the name that ships in a manifest must be backed by bytes, not by an indirection — does not apply to a dependency that ships no manifest, so `--dev` and `--vendor` do not pay for it. Each transitive install is named after the edge that asks for it, and the entry *is* the install:
 
 ```
 sweater-vest-suede/                                        ← requested; keeps its own name
@@ -277,9 +276,11 @@ sweater-vest-suede.typescript-cli-suede/
 browser-control-container-suede.programmatic-docker-suede  → symlink to ./sweater-vest-suede.programmatic-docker-suede
 ```
 
-Ten entries become six. The one link left is the one links are actually for: a *second* dependent wanting a pin the first already owns. The names are manifest filenames verbatim, so each dependent's own separator is preserved without anything being parsed — the same rule as everywhere else, used as a directory name instead of a link name.
+Ten entries become six. The one link left is the one links are actually for: a *second* dependent wanting a pin the first already owns. The names are manifest filenames verbatim, so each dependent's own separator is preserved without anything being parsed — the same rule as everywhere else, used as a directory name instead of a link name. What you asked for keeps its own name, since nothing asked for it by name.
 
-It is refused for release dependencies, where the `$repo$SEP<name>` name is the declaration itself.
+**`--root-owned` opts back into the release arrangement**: one install per pin under the dependency's own name, and an entry of its own for every edge. Worth it when you want a name that does not depend on who asked — you import a transitive dependency directly, or you expect to promote it later. It is accepted for a release install too, where it describes what already happens and changes nothing.
+
+Neither arrangement is disturbed by a later run using the other: an install that already satisfies a pin is reused wherever it sits and under whatever name, and the naming rule only decides what a *new* install is called.
 
 ---
 
@@ -310,8 +311,7 @@ The bytes land at **`release/<name>`** — the top of `release/`, beside the cod
 release/
   index.ts                                       →  imports ./some-suede-dependency
   some-suede-dependency/                         ←  real bytes + .gitrepo
-  its-own-dependency/                            ←  real bytes + .gitrepo
-  some-suede-dependency.its-own-dependency       →  symlink to ./its-own-dependency
+  some-suede-dependency.its-own-dependency/      ←  real bytes + .gitrepo; the entry is the install
 ```
 
 That holds **even when the same commit is already installed at your root**: `app.its-own-dependency/` does not ship, so a link to it would be broken by the time a consumer sees it. The two copies are intentional, and `check` fails on the arrangement that avoids them.

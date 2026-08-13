@@ -449,9 +449,24 @@ class Request:
     target: str = ""  # --target, repo-relative; "" => flat at the repo root
     link_mode: str = "symlink"  # symlink | copy
     commit_suffix: bool = False  # pin the entry name to the commit as well
-    # Name each transitive install after the edge that demands it, so the entry
-    # and the bytes are one thing instead of a folder plus a link.
-    edge_named: bool = False
+    # Keep the release arrangement - one install per pin under the dependency's
+    # own name, every edge a link - for a kind that would not otherwise use it.
+    root_owned: bool = False
+
+    @property
+    def edge_named(self) -> bool:
+        """Whether a transitive install takes the name its dependent asks for,
+        so the entry and the bytes are one thing rather than a folder plus a
+        link.
+
+        The ownership rule it replaces exists so the name shipped in a manifest
+        is backed by real bytes instead of an indirection into a folder named
+        after some other project. Neither a development nor a vendored install
+        ships such a name, so for them the rule buys nothing and costs an entry
+        per edge - hence the default. A release install has no choice: its
+        `$repo$SEP<name>` name *is* the declaration.
+        """
+        return self.kind != RELEASE_KIND and not self.root_owned
 
 
 @dataclass(frozen=True)
@@ -483,10 +498,10 @@ class Naming:
     override: Optional[str] = None
     requested: tuple[Pin, ...] = ()
     commit_suffix: bool = False
-    # --edge-named: pin -> the entry name its dependent already asks for. Give
-    # the bytes that name and the edge needs no link, because the entry and the
-    # install are one thing. Nothing was asked for by name, so the requested
-    # pin keeps its own.
+    # pin -> the entry name its dependent already asks for. Give the bytes that
+    # name and the edge needs no link, because the entry and the install are
+    # one thing. Nothing asks for the requested pin by name, so it keeps its
+    # own. Empty for a root-owned run - see `Request.edge_named`.
     edge_names: Mapping[Pin, str] = field(default_factory=dict[Pin, str])
 
     def preferred(self, pin: Pin) -> str:
@@ -2078,8 +2093,8 @@ def _one_edge(
 ) -> tuple[list[Act], list[str]]:
     install = _where(world, resolution.entry_of[demand.effective], layout)
     if path == install:
-        # `--edge-named` put the bytes where the link would have gone: the
-        # entry the dependent asks for *is* the install.
+        # Edge naming put the bytes where the link would have gone: the entry
+        # the dependent asks for *is* the install.
         return [], []
     existing = world.entries.get(path)
     if existing is None:
@@ -2432,8 +2447,11 @@ def _layout_note(request: Request) -> str:
     where = "%s/ (vendored)" % VENDOR_DIR if request.kind == VENDORED_KIND else (
         request.target or "flat (repo root)"
     )
-    return where + ", edge-named (no link where the entry is the install)" if request.edge_named \
-        else where
+    if request.kind == RELEASE_KIND:
+        return where
+    if request.edge_named:
+        return where + ", named by the edge that asks for it (--root-owned to link instead)"
+    return where + ", root-owned (one install per pin, a link for every edge)"
 
 
 def _separator_note(world: World, evidence: str) -> str:
@@ -3241,10 +3259,12 @@ def _install_parser(
     )
     install.add_argument("--name", help="override the entry name")
     install.add_argument(
-        "--edge-named",
+        "--root-owned",
         action="store_true",
-        help="name each transitive install after the edge that asks for it, so no link is"
-        " needed for it. Halves the entries a deep closure creates; --dev and --vendor only",
+        help="install each dependency under its own name and give every edge a link, the way"
+        " release dependencies must be. --dev and --vendor otherwise name a transitive install"
+        " after the edge that asks for it, which needs no link (release installs are always"
+        " root-owned, so the flag is a no-op there)",
     )
     install.add_argument(
         "--commit-suffix", action="store_true", help="pin the entry name to the commit too"
@@ -3342,15 +3362,6 @@ def _request(args: argparse.Namespace) -> Request:
             "--vendor and --target disagree about where the bytes go: vendored code has to"
             " live inside %s/ to ship at all." % RELEASE_DIR
         )
-    if args.edge_named and kind == RELEASE_KIND:
-        # A release install is announced by its name. Named after a dependent's
-        # edge instead, it declares nothing, `check` calls every edge into it
-        # undeclared, and `extract` drops the records on its next run.
-        raise Usage(
-            "--edge-named needs --dev or --vendor. A release dependency is announced by being"
-            " named $repo$SEP<name> at the root - that name is the declaration, so it cannot"
-            " be whatever name a dependent happens to ask for."
-        )
     return Request(
         pins=(_requested_pin(args),),
         kind=kind,
@@ -3358,7 +3369,7 @@ def _request(args: argparse.Namespace) -> Request:
         target=args.target.strip("/"),
         link_mode=args.link_mode,
         commit_suffix=args.commit_suffix,
-        edge_named=args.edge_named,
+        root_owned=args.root_owned,
     )
 
 

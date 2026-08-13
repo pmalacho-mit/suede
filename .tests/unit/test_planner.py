@@ -377,9 +377,8 @@ class DevelopmentInstall(unittest.TestCase):
         create one."""
         plan = self.plan()
 
-        self.assertEqual(entries_of(plan, "install"), ["A", "B"])
-        self.assertEqual(entries_of(plan, "link"), ["A.B"])
-        self.assertEqual([act.target for act in ops(plan, "link")], ["./B"])
+        self.assertEqual(entries_of(plan, "install"), ["A", "A.B"])
+        self.assertEqual(ops(plan, "link"), [])
 
     def test_nothing_is_recorded_even_with_a_release_folder(self):
         self.assertEqual(ops(self.plan(), "record"), [])
@@ -396,6 +395,13 @@ class DevelopmentInstall(unittest.TestCase):
         self.assertEqual([act.target for act in ops(plan, "link")], ["./app.B"])
 
     def test_a_second_run_changes_nothing(self):
+        satisfied = world(installs={"A": A, "A.B": B})
+
+        self.assertEqual(self.plan(satisfied).acts, ())
+
+    def test_a_tree_written_the_root_owned_way_is_still_satisfied(self):
+        """Changing the default must not make every existing dev tree look
+        like it needs reinstalling."""
         satisfied = world(installs={"A": A, "B": B}, links={"A.B": "B"})
 
         self.assertEqual(self.plan(satisfied).acts, ())
@@ -425,16 +431,18 @@ class DevelopmentInstall(unittest.TestCase):
         self.assertTrue(plan.blockers)
 
 
-class EdgeNamedInstall(unittest.TestCase):
-    """`--edge-named`. The ownership rule exists so the name that ships in a
-    manifest is backed by real bytes; a development install ships no manifest,
-    so the bytes can simply take the name the dependent asks for and the link
-    disappears."""
+class EdgeNaming(unittest.TestCase):
+    """How `--dev` and `--vendor` name a transitive install by default.
+
+    The ownership rule they depart from exists so the name that ships in a
+    manifest is backed by real bytes. Neither kind ships such a name, so the
+    bytes simply take the name the dependent asks for and the link disappears.
+    """
 
     def plan(self, tree=None, manifests=None, kind=suede.DEVELOPMENT_KIND, pins=(A,)):
         return suede.plan(
             tree or world(),
-            request(*pins, kind=kind, edge_named=True),
+            request(*pins, kind=kind),
             suede.Policy(),
             manifests if manifests is not None else {A: manifest({"A.B": B}), B: manifest()},
         )
@@ -504,6 +512,56 @@ class EdgeNamedInstall(unittest.TestCase):
         self.assertEqual({act.dest for act in ops(plan, "install")}, {"release/A", "release/A.B"})
         self.assertEqual(ops(plan, "link"), [])
 
+    def test_a_release_install_is_never_edge_named(self):
+        """Its `$repo$SEP<name>` name is the declaration; named after some
+        dependent's edge it would declare nothing."""
+        plan = self.plan(kind=suede.RELEASE_KIND)
+
+        self.assertEqual(entries_of(plan, "install"), ["app.A", "app.B"])
+        self.assertEqual(entries_of(plan, "link"), ["A.B"])
+
+
+class RootOwnedInstall(unittest.TestCase):
+    """`--root-owned` puts a `--dev` or `--vendor` install back on the release
+    arrangement: one install per pin under the dependency's own name, and an
+    entry of its own for every edge."""
+
+    manifests = {A: manifest({"A.B": B}), B: manifest()}
+
+    def plan(self, kind=suede.DEVELOPMENT_KIND):
+        return suede.plan(
+            world(), request(A, kind=kind, root_owned=True), suede.Policy(), self.manifests
+        )
+
+    def test_each_dependency_keeps_its_own_name_and_the_edge_gets_a_link(self):
+        plan = self.plan()
+
+        self.assertEqual(entries_of(plan, "install"), ["A", "B"])
+        self.assertEqual(entries_of(plan, "link"), ["A.B"])
+        self.assertEqual([act.target for act in ops(plan, "link")], ["./B"])
+
+    def test_it_still_carries_no_prefix_and_records_nothing(self):
+        """Only the naming of transitive installs changes; the kind does not."""
+        plan = self.plan()
+
+        self.assertEqual(ops(plan, "record"), [])
+
+    def test_vendored_stays_inside_release(self):
+        plan = self.plan(kind=suede.VENDORED_KIND)
+
+        self.assertEqual({act.dest for act in ops(plan, "install")}, {"release/A", "release/B"})
+        self.assertEqual(entries_of(plan, "link"), ["release/A.B"])
+
+    def test_it_is_a_no_op_for_a_release_install(self):
+        """A release install is root-owned whether or not you say so."""
+        asked = suede.plan(
+            world(), request(A, kind=suede.RELEASE_KIND, root_owned=True), suede.Policy(),
+            self.manifests,
+        )
+        default = suede.plan(world(), request(A), suede.Policy(), self.manifests)
+
+        self.assertEqual(asked.acts, default.acts)
+
 
 class VendoredInstall(unittest.TestCase):
     """`--vendor`. The bytes ship, so everything the bytes need ships with
@@ -523,16 +581,16 @@ class VendoredInstall(unittest.TestCase):
     def test_the_whole_closure_lands_inside_release(self):
         plan = self.plan()
 
-        self.assertEqual(entries_of(plan, "install"), ["A", "B"])
-        self.assertEqual({act.dest for act in ops(plan, "install")}, {"release/A", "release/B"})
+        self.assertEqual(entries_of(plan, "install"), ["A", "A.B"])
+        self.assertEqual({act.dest for act in ops(plan, "install")}, {"release/A", "release/A.B"})
 
-    def test_the_edge_is_a_sibling_inside_release_and_only_there(self):
+    def test_an_edge_that_does_need_a_link_gets_one_inside_release_only(self):
         """A second entry at the repo root would be a link into shipped code
         that ships with nothing pointing at it."""
-        plan = self.plan()
+        plan = self.plan(world(), {A: manifest({"A.B": B}), B: manifest({"B.A": A})})
 
-        self.assertEqual(entries_of(plan, "link"), ["release/A.B"])
-        self.assertEqual([act.target for act in ops(plan, "link")], ["./B"])
+        self.assertEqual(entries_of(plan, "link"), ["release/B.A"])
+        self.assertEqual([act.target for act in ops(plan, "link")], ["./A"])
 
     def test_nothing_is_recorded_because_nothing_is_a_pointer(self):
         self.assertEqual(ops(self.plan(), "record"), [])
@@ -544,7 +602,7 @@ class VendoredInstall(unittest.TestCase):
 
         plan = self.plan(tree)
 
-        self.assertEqual({act.dest for act in ops(plan, "install")}, {"release/A", "release/B"})
+        self.assertEqual({act.dest for act in ops(plan, "install")}, {"release/A", "release/A.B"})
 
     def test_something_already_vendored_is_reused(self):
         tree = world(vendored={"release/B": B})
@@ -556,8 +614,7 @@ class VendoredInstall(unittest.TestCase):
         self.assertEqual([act.target for act in ops(plan, "link")], ["./B"])
 
     def test_a_second_run_changes_nothing(self):
-        satisfied = world(vendored={"release/A": A, "release/B": B},
-                          links={"release/A.B": "release/B"})
+        satisfied = world(vendored={"release/A": A, "release/A.B": B})
 
         self.assertEqual(self.plan(satisfied).acts, ())
 
