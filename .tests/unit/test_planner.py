@@ -356,6 +356,147 @@ class RelocatedInstall(unittest.TestCase):
         self.assertEqual(targets["A.B"], "./deps/app.B")
 
 
+class DevelopmentInstall(unittest.TestCase):
+    """`--dev`. A test harness, a fixture, an example app: the release branch
+    knows nothing about it, so neither does the manifest."""
+
+    manifests = {A: manifest({"A.B": B}), B: manifest()}
+    kind = suede.DEVELOPMENT_KIND
+
+    def plan(self, tree=None, manifests=None, policy=None):
+        return suede.plan(
+            tree or world(),
+            request(A, kind=self.kind),
+            policy or suede.Policy(),
+            manifests or self.manifests,
+        )
+
+    def test_nothing_carries_the_repo_prefix(self):
+        """A prefixed entry is a release dependency by the classification rule,
+        whatever the installer intended - so a development install must not
+        create one."""
+        plan = self.plan()
+
+        self.assertEqual(entries_of(plan, "install"), ["A", "B"])
+        self.assertEqual(entries_of(plan, "link"), ["A.B"])
+        self.assertEqual([act.target for act in ops(plan, "link")], ["./B"])
+
+    def test_nothing_is_recorded_even_with_a_release_folder(self):
+        self.assertEqual(ops(self.plan(), "record"), [])
+
+    def test_a_dependency_already_installed_is_not_doubled(self):
+        """The whole point of the flag: B is already this project's own release
+        dependency, so A's edge points at it rather than installing it twice."""
+        tree = world(installs={"app.B": B}, records={"app.B": B})
+
+        plan = self.plan(tree)
+
+        self.assertEqual(entries_of(plan, "install"), ["A"])
+        self.assertEqual(entries_of(plan, "reuse"), ["app.B"])
+        self.assertEqual([act.target for act in ops(plan, "link")], ["./app.B"])
+
+    def test_a_second_run_changes_nothing(self):
+        satisfied = world(installs={"A": A, "B": B}, links={"A.B": "B"})
+
+        self.assertEqual(self.plan(satisfied).acts, ())
+
+    def test_packages_land_in_the_dev_half_of_each_ecosystem(self):
+        """`extract` publishes `dependencies` and requirements.txt verbatim, so
+        anything merged there reaches consumers who never asked for it."""
+        manifests = {A: manifest(npm={"vitest": "^1.0.0"}, python={"pytest": "pytest>=8"})}
+
+        plan = self.plan(manifests=manifests)
+
+        self.assertEqual([act.section for act in ops(plan, "npm")], ["devDependencies"])
+        self.assertEqual([act.dest for act in ops(plan, "pip")], ["requirements-dev.txt"])
+
+    def test_a_package_you_already_declare_is_not_declared_again(self):
+        manifests = {A: manifest(npm={"vitest": "^1.0.0"})}
+
+        plan = self.plan(world(npm={"vitest": "^1.0.0"}), manifests)
+
+        self.assertEqual(ops(plan, "npm"), [])
+
+    def test_a_version_that_disagrees_with_yours_still_blocks(self):
+        manifests = {A: manifest(npm={"vitest": "^1.0.0"})}
+
+        plan = self.plan(world(npm={"vitest": "^2.0.0"}), manifests)
+
+        self.assertTrue(plan.blockers)
+
+
+class VendoredInstall(unittest.TestCase):
+    """`--vendor`. The bytes ship, so everything the bytes need ships with
+    them - a vendored dependency's own dependencies are vendored beside it."""
+
+    manifests = {A: manifest({"A.B": B}), B: manifest()}
+    kind = suede.VENDORED_KIND
+
+    def plan(self, tree=None, manifests=None):
+        return suede.plan(
+            tree or world(),
+            request(A, kind=self.kind),
+            suede.Policy(),
+            manifests or self.manifests,
+        )
+
+    def test_the_whole_closure_lands_inside_release(self):
+        plan = self.plan()
+
+        self.assertEqual(entries_of(plan, "install"), ["A", "B"])
+        self.assertEqual({act.dest for act in ops(plan, "install")}, {"release/A", "release/B"})
+
+    def test_the_edge_is_a_sibling_inside_release_and_only_there(self):
+        """A second entry at the repo root would be a link into shipped code
+        that ships with nothing pointing at it."""
+        plan = self.plan()
+
+        self.assertEqual(entries_of(plan, "link"), ["release/A.B"])
+        self.assertEqual([act.target for act in ops(plan, "link")], ["./B"])
+
+    def test_nothing_is_recorded_because_nothing_is_a_pointer(self):
+        self.assertEqual(ops(self.plan(), "record"), [])
+
+    def test_an_install_at_the_root_cannot_satisfy_a_vendored_edge(self):
+        """Code outside release/ does not ship, so a link to it would reach a
+        consumer broken. B is vendored too, alongside the root's own copy."""
+        tree = world(installs={"app.B": B}, records={"app.B": B})
+
+        plan = self.plan(tree)
+
+        self.assertEqual({act.dest for act in ops(plan, "install")}, {"release/A", "release/B"})
+
+    def test_something_already_vendored_is_reused(self):
+        tree = world(vendored={"release/B": B})
+
+        plan = self.plan(tree)
+
+        self.assertEqual(entries_of(plan, "install"), ["A"])
+        self.assertEqual(entries_of(plan, "reuse"), ["B"])
+        self.assertEqual([act.target for act in ops(plan, "link")], ["./B"])
+
+    def test_a_second_run_changes_nothing(self):
+        satisfied = world(vendored={"release/A": A, "release/B": B},
+                          links={"release/A.B": "release/B"})
+
+        self.assertEqual(self.plan(satisfied).acts, ())
+
+    def test_a_project_with_nothing_to_ship_is_refused(self):
+        plan = suede.plan(
+            world(has_release=False), request(A, kind=self.kind), suede.Policy(), self.manifests
+        )
+
+        self.assertTrue(plan.blockers)
+        self.assertEqual(plan.acts, ())
+
+    def test_packages_are_the_projects_own_because_the_code_ships(self):
+        manifests = {A: manifest(npm={"zod": "^3.0.0"})}
+
+        plan = self.plan(manifests=manifests)
+
+        self.assertEqual([act.section for act in ops(plan, "npm")], ["dependencies"])
+
+
 class NpmDependencies(unittest.TestCase):
     def test_missing_entries_are_added(self):
         manifests = {A: manifest(npm={"svelte": "^5.41.0"})}

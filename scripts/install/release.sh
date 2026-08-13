@@ -3,6 +3,14 @@
 # Bootstrap for the suede installer.
 #
 #   bash <(curl -fsSL https://suede.sh/install/release) --repo OWNER/REPO
+#   bash <(curl -fsSL https://suede.sh/install/release) --repo OWNER/REPO --dev
+#   bash <(curl -fsSL https://suede.sh/install/release) --repo OWNER/REPO --vendor
+#
+# The default installs a release dependency: prefixed, flat at the root, and
+# recorded in your manifest. --dev installs a development dependency (no
+# prefix, nothing recorded, its own dependencies not doubled as yours), and
+# --vendor installs a vendored one (source and all into release/<name>, with
+# its dependencies vendored beside it).
 #
 # Finds a Python 3.9+, downloads scripts/suede.py, and hands it the arguments.
 # Everything the installer does lives in that one readable file; this script

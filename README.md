@@ -136,11 +136,43 @@ and [INSTALL.md](./INSTALL.md) for the full algorithm.
 Installs are **staged, not committed** — review them, then `git commit`, or
 pass `--commit`.
 
+### Dev and vendored installs
+
+The default installs a **release dependency**: prefixed, flat at the root, and
+recorded in your manifest so your own consumers can resolve it. Two flags pick
+the other kinds — see
+[DEPENDENCIES-OF-DEPENDENCIES.md](./DEPENDENCIES-OF-DEPENDENCIES.md) for what
+they are.
+
+```bash
+bash <(curl -fsSL https://suede.sh/install/release) --repo <owner/name> --dev
+```
+
+A **development dependency** — a test harness, a fixture, an example app.
+Installed at the root under its own name with no `$repo.` prefix, so the
+classification rule reads it as dev and `extract` never ships it. Its own
+dependencies are installed the same way rather than being doubled as yours, and
+an edge that something already installed can satisfy points there instead of
+being copied. Its npm and PyPI packages go to `devDependencies` and
+`requirements-dev.txt`, neither of which is published.
+
+```bash
+bash <(curl -fsSL https://suede.sh/install/release) --repo <owner/name> --vendor
+```
+
+A **vendored release dependency** — the source ships with your `release`
+branch instead of a pointer to it. It lands at `release/<name>`, and so does
+everything it depends on: vendored code ships whole, so a sibling outside
+`release/` would reach your consumers as a dangling link. That holds even when
+you already have the same commit installed at the root, because the root copy
+does not ship. Nothing is recorded — there is no pointer to record.
+
 ### Third-party packages
 
 A dependency also declares what it needs from npm and PyPI. The installer
 merges those declarations into your `package.json` and `requirements.txt` —
-adding what is missing, and never touching a lockfile.
+adding what is missing, and never touching a lockfile. (Under `--dev`, into
+`devDependencies` and `requirements-dev.txt` instead.)
 
 A package **you already declare at a different version** stops the install
 rather than being resolved silently: unifying two version ranges is a judgment

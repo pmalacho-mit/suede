@@ -6,6 +6,7 @@ tree it planned. Anything provable without git belongs in `.tests/unit/`.
 
 import contextlib
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -241,6 +242,146 @@ class Publishing(Fixture):
         self.assertEqual(sorted(manifest.edges), ["app.dockview"])
 
 
+class DevelopmentInstall(Fixture):
+    """`--dev`: a dependency the release branch never hears about."""
+
+    release = True
+
+    def manifest(self):
+        return suede.gitrepo.read_manifest(self.path("release"))
+
+    def test_the_entry_is_unprefixed_and_nothing_is_recorded(self):
+        self.assertEqual(self.install("sweater", "--dev"), suede.Exit.OK)
+
+        self.assertTrue(self.exists("sweater", "index.ts"))
+        self.assertFalse(self.exists("app.sweater"))
+        self.assertEqual(sorted(self.manifest().edges), [])
+
+    def test_its_own_dependencies_are_not_doubled_as_this_projects(self):
+        self.install("sweater", "--dev")
+
+        self.assertTrue(self.exists("dockview", "index.ts"))
+        self.assertFalse(self.exists("app.dockview"))
+        self.assertEqual(os.readlink(self.path("sweater.dockview")), "./dockview")
+
+    def test_a_dependency_already_installed_is_reused_rather_than_copied(self):
+        self.install("dockview")
+
+        self.assertEqual(self.install("sweater", "--dev"), suede.Exit.OK)
+
+        self.assertFalse(self.exists("dockview"))
+        self.assertEqual(os.readlink(self.path("sweater.dockview")), "./app.dockview")
+        self.assertEqual(sorted(self.manifest().edges), ["app.dockview"])
+
+    def test_the_installed_tree_passes_check(self):
+        self.install("sweater", "--dev")
+
+        self.assertEqual(self.suede("check"), suede.Exit.OK)
+
+    def test_extract_leaves_it_out_of_the_manifest(self):
+        self.install("sweater", "--dev")
+
+        self.assertEqual(self.suede("extract"), suede.Exit.OK)
+
+        self.assertEqual(sorted(self.manifest().edges), [])
+
+    def test_list_calls_it_a_development_dependency(self):
+        self.install("sweater", "--dev")
+
+        rows = suede.listing(suede.scan(self.consumer, "app", ".", "flag"))
+
+        self.assertEqual(sorted((row.kind, row.path) for row in rows),
+                         [("development", "dockview"), ("development", "sweater")])
+
+    def test_a_second_run_changes_nothing(self):
+        self.install("sweater", "--dev")
+        before = self.status()
+
+        self.assertEqual(self.install("sweater", "--dev"), suede.Exit.OK)
+
+        self.assertEqual(self.status(), before)
+
+
+class VendoredInstall(Fixture):
+    """`--vendor`: the source ships, so everything it needs ships beside it."""
+
+    release = True
+
+    def test_the_closure_lands_at_the_top_of_release(self):
+        self.assertEqual(self.install("sweater", "--vendor"), suede.Exit.OK)
+
+        self.assertTrue(self.exists("release", "sweater", "index.ts"))
+        self.assertTrue(self.exists("release", "dockview", "index.ts"))
+        self.assertEqual(self.pin_of("release", "sweater", ".gitrepo").commit,
+                         self.nodes["sweater"].commits[-1])
+
+    def test_the_edge_is_a_sibling_inside_release_and_nowhere_else(self):
+        self.install("sweater", "--vendor")
+
+        self.assertEqual(os.readlink(self.path("release", "sweater.dockview")), "./dockview")
+        self.assertTrue(self.exists("release", "sweater.dockview", "index.ts"))
+        self.assertFalse(self.exists("sweater.dockview"))
+
+    def test_nothing_reaches_the_root_or_the_manifest(self):
+        self.install("sweater", "--vendor")
+
+        self.assertFalse(self.exists("app.sweater"))
+        self.assertFalse(self.exists("app.dockview"))
+        self.assertEqual(sorted(suede.gitrepo.read_manifest(self.path("release")).edges), [])
+
+    def test_the_installed_tree_passes_check(self):
+        self.install("sweater", "--vendor")
+
+        self.assertEqual(self.suede("check"), suede.Exit.OK)
+
+    def test_list_calls_it_vendored(self):
+        self.install("sweater", "--vendor")
+
+        rows = suede.listing(suede.scan(self.consumer, "app", ".", "flag"))
+
+        self.assertEqual(sorted((row.kind, row.path) for row in rows),
+                         [("vendored", "release/dockview"), ("vendored", "release/sweater")])
+
+    def test_diff_does_not_police_vendored_code(self):
+        """Vendoring exists so a dependency *can* diverge from its pin."""
+        self.install("sweater", "--vendor")
+        make_graph.write(self.path("release", "sweater", "index.ts"), "// patched\n")
+
+        self.assertEqual(self.suede("diff"), suede.Exit.OK)
+
+    def test_a_second_run_changes_nothing(self):
+        self.install("sweater", "--vendor")
+        before = self.status()
+
+        self.assertEqual(self.install("sweater", "--vendor"), suede.Exit.OK)
+
+        self.assertEqual(self.status(), before)
+
+    def test_a_root_install_of_the_same_commit_is_not_reused(self):
+        """Code outside release/ does not ship: reusing it would send consumers
+        a link to a directory they never receive."""
+        self.install("dockview")
+
+        self.install("sweater", "--vendor")
+
+        self.assertTrue(self.exists("app.dockview", "index.ts"))
+        self.assertTrue(self.exists("release", "dockview", "index.ts"))
+        self.assertFalse(os.path.islink(self.path("release", "dockview")))
+
+    def test_target_is_refused_because_the_destination_is_not_negotiable(self):
+        self.assertEqual(self.install("sweater", "--vendor", "--target", "deps"), suede.Exit.USAGE)
+
+
+class VendoringWithNothingToShip(Fixture):
+    release = False
+
+    def test_is_refused_rather_than_inventing_a_release_folder(self):
+        self.assertEqual(self.install("sweater", "--vendor"), suede.Exit.PRECONDITION)
+
+        self.assertFalse(self.exists("release"))
+        self.assertEqual(self.status(), "")
+
+
 class RecordedSpelling(unittest.TestCase):
     """Which URL each kind of `.gitrepo` records.
 
@@ -305,16 +446,17 @@ class Vendoring(Fixture):
         """release/.gitrepo points at the branch release/ is published to."""
         make_graph.write(self.path("release", ".gitrepo"), "[subrepo]\n\tremote = x\n\tcommit = y\n")
 
-        self.assertEqual(suede.scan(self.consumer, "app", ".", "flag").vendored, ())
+        self.assertEqual(dict(suede.scan(self.consumer, "app", ".", "flag").vendored), {})
 
     def test_a_subrepo_inside_release_is_vendored(self):
         make_graph.write(
-            self.path("release", ".suede", "vendor", "widget", ".gitrepo"),
+            self.path("release", "widget", ".gitrepo"),
             "[subrepo]\n\tremote = x\n\tcommit = y\n",
         )
 
         world = suede.scan(self.consumer, "app", ".", "flag")
-        self.assertEqual(world.vendored, ("release/.suede/vendor/widget",))
+        self.assertEqual(sorted(world.vendored), ["release/widget"])
+        self.assertEqual(world.vendored["release/widget"].pin.commit, "y")
         self.assertEqual(world.installs, {})
 
 
@@ -412,6 +554,28 @@ class PackageDeclarations(Fixture):
         self.assertEqual(code, suede.Exit.OK)
         self.assertIn("-r base.txt", output)
         self.assertNotIn("-r base.txt", self.read("requirements.txt"))
+
+    def test_a_dev_install_declares_packages_where_nothing_publishes_them(self):
+        """`extract` copies `dependencies` and requirements.txt into the
+        manifest verbatim, so a dev-only package merged there would be handed
+        to every consumer."""
+        self.declare("package.json", '{"dependencies": {"svelte": "^5.0.0"}}\n')
+
+        self.assertEqual(self.install("orm", "--dev"), suede.Exit.OK)
+
+        self.assertEqual(
+            json.loads(self.read("package.json")),
+            {"dependencies": {"svelte": "^5.0.0"}, "devDependencies": {"zod": "^3.0.0"}},
+        )
+        self.assertEqual(self.read("requirements-dev.txt"), "SQLModel[async] >= 0.0.14\n")
+        self.assertFalse(os.path.exists(self.path("requirements.txt")))
+
+    def test_a_dev_install_will_not_declare_a_package_you_already_have(self):
+        self.declare("package.json", '{"dependencies": {"zod": "^3.0.0"}}\n')
+
+        self.assertEqual(self.install("orm", "--dev"), suede.Exit.OK)
+
+        self.assertEqual(json.loads(self.read("package.json")), {"dependencies": {"zod": "^3.0.0"}})
 
     def test_no_python_leaves_requirements_txt_untouched(self):
         self.declare("requirements.txt", "sqlmodel==0.0.9\n")

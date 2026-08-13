@@ -53,6 +53,53 @@ class DeclarationInvariant(unittest.TestCase):
         self.assertEqual(suede.check(tree), ())
 
 
+class WhoTheInvariantBinds(unittest.TestCase):
+    """Check 3 is stated over release dependencies, and only they can break it:
+    a release dependency ships a pointer, so the resolution behind it has to be
+    one the consumer declared. The other two kinds ship differently and are
+    held to what *their* shipping requires."""
+
+    def test_a_development_dependency_may_resolve_an_edge_to_anything(self):
+        """This is what `--dev` writes: unprefixed installs at the root, none of
+        them declared as a release dependency of this project."""
+        tree = world(
+            installs={"sweater": B, "dockview": C},
+            links={"sweater.dockview": "dockview"},
+            edges=[("sweater", "sweater.dockview", C)],
+        )
+
+        self.assertEqual(suede.check(tree), ())
+
+    def test_a_vendored_dependency_may_resolve_an_edge_inside_release(self):
+        tree = world(
+            vendored={"release/sweater": B, "release/dockview": C},
+            links={"release/sweater.dockview": "release/dockview"},
+            edges=[("release/sweater", "sweater.dockview", C)],
+        )
+
+        self.assertEqual(suede.check(tree), ())
+
+    def test_a_vendored_edge_pointing_out_of_release_fails(self):
+        """It ships as a link into a directory the consumer never receives."""
+        tree = world(
+            installs={"app.dockview": C},
+            vendored={"release/sweater": B},
+            links={"release/sweater.dockview": "app.dockview"},
+            edges=[("release/sweater", "sweater.dockview", C)],
+        )
+
+        self.assertEqual(levels(suede.check(tree), "escaping-edge"), ["FAIL"])
+
+    def test_a_release_dependency_is_still_held_to_the_invariant(self):
+        tree = world(
+            installs={"app.B": B, "dockview": C},
+            links={"B.C": "dockview"},
+            edges=[("app.B", "B.C", C)],
+        )
+
+        self.assertEqual(levels(suede.check(tree), "undeclared-edge"), ["FAIL"])
+
+
 class MissingEdges(unittest.TestCase):
     def test_a_manifest_entry_with_no_sibling_at_all_fails(self):
         tree = world(installs={"app.B": B}, edges=[("app.B", "B.C", C)])

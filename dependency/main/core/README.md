@@ -88,13 +88,22 @@ modifications you can neither revert nor upstream — because at that point a
 pointer no longer describes what your code actually depends on.
 
 ```bash
-bash .suede/core/vendor.sh <entry-or-folder> [--dest release/.suede/vendor/<name>]
+bash .suede/core/vendor.sh <entry-or-folder> [--dest release/<name>]
 ```
 
+The default destination is the top of `release/`, under the dependency's own
+name — the `remote` basename, not your `$repo$SEP`-prefixed entry name, since
+that prefix announces a release dependency at the *root*, which this folder
+stops being. `suede install --vendor` puts it in the same place under the same
+name.
+
 It prints the files referencing the old entry name; their imports need
-repointing. Afterwards its `.gitrepo` ships too, so consumers get a nested
-subrepo — a feature (they can still pull and push it independently) and a sharp
-edge.
+repointing. It also names any sibling the dependency's own manifest asks for
+that did not come with it — vendored code ships whole, so those have to be
+vendored too, and `check` fails until they are.
+
+Afterwards its `.gitrepo` ships too, so consumers get a nested subrepo — a
+feature (they can still pull and push it independently) and a sharp edge.
 
 ### [suede](./suede)
 
