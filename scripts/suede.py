@@ -1429,8 +1429,11 @@ class cache:
 
     @staticmethod
     def fetch(root: str, pin: Pin, use_cache: bool) -> str:
-        destination = os.path.join(cache.directory(root), pin.short)
-        if os.path.isdir(destination) and use_cache:
+        # Keyed by remote as well as commit: two repositories whose pinned
+        # commits share seven characters are not the same bytes, and a cache
+        # that says otherwise hands one dependency's tree to another.
+        destination = os.path.join(cache.directory(root), _slug(pin.remote) + "-" + pin.short)
+        if use_cache and cache.holds(destination, pin):
             return destination
         shutil.rmtree(destination, ignore_errors=True)
         try:
@@ -1438,7 +1441,40 @@ class cache:
         except SuedeError as failure:
             shutil.rmtree(destination, ignore_errors=True)
             raise SuedeError(_unreachable(pin, failure))
+        # A fetch that reports success and leaves nothing to copy would install
+        # as a folder holding only a `.gitrepo`. Whatever went wrong upstream,
+        # saying so here beats writing that and exiting 0.
+        if not cache._payload(destination):
+            shutil.rmtree(destination, ignore_errors=True)
+            raise SuedeError(
+                "%s@%s came back from %s empty - %s holds no files at that commit."
+                % (pin.name, pin.short, pin.remote, pin.branch)
+            )
         return destination
+
+    @staticmethod
+    def holds(destination: str, pin: Pin) -> bool:
+        """Whether what is cached is this pin's tree, checked out and whole.
+
+        "The directory exists" is not that question. A run interrupted between
+        `git init` and `checkout` - Ctrl-C, a killed process, an error that is
+        not ours to catch - leaves a directory holding nothing but `.git`, and
+        installing from it copies nothing at all: `copytree` ignores `.git`, so
+        what lands is an empty folder with a `.gitrepo` written into it. That
+        looks installed, exits 0, and is not.
+        """
+        if not os.path.isdir(destination):
+            return False
+        try:
+            head = git.run("rev-parse", "HEAD", cwd=destination)
+        except SuedeError:
+            return False
+        return head == pin.commit and bool(cache._payload(destination))
+
+    @staticmethod
+    def _payload(destination: str) -> list[str]:
+        """What an install would actually copy - `.git` is left behind."""
+        return [name for name in os.listdir(destination) if name != ".git"]
 
     @staticmethod
     def history(root: str, remote: str, branch: str) -> Optional[str]:

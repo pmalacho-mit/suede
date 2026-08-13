@@ -656,6 +656,60 @@ class PackageDeclarations(Fixture):
         self.assertEqual(self.read("requirements.txt"), "sqlmodel==0.0.9\n")
 
 
+class StaleCacheEntries(Fixture):
+    """`.git/suede-cache/` is keyed by pin, but what makes an entry usable is
+    that it holds *that pin's* tree. A directory that merely exists is not that,
+    and installing from one lands a folder with nothing in it but a `.gitrepo` -
+    which looks installed, exits 0, and breaks the consumer's build.
+    """
+
+    graph = {"dockview": {}, "sweater": {"sweater.dockview": ("dockview", "HEAD")}}
+
+    def slot(self, node, commit=None):
+        """Where the cache would keep this node's tree."""
+        commit = commit or self.nodes[node].commits[-1]
+        return self.path(
+            ".git", "suede-cache", suede._slug(self.nodes[node].remote) + "-" + commit[:7]
+        )
+
+    def test_an_entry_left_half_fetched_is_refetched_rather_than_installed(self):
+        """What a run killed between `git init` and the checkout leaves."""
+        entry = self.slot("dockview")
+        os.makedirs(entry, exist_ok=True)
+        make_graph.git("init", "--quiet", cwd=entry)
+
+        self.assertEqual(self.install("sweater"), suede.Exit.OK)
+
+        self.assertTrue(self.exists("app.dockview", "index.ts"))
+
+    def test_an_entry_holding_another_commit_is_not_reused(self):
+        """Right slot, wrong bytes — the case a commit-only key cannot see."""
+        older = self.nodes["dockview"].at("HEAD~2")
+        suede.git.fetch_commit(
+            self.nodes["dockview"].remote, older, "release", self.slot("dockview")
+        )
+
+        self.assertEqual(self.install("sweater"), suede.Exit.OK)
+
+        self.assertEqual(
+            self.pin_of("app.dockview", ".gitrepo").commit, self.nodes["dockview"].commits[-1]
+        )
+        with open(self.path("app.dockview", "index.ts"), encoding="utf-8") as handle:
+            self.assertIn("= 4;", handle.read())  # the tip, not the commit in the slot
+
+    def test_the_cache_key_names_the_remote_as_well_as_the_commit(self):
+        """Two repositories whose pinned commits share seven characters are not
+        the same bytes; a key that cannot tell them apart hands one to the
+        other."""
+        self.install("sweater")
+
+        node = self.nodes["dockview"]
+        self.assertIn(
+            suede._slug(node.remote) + "-" + node.commits[-1][:7],
+            os.listdir(self.path(".git", "suede-cache")),
+        )
+
+
 class DeclarationInvariant(Fixture):
     def test_an_edge_backed_by_an_undeclared_directory_fails_check(self):
         self.install("sweater")
