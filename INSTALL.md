@@ -15,6 +15,8 @@
 | 5 | `--target` is supported, **use at your own risk**; edge entries written in both locations | Flat-at-root is the safe default; relocation is a real need with real hazards |
 | 6 | Install stages by default; `--commit` is opt-in | Confirmed safe — a stale-but-ancestral `parent` still pulls cleanly |
 | 7 | Single dependency-free **Python 3.9** file | Consumers can read and patch it; that is the whole point |
+| 8 | The **kind** of install is a flag (`--dev`, `--vendor`), and it decides naming, reuse and recording together | Those three are one decision, not three: a prefixed name *is* a release declaration, and a declaration *is* what gets recorded |
+| 9 | Vendored code lands at `release/<name>`, not under `release/.suede/` | A leading dot is unrepresentable in a Python import, so anything nested there is reachable in some languages and not in others |
 
 ---
 
@@ -31,6 +33,7 @@
 | **Manifest** | A dependency's `.suede/.dependencies/` directory |
 | **Closure** | All pins reachable from the root manifest, transitively |
 | **World** | The complete scan result: installs, entries, edges, context |
+| **Kind** | What the install *is*: `release` (default), `development` (`--dev`) or `vendored` (`--vendor`). See [Kinds](#kinds) |
 
 **The filesystem is the lockfile.** No state file. Every planning decision comes from scanning the working tree, so a hand-edited tree is always authoritative.
 
@@ -53,6 +56,28 @@
 
 ---
 
+## 2a. Kinds
+
+The three kinds in [`DEPENDENCIES-OF-DEPENDENCIES.md`](./DEPENDENCIES-OF-DEPENDENCIES.md) are three answers to one question — *where do the bytes land, and does the release branch know about them* — so one flag decides all of it. Everything else in this document describes the default, `release`.
+
+| | `release` (default) | `development` (`--dev`) | `vendored` (`--vendor`) |
+| --- | --- | --- | --- |
+| Entry name | `$repo$SEP<name>` | `<name>` | `<name>` |
+| Real install at | repo root (or `--target`) | repo root | `release/<name>` |
+| Edge entries | beside the dependent (and at the root under `--target`) | beside the dependent | beside the dependent, inside `release/` only |
+| May be satisfied by | a root entry declared as a release dependency | anything already installed, prefixed or not | only what is already vendored inside `release/` |
+| Recorded in `release/.suede/.dependencies/` | the whole closure | nothing | nothing |
+| npm / PyPI packages merge into | `dependencies`, `requirements.txt` | `devDependencies`, `requirements-dev.txt` | `dependencies`, `requirements.txt` |
+
+Four consequences worth stating on their own:
+
+- **`--dev` must not prefix anything.** A `$repo$SEP`-named root entry *is* a release dependency by the classification rule, whatever the installer intended, and `extract` would ship it. The prefix is the declaration.
+- **`--dev` does not double its closure as yours.** A dev dependency's own dependency is installed unprefixed and unrecorded — unless something already on disk satisfies it, prefixed or not, in which case the edge points there and nothing is copied.
+- **`--vendor` vendors transitively.** Vendored code ships whole, so a sibling outside `release/` would reach a consumer as a dangling link. Every pin in a vendored closure is therefore vendored beside it, even when the same commit is already installed at the root — the root copy does not ship.
+- **`--vendor` needs somewhere to ship.** No `release/` directory is a precondition failure, not an invitation to create one.
+
+---
+
 ## 3. Install algorithm
 
 **Stage → plan → announce → confirm → apply → verify.** Nothing touches the working tree until the plan is confirmed.
@@ -67,15 +92,18 @@
 
 ### Phase 1 — Inventory → `World`
 
-- **installs** — every directory containing `.gitrepo`, excluding `.git/` and anything inside `release/` (vendored code can't satisfy an edge).
-- **entries** — root entries matching `^$repo$SEP` or `^<installed-name><sep>`, with resolved targets.
-- **edges** — every `*.gitrepo` in every install's manifest.
+- **installs** — every directory containing `.gitrepo`, excluding `.git/` and anything inside `release/` (vendored code can't satisfy a release dependency's edge).
+- **vendored** — the same, *inside* `release/`, held separately and with their pins, so a `--vendor` run can tell what it already has.
+- **entries** — root entries matching `^$repo$SEP` or `^<installed-name><sep>`, plus the siblings of any install that lives elsewhere and everything at the top of `release/`, with resolved targets.
+- **edges** — every `*.gitrepo` in every install's manifest, vendored ones included: a vendored dependency asks for siblings exactly like any other, and ships broken if they are missing.
 
 ### Phase 2 — Stage
 
 For each unsatisfied pin, `git clone --depth 1 --branch release <remote>` into `.git/suede-cache/<short-sha>/` and read its manifest from there.
 
 Staging under `.git/` means the cache is never accidentally committed, and — the point — **the planner can read a dependency's manifest before installing it**, which is what makes a complete, honest announce block possible.
+
+An installed copy is authoritative for its own manifest and skips the fetch — but only where this run could point an edge at it. A copy it cannot reuse is a copy it is about to install somewhere else (vendoring one that sits at the root, say), and that needs the pin's own bytes: reading the manifest without fetching would leave apply with nothing to copy, and copying the local folder instead would write a pointer to a commit those bytes may no longer match.
 
 #### Two spellings of one remote
 
@@ -96,11 +124,13 @@ Fetching tries **SSH first, then HTTPS** — a key in the environment is the onl
 
 ### Phase 3 — Plan (pure)
 
+"Existing" below means *reusable by this kind* — see [Kinds](#2a-kinds). A root install is invisible to a `--vendor` run, and a vendored one is invisible to every other kind.
+
 | Pin situation | Plan |
 | --- | --- |
 | Existing install, identical pin | **reuse** |
 | Existing install, conflicting pin | **conflict** → §4 |
-| No existing install | **install** at `$repo$SEP<name>` |
+| No existing install | **install** at the kind's name and place |
 
 | Edge situation | Plan |
 | --- | --- |
@@ -109,7 +139,7 @@ Fetching tries **SSH first, then HTTPS** — a key in the environment is the onl
 | Sibling missing | **link** |
 | Dependent's manifest names a different remote than the root's declaration | **override** — announce, do not prompt |
 
-Then plan the flattening entry `$repo$SEP<name>` for every pin in the closure. Cycle safety comes from a visited-pin set; `A → B → A` must be a test case, not an assumption.
+Then plan the flattening entry for every pin in the closure — `$repo$SEP<name>` for a release install, `<name>` otherwise. Cycle safety comes from a visited-pin set; `A → B → A` must be a test case, not an assumption.
 
 ### Phase 4 — Announce and confirm
 
@@ -178,6 +208,7 @@ suede install — pmalacho-mit/sweater-vest-suede
 
   repo:       my-app
   separator:  .          (inferred: 41 of 63 tracked files are .ts)
+  kind:       release dependency - recorded in release/.suede/.dependencies, shipped as a pointer
   layout:     flat (repo root)
   commit:     staged only (pass --commit to commit)
 
@@ -208,15 +239,20 @@ Proceed? [Y/n/d(etails)]
 | --- | --- | --- |
 | 1 | A dependency's local files vs **its own recorded commit** | **FAIL** — your pointer is dishonest |
 | 2 | Your pin vs **what a dependent's manifest asked for** | **INFO** — you took ownership |
-| 3 | An edge satisfied by a directory **not declared as a release dependency of `$repo`** | **FAIL** — implicit dependency |
+| 3 | A **release** dependency's edge satisfied by a directory **not declared as a release dependency of `$repo`** | **FAIL** — implicit dependency |
+| 3b | A **vendored** dependency's edge satisfied by a directory **outside `release/`** | **FAIL** — it ships as a dangling link |
 | 4 | Root entries matching `$repo$SEP` that don't resolve or lack `.gitrepo` | **WARN** — dangling |
 | 5 | Case-only entry collisions | **WARN** — passes on macOS, breaks on Linux CI |
+
+An edge with no sibling at all is a **FAIL** whatever the dependent's kind: something imports a path that isn't there.
 
 **Check 3, the declaration invariant, stated precisely:**
 
 > For every entry `N.gitrepo` in every release dependency `D`'s manifest, the sibling `N` must exist, and the directory it resolves to must be the backing folder of some root entry `$repo$SEP X`.
 
 It compares no remotes and no commits. It asserts only that a resolution *was declared*, which is what frees check 2 to be informational.
+
+**It binds release dependencies and only them**, because they are the only kind that ships a *pointer* — the resolution behind the pointer has to be one the consumer declared, or a consumer of *this* project inherits a dependency nobody wrote down. A development dependency ships nothing, so anything on disk may satisfy it. A vendored one ships its own bytes, so check 3b holds it to the matching requirement: what it points at has to ship too.
 
 ---
 
@@ -226,11 +262,19 @@ It compares no remotes and no commits. It asserts only that a resolution *was de
 suede install --repo OWNER/REPO [options]
 suede install --gitrepo <path|->  [options]
 
+  --dev                       install as a development dependency: unprefixed,
+                              unrecorded, and its own dependencies are not
+                              doubled as yours
+  --vendor                    install as a vendored release dependency: source
+                              and all into release/<name>, with its own
+                              dependencies vendored beside it
+
   --name <entry>              override the derived entry name
   --separator <str>           override $SEP for this project's own entries
   --repo-name <name>          override $repo detection
 
-  --target <path>             relocate the real install (use at your own risk)
+  --target <path>             relocate the real install (use at your own risk;
+                              refused with --vendor, whose destination is fixed)
   --link-mode symlink|copy    how edge entries are materialized; default symlink
 
   --on-conflict coexist|unify-newest|defer   default: ask (tty) / defer (non-tty)
@@ -264,6 +308,8 @@ Flattening creates orphans: remove `B` and `C` stays declared, possibly unrefere
 ## 9. Third-party packages (npm and PyPI)
 
 Same flattening principle, and the two ecosystems work identically. `install` merges a dependency's `.suede/.dependencies/package.json` into the consumer's `package.json`, and its `.suede/.dependencies/requirements.txt` into the consumer's `requirements.txt`. Missing packages are added; lockfiles are never touched.
+
+**Under `--dev` they go to the dev half of each ecosystem** — `devDependencies` and `requirements-dev.txt` — because `extract` publishes `dependencies` and `requirements.txt` verbatim, and a package only your test harness imports has no business reaching your consumers. What counts as *already declared* widens to match: a package your `dependencies` already names is not declared a second time under `devDependencies`, whatever the version. `--vendor` uses the release files, because vendored code ships and what it imports has to be installable by whoever receives it.
 
 Requirements are keyed by the **PEP 503 normalized name** (`Foo_Bar` and `foo-bar` are one distribution) and merged as whole lines, so extras and environment markers survive. A published line that names no package — `-r`, `-e`, `--index-url`, a bare URL — is reported as a warning rather than merged or dropped in silence.
 

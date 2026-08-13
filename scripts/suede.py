@@ -51,6 +51,12 @@ _T = TypeVar("_T")
 
 RELEASE_DIR = "release"
 MANIFEST_DIR = os.path.join(".suede", ".dependencies")
+# Where `--vendor` puts the bytes: the top of release/, beside the code that
+# imports them, which is also what `vendor.sh --dest` defaults to. Not a
+# subdirectory of `.suede/` - a leading dot is unrepresentable in a Python
+# import, so anything nested there is reachable from `release/` code in some
+# languages and not in others.
+VENDOR_DIR = RELEASE_DIR
 # Where pre-2.0 dependencies published their manifest. Read so a plan is right
 # even when a dependency has not republished yet, and reported so it does.
 LEGACY_MANIFEST_DIR = ".dependencies"
@@ -58,6 +64,23 @@ SEPARATOR_FILE = os.path.join(MANIFEST_DIR, "separator")
 GITREPO = ".gitrepo"
 RELEASE_BRANCH = "release"
 SHORT_SHA = 7
+
+# The three kinds of dependency, which are three answers to one question: where
+# do the bytes land, and does the release branch know about them. Everything
+# else - naming, what may satisfy an edge, what gets recorded - follows from
+# that. See DEPENDENCIES-OF-DEPENDENCIES.md.
+RELEASE_KIND = "release"
+DEVELOPMENT_KIND = "development"
+VENDORED_KIND = "vendored"
+
+PACKAGE_JSON = "package.json"
+REQUIREMENTS = "requirements.txt"
+# A development dependency's packages must not reach the consumers of *this*
+# project, and `extract` publishes `dependencies` and requirements.txt verbatim.
+# These two are the dev half of each ecosystem, and neither is published.
+NPM_SECTION = "dependencies"
+NPM_DEV_SECTION = "devDependencies"
+DEV_REQUIREMENTS = "requirements-dev.txt"
 
 # `.` and `__` are always legal, whatever a project declares for itself: a
 # dependency's entries are named by its authors, not by us.
@@ -325,9 +348,15 @@ class World:
     installs: Mapping[str, Install] = field(default_factory=dict[str, Install])  # path -> Install
     entries: Mapping[str, Entry] = field(default_factory=dict[str, Entry])  # path -> Entry
     edges: tuple[Edge, ...] = ()
-    vendored: tuple[str, ...] = ()
+    # Subrepos inside release/. They ship as source rather than as a pointer,
+    # so they are held apart from `installs` - one can never satisfy a release
+    # dependency's edge - but they are installs on disk, and a `--vendor` run
+    # has to see their pins to avoid vendoring the same commit twice.
+    vendored: Mapping[str, Install] = field(default_factory=dict[str, Install])  # path -> Install
     npm: Mapping[str, str] = field(default_factory=dict[str, str])
+    npm_dev: Mapping[str, str] = field(default_factory=dict[str, str])
     python: Mapping[str, str] = field(default_factory=dict[str, str])
+    python_dev: Mapping[str, str] = field(default_factory=dict[str, str])
     records: Mapping[str, Pin] = field(default_factory=dict[str, Pin])  # what release/ already ships
 
 
@@ -339,6 +368,7 @@ class Act:
     dest: Optional[str] = None
     target: Optional[str] = None
     reason: str = ""
+    section: str = ""  # for an npm act: which package.json block it merges into
 
     # Which of the optional fields an act carries is decided by its op, and
     # every applier runs on one op only. These name what its op promises, so a
@@ -414,6 +444,7 @@ class Plan:
 @dataclass(frozen=True)
 class Request:
     pins: tuple[Pin, ...] = ()
+    kind: str = RELEASE_KIND  # release | development | vendored
     name: Optional[str] = None  # --name, applies to a single requested pin
     target: str = ""  # --target, repo-relative; "" => flat at the repo root
     link_mode: str = "symlink"  # symlink | copy
@@ -433,12 +464,19 @@ class Policy:
 
 @dataclass(frozen=True)
 class Naming:
-    """What a pin's own root entry wants to be called. The override applies
-    only to what was asked for by name; everything reached transitively is
-    named by the rule."""
+    """What a pin's own entry wants to be called. The override applies only to
+    what was asked for by name; everything reached transitively is named by the
+    rule.
+
+    The `$repo$SEP` prefix is what *announces* a release dependency, so only a
+    release install carries it. A development install prefixed that way would be
+    promoted to a release dependency by the classification rule and shipped in
+    the manifest; a vendored one has no root entry to announce at all.
+    """
 
     repo: str
     sep: str
+    kind: str = RELEASE_KIND
     override: Optional[str] = None
     requested: tuple[Pin, ...] = ()
     commit_suffix: bool = False
@@ -446,7 +484,7 @@ class Naming:
     def preferred(self, pin: Pin) -> str:
         if self.override and pin in self.requested:
             return self.override
-        name = self.repo + self.sep + pin.name
+        name = self.repo + self.sep + pin.name if self.kind == RELEASE_KIND else pin.name
         return name + "-" + pin.short if self.commit_suffix and pin in self.requested else name
 
 
@@ -462,19 +500,33 @@ class Finding:
 class Layout:
     """Where real installs live, and where the entries pointing at them go."""
 
+    kind: str = RELEASE_KIND
     target: str = ""
     link_mode: str = "symlink"
 
+    @property
+    def home(self) -> str:
+        """The directory a fresh install lands in. Vendored code has to ship,
+        so it lands inside release/ and `--target` has nothing to say about it."""
+        return VENDOR_DIR if self.kind == VENDORED_KIND else self.target
+
     def install_path(self, entry: str) -> str:
-        return os.path.join(self.target, entry) if self.target else entry
+        return os.path.join(self.home, entry) if self.home else entry
 
     def edge_paths(self, dependent_home: str, entry_name: str) -> tuple[str, ...]:
-        """An edge is satisfied by a sibling of its dependent. When the
-        dependent does not live at the root, the entry goes in both places:
-        Node resolves `../` through the realpath, a bundler with
-        preserveSymlinks resolves it through the link, and the two disagree."""
+        """An edge is satisfied by a sibling of its dependent.
+
+        Under `--target` the entry goes in both places: the dependent is
+        reached through a root symlink, Node resolves `../` through the
+        realpath, a bundler with preserveSymlinks resolves it through the link,
+        and the two disagree. Nothing else has that ambiguity - a development
+        install is a real folder at the root, and a vendored one is a real
+        folder inside release/ that nothing at the root points at, so a second
+        entry there would be a stray link into shipped code."""
         if not dependent_home:
             return (entry_name,)
+        if self.kind != RELEASE_KIND:
+            return (os.path.join(dependent_home, entry_name),)
         return (os.path.join(dependent_home, entry_name), entry_name)
 
     @property
@@ -737,10 +789,12 @@ class npm:
 
     @staticmethod
     def declared_in(directory: str) -> dict[str, str]:
-        return npm.read(os.path.join(directory, "package.json"))
+        """A published manifest carries one block: what the dependency needs at
+        runtime. Its own dev tooling is its business."""
+        return npm.read(os.path.join(directory, PACKAGE_JSON))
 
     @staticmethod
-    def read(path: str) -> dict[str, str]:
+    def read(path: str, section: str = NPM_SECTION) -> dict[str, str]:
         if not os.path.isfile(path):
             return {}
         try:
@@ -748,7 +802,7 @@ class npm:
                 document = json.load(handle)
         except (ValueError, OSError):
             return {}
-        declared = document.get("dependencies")
+        declared = document.get(section)
         if not isinstance(declared, dict):
             return {}
         # npm writes package -> version range. A package.json that says otherwise
@@ -948,6 +1002,7 @@ class context:
 
 def scan(root: str, repo: str, sep: str, sep_source: str) -> World:
     installs = _find_installs(root)
+    vendored = _find_vendored(root)
     return World(
         root=root,
         repo=repo,
@@ -957,11 +1012,13 @@ def scan(root: str, repo: str, sep: str, sep_source: str) -> World:
         dirty=git.is_dirty(cwd=root),
         has_release=os.path.isdir(os.path.join(root, RELEASE_DIR)),
         installs=installs,
-        entries=_find_entries(root, installs),
-        edges=_read_edges(root, installs),
-        vendored=_find_vendored(root),
-        npm=npm.read(os.path.join(root, "package.json")),
-        python=pip.read(os.path.join(root, "requirements.txt"))[0],
+        entries=_find_entries(root, installs, vendored),
+        edges=_read_edges(root, installs, vendored),
+        vendored=vendored,
+        npm=npm.read(os.path.join(root, PACKAGE_JSON)),
+        npm_dev=npm.read(os.path.join(root, PACKAGE_JSON), NPM_DEV_SECTION),
+        python=pip.read(os.path.join(root, REQUIREMENTS))[0],
+        python_dev=pip.read(os.path.join(root, DEV_REQUIREMENTS))[0],
         records=gitrepo.read_manifest(os.path.join(root, RELEASE_DIR)).edges,
     )
 
@@ -997,13 +1054,13 @@ def _read_install(root: str, directory: str) -> Optional[Install]:
     return Install(path=os.path.relpath(directory, root), pin=pin, parent=gitrepo.parent(path))
 
 
-def _find_vendored(root: str) -> tuple[str, ...]:
+def _find_vendored(root: str) -> dict[str, Install]:
     """A subrepo inside `release/` ships with the release branch, source and
     all. Nothing to install - but a nested subrepo should never be a surprise."""
     release = os.path.join(root, RELEASE_DIR)
     if not os.path.isdir(release):
-        return ()
-    found: list[str] = []
+        return {}
+    found: dict[str, Install] = {}
     for directory, subdirs, _ in os.walk(release):
         subdirs[:] = sorted(d for d in subdirs if d not in NEVER_WALK)
         # `release/.gitrepo` is the pointer for release/ itself - the folder
@@ -1012,15 +1069,21 @@ def _find_vendored(root: str) -> tuple[str, ...]:
             continue
         if os.path.isfile(os.path.join(directory, GITREPO)):
             subdirs[:] = []
-            found.append(os.path.relpath(directory, root))
-    return tuple(found)
+            install = _read_install(root, directory)
+            if install:
+                found[install.path] = install
+    return found
 
 
-def _find_entries(root: str, installs: Mapping[str, Install]) -> dict[str, Entry]:
+def _find_entries(
+    root: str, installs: Mapping[str, Install], vendored: Mapping[str, Install]
+) -> dict[str, Entry]:
     """Root entries, plus the siblings of any install that lives elsewhere -
-    an edge is satisfied next to its dependent, wherever that dependent is."""
-    directories = {""}
+    an edge is satisfied next to its dependent, wherever that dependent is,
+    and a vendored dependent's siblings live inside release/."""
+    directories = {"", VENDOR_DIR}
     directories.update(os.path.dirname(path) for path in installs)
+    directories.update(os.path.dirname(path) for path in vendored)
     entries: dict[str, Entry] = {}
     for directory in sorted(directories):
         for entry in _entries_in(root, directory):
@@ -1058,9 +1121,13 @@ def _target(root: str, absolute: str) -> Optional[str]:
     return os.path.relpath(os.path.realpath(absolute), os.path.realpath(root))
 
 
-def _read_edges(root: str, installs: Mapping[str, Install]) -> tuple[Edge, ...]:
+def _read_edges(
+    root: str, installs: Mapping[str, Install], vendored: Mapping[str, Install]
+) -> tuple[Edge, ...]:
+    """A vendored dependency asks for its siblings exactly like any other, and
+    ships broken if they are not there - so its manifest is read too."""
     edges: list[Edge] = []
-    for path in sorted(installs):
+    for path in sorted(set(installs) | set(vendored)):
         manifest = gitrepo.read_manifest(os.path.join(root, path))
         for entry_name in sorted(manifest.edges):
             edges.append(Edge(dependent=path, entry_name=entry_name, pin=manifest.edges[entry_name]))
@@ -1103,6 +1170,20 @@ class declarations:
         return LEGAL_SEPARATORS + (world.sep,)
 
     @staticmethod
+    def everything(world: World) -> dict[str, Install]:
+        """Every subrepo on disk, wherever it sits. What may be *pointed at*
+        depends on the kind of install being planned; what exists does not."""
+        return dict(world.installs, **dict(world.vendored))
+
+    @staticmethod
+    def entries_in(world: World, directory: str) -> dict[str, Entry]:
+        return {
+            entry.name: entry
+            for path, entry in world.entries.items()
+            if os.path.dirname(path) == directory
+        }
+
+    @staticmethod
     def root_entries(world: World) -> dict[str, Entry]:
         return {path: entry for path, entry in world.entries.items() if os.path.dirname(path) == ""}
 
@@ -1117,12 +1198,61 @@ class declarations:
     @staticmethod
     def by_name(world: World) -> dict[str, Install]:
         """Entry name -> the install it declares, for every release dependency."""
-        declared: dict[str, Install] = {}
-        for name, entry in declarations.prefixed_entries(world).items():
+        return {
+            name: install
+            for name, install in declarations.root_installs(world).items()
+            if declarations.is_prefixed(world, name)
+        }
+
+    @staticmethod
+    def root_installs(world: World) -> dict[str, Install]:
+        """Every root entry backed by a subrepo, prefix-named or not - so, every
+        release dependency plus every development dependency announced at the
+        root."""
+        backed: dict[str, Install] = {}
+        for name, entry in declarations.root_entries(world).items():
             install = declarations.backing_install(world, entry)
             if install and not declarations.is_machinery(install.path):
-                declared[name] = install
-        return declared
+                backed[name] = install
+        return backed
+
+    @staticmethod
+    def vendored_entries(world: World) -> dict[str, Install]:
+        """Entry name -> the vendored install it names, inside release/."""
+        named: dict[str, Install] = {}
+        for name, entry in declarations.entries_in(world, VENDOR_DIR).items():
+            backing = entry.backing
+            install = world.vendored.get(backing) if backing else None
+            if install and not declarations.is_machinery(install.path):
+                named[name] = install
+        return named
+
+    @staticmethod
+    def reusable(world: World, kind: str) -> dict[str, Install]:
+        """Entry name -> the install it names, for the installs an edge planned
+        by a run of this kind may be pointed at.
+
+        The three answers differ because what an edge may resolve to is exactly
+        what the classification rule says ships with it. A release dependency's
+        edge must land on something declared at the root, or the tree we just
+        wrote would fail its own declaration invariant. A development
+        dependency ships nothing, so anything already on disk will do - which is
+        the point of `--dev`: its dependencies are not doubled as this
+        project's. A vendored dependency ships its own bytes, so it may only be
+        satisfied from inside release/; a link out of it would ship broken.
+        """
+        if kind == VENDORED_KIND:
+            return declarations.vendored_entries(world)
+        if kind == DEVELOPMENT_KIND:
+            return declarations.root_installs(world)
+        return declarations.by_name(world)
+
+    @staticmethod
+    def taken_names(world: World, kind: str) -> tuple[str, ...]:
+        """The names a newcomer of this kind must not claim - which is every
+        name already used in the directory it would be created in."""
+        where = VENDOR_DIR if kind == VENDORED_KIND else ""
+        return tuple(declarations.entries_in(world, where))
 
     @staticmethod
     def backing_install(world: World, entry: Entry) -> Optional[Install]:
@@ -1130,46 +1260,51 @@ class declarations:
         return world.installs.get(backing) if backing else None
 
     @staticmethod
-    def by_remote(world: World) -> dict[str, dict[Pin, str]]:
+    def by_remote(world: World, kind: str = RELEASE_KIND) -> dict[str, dict[Pin, str]]:
         """Remote -> {pin: entry name}. The planner's view of what is already
         resolved, and the reason a coexist install stays addressable."""
         grouped: dict[str, dict[Pin, str]] = {}
-        for name, install in sorted(declarations.by_name(world).items()):
+        for name, install in sorted(declarations.reusable(world, kind).items()):
             grouped.setdefault(install.pin.remote, {}).setdefault(install.pin, name)
         return grouped
 
     @staticmethod
-    def backing_paths(world: World) -> dict[str, str]:
-        """Install path -> the root entry declaring it."""
-        return {install.path: name for name, install in declarations.by_name(world).items()}
+    def backing_paths(world: World, kind: str = RELEASE_KIND) -> dict[str, str]:
+        """Install path -> the entry naming it."""
+        return {install.path: name for name, install in declarations.reusable(world, kind).items()}
 
     @staticmethod
-    def resolved_by(world: World, path: str) -> Optional[Install]:
+    def resolved_by(world: World, path: str, kind: str = RELEASE_KIND) -> Optional[Install]:
         """The declared install an entry path resolves to, if any. Undeclared
         is deliberately not the same as absent - see the declaration invariant."""
         entry = world.entries.get(path)
         backing = entry.backing if entry else None
-        if backing and backing in declarations.backing_paths(world):
-            return world.installs[backing]
+        if backing and backing in declarations.backing_paths(world, kind):
+            return declarations.everything(world)[backing]
         return None
 
     @staticmethod
-    def effective_pin(world: World, dependent: Pin, entry_name: str, demanded: Pin) -> Pin:
+    def effective_pin(
+        world: World, dependent: Pin, entry_name: str, demanded: Pin, kind: str = RELEASE_KIND
+    ) -> Pin:
         """What this edge actually resolves to today: the consumer's own
         resolution if they declared one, otherwise what was asked for."""
-        return declarations.resolved_edge(world, dependent, entry_name) or demanded
+        return declarations.resolved_edge(world, dependent, entry_name, kind) or demanded
 
     @staticmethod
-    def resolved_edge(world: World, dependent: Pin, entry_name: str) -> Optional[Pin]:
+    def resolved_edge(
+        world: World, dependent: Pin, entry_name: str, kind: str = RELEASE_KIND
+    ) -> Optional[Pin]:
         for path in declarations._sibling_candidates(world, dependent, entry_name):
-            install = declarations.resolved_by(world, path)
+            install = declarations.resolved_by(world, path, kind)
             if install:
                 return install.pin
         return None
 
     @staticmethod
     def _sibling_candidates(world: World, dependent: Pin, entry_name: str) -> tuple[str, ...]:
-        homes = {os.path.dirname(path) for path, install in world.installs.items()
+        homes = {os.path.dirname(path)
+                 for path, install in declarations.everything(world).items()
                  if install.pin == dependent}
         homes.add("")
         return tuple(os.path.join(home, entry_name) if home else entry_name
@@ -1177,9 +1312,11 @@ class declarations:
 
     @staticmethod
     def classify(world: World, install: Install) -> str:
+        if install.path in world.vendored:
+            return VENDORED_KIND
         if install.path in declarations.backing_paths(world):
-            return "release"
-        return "development"
+            return RELEASE_KIND
+        return DEVELOPMENT_KIND
 
 
 # --------------------------------------------------------------------------- #
@@ -1194,12 +1331,15 @@ class Staged:
     ancestry: Mapping[tuple[str, str], bool] = field(default_factory=dict[tuple[str, str], bool])
 
 
-def stage(world: World, pins: Sequence[Pin], use_cache: bool = True) -> Staged:
+def stage(
+    world: World, pins: Sequence[Pin], use_cache: bool = True, kind: str = RELEASE_KIND
+) -> Staged:
     """Fetch every pin in the closure into `.git/suede-cache/` and read its
     manifest from there. Staging before planning is what lets the announce
     block name a dependency's dependencies before anything is installed."""
     cache.prune(world.root)
     installed = _installed_manifests(world)
+    reusable = _reusable_manifests(world, installed, kind)
     manifests: dict[Pin, Manifest] = {}
     trees: dict[Pin, str] = {}
     queue = deque(pins)
@@ -1207,8 +1347,8 @@ def stage(world: World, pins: Sequence[Pin], use_cache: bool = True) -> Staged:
         pin = queue.popleft()
         if pin in manifests:
             continue
-        manifests[pin] = installed.get(pin) or _fetch(world, pin, trees, use_cache)
-        queue.extend(_wanted_by(world, pin, manifests[pin]))
+        manifests[pin] = reusable.get(pin) or _fetch(world, pin, trees, use_cache)
+        queue.extend(_wanted_by(world, pin, manifests[pin], kind))
     manifests.update({pin: manifest for pin, manifest in installed.items() if pin not in manifests})
     return Staged(manifests=manifests, trees=trees, ancestry=_ancestry(world, manifests, use_cache))
 
@@ -1218,7 +1358,25 @@ def _installed_manifests(world: World) -> dict[Pin, Manifest]:
     clone, which is what makes a re-run on a satisfied tree work offline."""
     return {
         install.pin: gitrepo.read_manifest(os.path.join(world.root, install.path))
-        for install in world.installs.values()
+        for install in declarations.everything(world).values()
+    }
+
+
+def _reusable_manifests(
+    world: World, installed: Mapping[Pin, Manifest], kind: str
+) -> dict[Pin, Manifest]:
+    """Of those, the ones this run may read *instead of* fetching.
+
+    A copy this run cannot point an edge at is a copy it is going to install
+    somewhere else - vendoring one that sits at the repo root, say - and that
+    needs the pin's own bytes. Reading its manifest without fetching would
+    leave apply with nothing to copy, and copying the local folder instead
+    would write a pointer to a commit those bytes may no longer match.
+    """
+    return {
+        install.pin: installed[install.pin]
+        for install in declarations.reusable(world, kind).values()
+        if install.pin in installed
     }
 
 
@@ -1227,11 +1385,11 @@ def _fetch(world: World, pin: Pin, trees: dict[Pin, str], use_cache: bool) -> Ma
     return gitrepo.read_manifest(trees[pin])
 
 
-def _wanted_by(world: World, dependent: Pin, manifest: Manifest) -> list[Pin]:
+def _wanted_by(world: World, dependent: Pin, manifest: Manifest, kind: str) -> list[Pin]:
     """Following the consumer's own resolution here is what keeps staging from
     cloning a dependency they have already replaced."""
     return [
-        declarations.effective_pin(world, dependent, entry_name, demanded)
+        declarations.effective_pin(world, dependent, entry_name, demanded, kind)
         for entry_name, demanded in sorted(manifest.edges.items())
     ]
 
@@ -1328,7 +1486,7 @@ def _remotes_wanted_twice(
 
 
 def _every_pin(world: World, manifests: Mapping[Pin, Manifest]) -> Iterable[Pin]:
-    for install in world.installs.values():
+    for install in declarations.everything(world).values():
         yield install.pin
     for pin, manifest in manifests.items():
         yield pin
@@ -1402,10 +1560,10 @@ def plan(
     manifests: Mapping[Pin, Manifest],
     ancestry: Optional[Mapping[tuple[str, str], bool]] = None,
 ) -> Plan:
-    blockers = _preconditions(world)
+    blockers = _preconditions(world, request)
     if blockers:
         return Plan(blockers=blockers)
-    merge = _package_merge(world, policy, manifests)
+    merge = _package_merge(world, policy, manifests, request.kind)
     pins, demands = _closure(world, request, manifests)
     resolution = _resolve(world, request, policy, pins, demands, ancestry or {})
     acts, warnings = _acts(world, request, demands, resolution, merge.acts)
@@ -1420,12 +1578,18 @@ def plan(
     )
 
 
-def _preconditions(world: World) -> tuple[str, ...]:
+def _preconditions(world: World, request: Request) -> tuple[str, ...]:
     if world.head is None:
         return (
             "this repository has no commits yet. Install would write an empty `parent`"
             " into every .gitrepo and the first `git subrepo pull` would fail with"
             " 'refusing to merge unrelated histories'. Commit something first.",
+        )
+    if request.kind == VENDORED_KIND and not world.has_release:
+        return (
+            "vendoring ships the dependency's source with your release branch, and this"
+            " project has no %s/ directory to ship it in. Install it as a release"
+            " dependency, or as a development one with --dev." % RELEASE_DIR,
         )
     return ()
 
@@ -1444,17 +1608,17 @@ def _closure(
             continue
         pins.append(pin)
         for entry_name in sorted(manifests.get(pin, EMPTY_MANIFEST).edges):
-            demand = _demand(world, pin, entry_name, manifests[pin].edges[entry_name])
+            demand = _demand(world, pin, entry_name, manifests[pin].edges[entry_name], request.kind)
             demands.append(demand)
             queue.append(demand.effective)
     return tuple(pins), tuple(demands)
 
 
-def _demand(world: World, dependent: Pin, entry_name: str, demanded: Pin) -> Demand:
+def _demand(world: World, dependent: Pin, entry_name: str, demanded: Pin, kind: str) -> Demand:
     """A consumer who has already backed this edge with a declared entry of
     their own has resolved it - a fork, a patched build, their own
     implementation. Follow their resolution, do not re-flatten ours."""
-    effective = declarations.effective_pin(world, dependent, entry_name, demanded)
+    effective = declarations.effective_pin(world, dependent, entry_name, demanded, kind)
     return Demand(
         dependent=dependent,
         entry_name=entry_name,
@@ -1475,12 +1639,13 @@ def _resolve(
     naming = Naming(
         repo=world.repo,
         sep=world.sep,
+        kind=request.kind,
         override=request.name,
         requested=request.pins,
         commit_suffix=request.commit_suffix,
     )
-    names = Names(declarations.root_entries(world))
-    declared = declarations.by_remote(world)
+    names = Names(declarations.taken_names(world, request.kind))
+    declared = declarations.by_remote(world, request.kind)
     wanted_by_remote = _wanted_by_remote(pins)
     for remote in sorted(wanted_by_remote):
         _resolve_remote(
@@ -1803,13 +1968,13 @@ def _acts(
     resolution: Resolution,
     package_acts: Sequence[Act],
 ) -> tuple[list[Act], list[str]]:
-    layout = Layout(target=request.target, link_mode=request.link_mode)
+    layout = Layout(kind=request.kind, target=request.target, link_mode=request.link_mode)
     edges, warnings = _edge_acts(world, demands, resolution, layout)
     acts = (
         _install_acts(request, demands, resolution, layout)
-        + _reuse_acts(world, resolution)
+        + _reuse_acts(world, resolution, layout.kind)
         + edges
-        + _record_acts(world, resolution)
+        + _record_acts(world, resolution, layout.kind)
         + list(package_acts)
     )
     return _drop_notes_when_nothing_changes(acts), warnings
@@ -1845,8 +2010,8 @@ def _why(pin: Pin, request: Request, demands: Sequence[Demand]) -> str:
     return "flattening"
 
 
-def _reuse_acts(world: World, resolution: Resolution) -> list[Act]:
-    declared = declarations.by_name(world)
+def _reuse_acts(world: World, resolution: Resolution, kind: str) -> list[Act]:
+    declared = declarations.reusable(world, kind)
     return [
         Act(
             op="reuse",
@@ -1909,7 +2074,7 @@ def _resolved_elsewhere(path: str, existing: Entry, install: str) -> str:
 
 def _where(world: World, entry: str, layout: Layout) -> str:
     """The directory an entry names: where it already is, or where it will go."""
-    declared = declarations.by_name(world)
+    declared = declarations.reusable(world, layout.kind)
     if entry in declared:
         return declared[entry].path
     return layout.install_path(entry)
@@ -1933,10 +2098,16 @@ def _override_act(demand: Demand, resolution: Resolution) -> list[Act]:
     ]
 
 
-def _record_acts(world: World, resolution: Resolution) -> list[Act]:
+def _record_acts(world: World, resolution: Resolution, kind: str) -> list[Act]:
     """A project records its whole transitive closure as its own release
-    dependencies - which is what makes its manifest a complete recipe."""
-    if not world.has_release:
+    dependencies - which is what makes its manifest a complete recipe.
+
+    Only a release install is recorded. A development one is invisible to the
+    release branch by definition, and a vendored one ships its bytes rather
+    than a pointer to them - recording either would advertise to consumers a
+    dependency they must resolve and, in the vendored case, already have.
+    """
+    if not world.has_release or kind != RELEASE_KIND:
         return []
     return [
         Act(
@@ -1960,35 +2131,59 @@ class Ecosystem:
     op: str  # the act's op, and the word the plan prints
     noun: str  # how a blocker names one of its packages
     file: str  # the consumer file the merge writes into
+    section: str  # the block within it, where the file has blocks
+    declares: str  # where a blocker says your own declaration lives
     declared: Callable[[World], Mapping[str, str]]
     wanted: Callable[[Manifest], Mapping[str, str]]
     enabled: Callable[[Policy], bool]
     render: Callable[[str, str], str]  # package, declaration -> the act's entry
 
 
-ECOSYSTEMS = (
-    Ecosystem(
-        op="npm",
-        noun="npm dependency",
-        file="package.json",
-        declared=lambda world: world.npm,
-        wanted=lambda manifest: manifest.npm,
-        enabled=lambda policy: policy.npm,
-        render=lambda package, declaration: "%s@%s" % (package, declaration),
-    ),
-    Ecosystem(
-        op="pip",
-        noun="python dependency",
-        file="requirements.txt",
-        declared=lambda world: world.python,
-        wanted=lambda manifest: manifest.python,
-        enabled=lambda policy: policy.python,
-        # A requirement is already one string. Splitting it into name and
-        # specifier only to paste it back together is how extras and markers
-        # get lost, so the whole line travels.
-        render=lambda _package, declaration: declaration,
-    ),
-)
+def ecosystems(kind: str) -> tuple[Ecosystem, ...]:
+    """Where this kind of install's packages go.
+
+    A development dependency's packages are not the project's own, and
+    `extract` publishes `dependencies` and requirements.txt verbatim - so
+    merging them there would hand every consumer a package only your test
+    harness ever imports. They go to the dev half of each ecosystem instead,
+    which nothing publishes.
+
+    What counts as *already declared* widens to match: a package your
+    `dependencies` already names must not be declared a second time under
+    `devDependencies`, whatever the version.
+    """
+    dev = kind == DEVELOPMENT_KIND
+    return (
+        Ecosystem(
+            op="npm",
+            noun="npm dependency",
+            file=PACKAGE_JSON,
+            section=NPM_DEV_SECTION if dev else NPM_SECTION,
+            declares=PACKAGE_JSON,
+            declared=(lambda world: dict(world.npm, **dict(world.npm_dev))) if dev
+            else (lambda world: world.npm),
+            wanted=lambda manifest: manifest.npm,
+            enabled=lambda policy: policy.npm,
+            render=lambda package, declaration: "%s@%s" % (package, declaration),
+        ),
+        Ecosystem(
+            op="pip",
+            noun="python dependency",
+            file=DEV_REQUIREMENTS if dev else REQUIREMENTS,
+            section="",
+            # A dev merge is measured against both files, so a blocker must not
+            # claim the declaration is in the one it would have written to.
+            declares="%s or %s" % (REQUIREMENTS, DEV_REQUIREMENTS) if dev else REQUIREMENTS,
+            declared=(lambda world: dict(world.python, **dict(world.python_dev))) if dev
+            else (lambda world: world.python),
+            wanted=lambda manifest: manifest.python,
+            enabled=lambda policy: policy.python,
+            # A requirement is already one string. Splitting it into name and
+            # specifier only to paste it back together is how extras and markers
+            # get lost, so the whole line travels.
+            render=lambda _package, declaration: declaration,
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -2001,15 +2196,23 @@ class PackageMerge:
 
 
 def _package_merge(
-    world: World, policy: Policy, manifests: Mapping[Pin, Manifest]
+    world: World, policy: Policy, manifests: Mapping[Pin, Manifest], kind: str = RELEASE_KIND
 ) -> PackageMerge:
     acts: list[Act] = []
     warnings: list[str] = []
     conflicts: list[str] = []
-    for ecosystem in ECOSYSTEMS:
+    for ecosystem in ecosystems(kind):
         additions, disagreements, rivals = _package_diff(ecosystem, world, policy, manifests)
         acts += [
-            Act(op=ecosystem.op, entry=ecosystem.render(package, wanted), reason="new")
+            Act(
+                op=ecosystem.op,
+                entry=ecosystem.render(package, wanted),
+                dest=ecosystem.file,
+                section=ecosystem.section,
+                reason="new" if kind != DEVELOPMENT_KIND else "new in " + (
+                    ecosystem.section or ecosystem.file
+                ),
+            )
             for package, wanted in sorted(additions.items())
         ]
         warnings += rivals
@@ -2073,7 +2276,7 @@ def _conflict_sentences(
 ) -> list[str]:
     return [
         "%s %s: a dependency asks for %s, your %s declares %s."
-        % (ecosystem.noun, package, wanted, ecosystem.file, declared)
+        % (ecosystem.noun, package, wanted, ecosystem.declares, declared)
         for package, (wanted, declared) in sorted(disagreements.items())
     ]
 
@@ -2130,11 +2333,24 @@ def _situational_warnings(world: World, request: Request) -> tuple[str, ...]:
             " the repo root, because Node dereferences symlinks and bundlers with preserveSymlinks"
             " do not. If your build resolves neither, you own the fix."
         )
+    if request.kind == VENDORED_KIND:
+        # Everything under release/ is what this run is *about*, so the notice
+        # below would report the plan back as a surprise.
+        return tuple(warnings) + _vendoring_notes(request)
     for path in world.vendored:
         if declarations.is_machinery(path):
             continue
         warnings.append("%s is vendored inside release/ - it ships as source, nothing to install" % path)
     return tuple(warnings)
+
+
+def _vendoring_notes(_request: Request) -> tuple[str, ...]:
+    """What vendoring costs, said once at the point of choosing it."""
+    return (
+        "vendored code ships with your release branch, .gitrepo included - so consumers get a"
+        " nested subrepo, and `suede diff` will not police it against its pin (that is the"
+        " point of vendoring). Point your release/ imports at the paths above.",
+    )
 
 
 def _ordered(acts: list[Act]) -> tuple[Act, ...]:
@@ -2162,6 +2378,14 @@ def _titled(title: str, lines: Sequence[str]) -> list[str]:
     return [title, ""] + ["  " + line for line in lines] + [""]
 
 
+KIND_NOTES = {
+    RELEASE_KIND: "release dependency - recorded in %s, shipped as a pointer"
+    % os.path.join(RELEASE_DIR, MANIFEST_DIR),
+    DEVELOPMENT_KIND: "development dependency - unprefixed, never recorded, never shipped",
+    VENDORED_KIND: "vendored release dependency - ships as source inside %s/" % RELEASE_DIR,
+}
+
+
 def _header(world: World, request: Request, evidence: str) -> list[str]:
     subject = ", ".join(pin.name for pin in request.pins) or world.repo
     return [
@@ -2169,9 +2393,16 @@ def _header(world: World, request: Request, evidence: str) -> list[str]:
         "",
         "  repo:       %s" % world.repo,
         "  separator:  %s          (%s)" % (world.sep, _separator_note(world, evidence)),
-        "  layout:     %s" % (request.target or "flat (repo root)"),
+        "  kind:       %s" % KIND_NOTES.get(request.kind, request.kind),
+        "  layout:     %s" % _layout_note(request),
         "",
     ]
+
+
+def _layout_note(request: Request) -> str:
+    if request.kind == VENDORED_KIND:
+        return "%s/ (vendored)" % VENDOR_DIR
+    return request.target or "flat (repo root)"
 
 
 def _separator_note(world: World, evidence: str) -> str:
@@ -2249,7 +2480,8 @@ def plan_json(world: World, plan: Plan, request: Request) -> str:
         "repo": world.repo,
         "separator": world.sep,
         "separator_source": world.sep_source,
-        "layout": request.target or "flat",
+        "kind": request.kind,
+        "layout": VENDOR_DIR if request.kind == VENDORED_KIND else (request.target or "flat"),
         "blockers": list(plan.blockers),
         "warnings": list(plan.warnings),
         "acts": [_act_json(act) for act in plan.acts],
@@ -2262,7 +2494,12 @@ def _act_json(act: Act) -> dict[str, object]:
     document: dict[str, object] = {"op": act.op, "entry": act.entry}
     if act.pin:
         document["pin"] = _pin_json(act.pin)
-    for key, value in (("dest", act.dest), ("target", act.target), ("reason", act.reason)):
+    for key, value in (
+        ("dest", act.dest),
+        ("target", act.target),
+        ("section", act.section),
+        ("reason", act.reason),
+    ):
         if value:
             document[key] = value
     return document
@@ -2489,22 +2726,24 @@ def _apply_record(world: World, act: Act, _staged: Staged, journal: Journal) -> 
 def _apply_npm(_world: World, act: Act, _staged: Staged, journal: Journal) -> list[str]:
     """Never touches package-lock.json - that is `npm install`'s job."""
     package, wanted = act.entry.rsplit("@", 1)
-    path = journal.modifying("package.json")
+    file = act.dest or PACKAGE_JSON
+    path = journal.modifying(file)
     document = json.loads(_read_text(path) or "{}")
-    document.setdefault("dependencies", {})[package] = wanted
+    document.setdefault(act.section or NPM_SECTION, {})[package] = wanted
     _write_text(path, json.dumps(document, indent=2) + "\n")
-    return ["package.json"]
+    return [file]
 
 
 def _apply_pip(_world: World, act: Act, _staged: Staged, journal: Journal) -> list[str]:
     """Appends. The order of a requirements file is meaningful to whoever wrote
     it, and rewriting one to be tidy would lose the comments that explain it."""
-    path = journal.modifying("requirements.txt")
+    file = act.dest or REQUIREMENTS
+    path = journal.modifying(file)
     existing = _read_text(path) or ""
     if existing and not existing.endswith("\n"):
         existing += "\n"
     _write_text(path, existing + act.entry + "\n")
-    return ["requirements.txt"]
+    return [file]
 
 
 APPLIERS = {
@@ -2530,18 +2769,40 @@ def check(world: World) -> tuple[Finding, ...]:
 
 
 def _edge_findings(world: World) -> Iterable[Finding]:
+    """Every dependency's manifest asks for siblings; what a sibling is allowed
+    to be depends on what the dependent itself is.
+
+    Only a release dependency carries the declaration invariant - it ships a
+    pointer, so the resolution behind that pointer has to be one the consumer
+    declared. A development dependency ships nothing and may be satisfied by
+    anything on disk. A vendored one ships its own bytes, so its siblings must
+    ship too, which means they must live inside release/.
+    """
     declared = declarations.backing_paths(world)
+    subrepos = declarations.everything(world)
     for edge in world.edges:
+        kind = _dependent_kind(world, subrepos, edge)
         path = _sibling_path(edge)
         entry = world.entries.get(path)
         backing = entry.backing if entry else None
         if backing is None:
             yield _missing_edge(edge, path, entry)
-        elif backing not in declared:
+        elif kind == RELEASE_KIND and backing not in declared:
             yield _undeclared_edge(path, backing)
+        elif kind == VENDORED_KIND and not _inside_release(backing):
+            yield _escaping_edge(path, backing)
         else:
-            for finding in _pin_notes(world, edge, path, backing):
+            for finding in _pin_notes(world, subrepos, edge, path, backing):
                 yield finding
+
+
+def _dependent_kind(world: World, subrepos: Mapping[str, Install], edge: Edge) -> str:
+    dependent = subrepos.get(edge.dependent)
+    return declarations.classify(world, dependent) if dependent else RELEASE_KIND
+
+
+def _inside_release(path: str) -> bool:
+    return path == RELEASE_DIR or path.startswith(RELEASE_DIR + "/")
 
 
 def _sibling_path(edge: Edge) -> str:
@@ -2579,10 +2840,28 @@ def _undeclared_edge(path: str, backing: str) -> Finding:
     )
 
 
-def _pin_notes(world: World, edge: Edge, path: str, backing: str) -> Iterable[Finding]:
+def _escaping_edge(path: str, backing: str) -> Finding:
+    """A vendored dependency's sibling that lives outside release/ resolves
+    here and nowhere else: what ships is a link into a directory the consumer
+    never receives."""
+    return Finding(
+        level="FAIL",
+        code="escaping-edge",
+        where=path,
+        message="%s belongs to vendored code but resolves to %s, outside %s/. It ships as a"
+        " broken link. Vendor that dependency too, with --vendor." % (path, backing, RELEASE_DIR),
+    )
+
+
+def _pin_notes(
+    world: World, subrepos: Mapping[str, Install], edge: Edge, path: str, backing: str
+) -> Iterable[Finding]:
     """You took ownership of the resolution. Different commit, different
     remote, or an entirely hand-written implementation are all legitimate."""
-    resolved = world.installs[backing].pin
+    install = subrepos.get(backing)
+    if install is None:
+        return  # a hand-written implementation has no pin to compare
+    resolved = install.pin
     if resolved.remote != edge.pin.remote:
         yield Finding(
             level="INFO",
@@ -2676,14 +2955,23 @@ def listing(world: World) -> tuple[Listing, ...]:
         for path, install in sorted(world.installs.items())
         if not declarations.is_machinery(path)
     ]
-    rows += [Listing(entry="", kind="vendored", path=path, pin=_vendored_pin(world, path))
-             for path in world.vendored
+    named = _vendored_names(world)
+    rows += [Listing(entry=named.get(path, ""), kind=VENDORED_KIND,
+                     path=path, pin=install.pin)
+             for path, install in sorted(world.vendored.items())
              if not declarations.is_machinery(path)]
     return tuple(rows)
 
 
-def _vendored_pin(world: World, path: str) -> Optional[Pin]:
-    return gitrepo.read(os.path.join(world.root, path, GITREPO))
+def _vendored_names(world: World) -> dict[str, str]:
+    """Install path -> the entry that *is* it. Several entries can name one
+    vendored install - its own folder plus every edge link pointing at it - and
+    the folder is the one that names it."""
+    return {
+        install.path: name
+        for name, install in declarations.vendored_entries(world).items()
+        if os.path.join(VENDOR_DIR, name) == install.path
+    }
 
 
 def render_listing(rows: Sequence[Listing]) -> str:
@@ -2904,6 +3192,22 @@ def _install_parser(
     install.add_argument("--branch", default=RELEASE_BRANCH, help="branch to install from")
     install.add_argument("--at", help="install this commit instead of the branch tip")
     install.add_argument("-r", dest="repo", help=argparse.SUPPRESS)
+    # The kind decides everything that distinguishes one install from another:
+    # what the entry is named, what may satisfy its edges, and whether the
+    # release branch hears about it at all.
+    kind = install.add_mutually_exclusive_group()
+    kind.add_argument(
+        "--dev",
+        action="store_true",
+        help="install as a development dependency: unprefixed, not recorded in your manifest,"
+        " and its own dependencies are not doubled as yours",
+    )
+    kind.add_argument(
+        "--vendor",
+        action="store_true",
+        help="install as a vendored release dependency: source and all inside %s/, with its"
+        " own dependencies vendored beside it" % RELEASE_DIR,
+    )
     install.add_argument("--name", help="override the entry name")
     install.add_argument(
         "--commit-suffix", action="store_true", help="pin the entry name to the commit too"
@@ -2988,9 +3292,22 @@ def _stdin_to_temporary_file() -> str:
     return handle.name
 
 
+def _kind(args: argparse.Namespace) -> str:
+    if args.vendor:
+        return VENDORED_KIND
+    return DEVELOPMENT_KIND if args.dev else RELEASE_KIND
+
+
 def _request(args: argparse.Namespace) -> Request:
+    kind = _kind(args)
+    if kind == VENDORED_KIND and args.target:
+        raise Usage(
+            "--vendor and --target disagree about where the bytes go: vendored code has to"
+            " live inside %s/ to ship at all." % RELEASE_DIR
+        )
     return Request(
         pins=(_requested_pin(args),),
+        kind=kind,
         name=args.name,
         target=args.target.strip("/"),
         link_mode=args.link_mode,
@@ -3012,7 +3329,7 @@ def install_command(args: argparse.Namespace) -> int:
     world, notes = _open_world(args)
     request = _request(args)
     policy = _policy(args)
-    staged = stage(world, request.pins, use_cache=not args.no_cache)
+    staged = stage(world, request.pins, use_cache=not args.no_cache, kind=request.kind)
     proposal = _propose(world, request, policy, staged)
     if args.plan_json:
         print(plan_json(world, proposal, request))
@@ -3022,7 +3339,7 @@ def install_command(args: argparse.Namespace) -> int:
         return _plan_exit_code(proposal)
     if not (args.yes or confirm()):
         return Exit.UNRESOLVED
-    return _carry_out(world, proposal, staged, args)
+    return _carry_out(world, request, proposal, staged, args)
 
 
 def _propose(world: World, request: Request, policy: Policy, staged: Staged) -> Plan:
@@ -3045,9 +3362,14 @@ def _report(notes: Sequence[str], text: str) -> None:
     print(text)
 
 
-def _carry_out(world: World, proposal: Plan, staged: Staged, args: argparse.Namespace) -> int:
+def _carry_out(
+    world: World, request: Request, proposal: Plan, staged: Staged, args: argparse.Namespace
+) -> int:
     apply(world, proposal, staged)
-    _persist_separator(world)
+    if request.kind == RELEASE_KIND:
+        # The separator names this project's own release entries and nothing
+        # else, so only a run that used it has learned anything worth keeping.
+        _persist_separator(world)
     if args.commit:
         print("committed %s" % git.commit(_commit_message(proposal), cwd=world.root))
     return _verify(world)

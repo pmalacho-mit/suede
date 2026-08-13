@@ -42,7 +42,9 @@ def world(
     edges=None,
     records=None,
     npm=None,
+    npm_dev=None,
     python=None,
+    python_dev=None,
     has_release=True,
     head="0" * 40,
     dirty=False,
@@ -50,9 +52,12 @@ def world(
 ):
     """`installs` maps a real directory to its pin; `links` maps an entry path
     to the directory it resolves to; `edges` lists (dependent path, entry name,
-    pin) triples as a dependency's manifest would."""
+    pin) triples as a dependency's manifest would. `vendored` is the same shape
+    as `installs`, for the subrepos that live inside release/ - a bare sequence
+    of paths works too, where only the classification is under test."""
     installs = dict(installs or {})
-    entries = _entries(installs, dict(links or {}), list(files or []))
+    vendored = _vendored(vendored)
+    entries = _entries(installs, vendored, dict(links or {}), list(files or []))
     return suede.World(
         root="/nowhere",
         repo=repo,
@@ -64,16 +69,24 @@ def world(
         installs={path: suede.Install(path=path, pin=held) for path, held in installs.items()},
         entries=entries,
         edges=tuple(suede.Edge(*edge) for edge in (edges or [])),
-        vendored=tuple(vendored),
+        vendored=vendored,
         npm=dict(npm or {}),
+        npm_dev=dict(npm_dev or {}),
         python=dict(python or {}),
+        python_dev=dict(python_dev or {}),
         records=dict(records or {}),
     )
 
 
-def _entries(installs, links, files):
+def _vendored(given):
+    if not isinstance(given, dict):
+        given = {path: pin(os.path.basename(path), "v") for path in given}
+    return {path: suede.Install(path=path, pin=held) for path, held in given.items()}
+
+
+def _entries(installs, vendored, links, files):
     entries = {}
-    for path in installs:
+    for path in list(installs) + list(vendored):
         entries[path] = _entry(path, "folder", target=path)
     for path, target in links.items():
         entries[path] = _entry(path, "symlink" if target else "dangling", target=target or None)

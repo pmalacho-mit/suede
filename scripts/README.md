@@ -13,7 +13,7 @@ The installer. A single dependency-free Python 3.9 file: everything install,
 below is either a thin shell around it or a v1 script kept for compatibility.
 
 ```bash
-python3 suede.py install --repo OWNER/REPO [--dry-run|--yes|--commit]
+python3 suede.py install --repo OWNER/REPO [--dev|--vendor] [--dry-run|--yes|--commit]
 python3 suede.py check [--plan-json]
 python3 suede.py list  [--json]
 python3 suede.py remove <entry>
@@ -96,12 +96,18 @@ Dependency](../README.md#creating-a-dependency). Needs an authenticated `gh`.
 
 ### `install/release.sh`
 
-Fetches a `release/.gitrepo` file from a remote repository and downloads the referenced release archive.
+The bootstrap: finds a Python 3.9+, downloads [`suede.py`](./suede.py), and
+hands it the arguments. Every flag belongs to the installer — run
+`python3 suede.py install --help` for the full list.
 
 ```bash
-bash <(curl https://suede.sh/install/release) --repo OWNER/REPO [--branch BRANCH] [--destination DIR]
-# Defaults: --branch=main, --destination=./<repo-name>
+bash <(curl -fsSL https://suede.sh/install/release) --repo OWNER/REPO [--dev|--vendor]
 ```
+
+`--dev` installs a development dependency (unprefixed, unrecorded) and
+`--vendor` a vendored one (source and all into `release/<name>`). The v1 flags
+`--branch` and `--destination` are still accepted and translated: `--branch` is
+ignored with a notice, and `--destination` becomes `--name` plus `--target`.
 
 ## `populate/`
 

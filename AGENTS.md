@@ -119,8 +119,10 @@ Because a release dependency ships as a pointer, **the pointer must be honest**:
 its local files must match the commit its `.gitrepo` names. CI refuses to
 publish otherwise. If you modified a release dependency in place you have
 exactly three honest options — revert, upstream the change, or vendor the
-dependency (`.suede/core/vendor.sh`, which moves it inside `release/` so the
-source actually ships).
+dependency (`.suede/core/vendor.sh`, which moves it to `release/<name>` so the
+source actually ships; `install --vendor` does the same for one you have not
+installed yet). Vendoring is transitive: everything the vendored code imports
+has to ship with it, so its own dependencies get vendored beside it.
 
 **A project declares its entire transitive closure at its own root.** If you
 install `B` and `B` needs `C`, you get root entries for both, and `B`'s edge is
@@ -161,6 +163,13 @@ Install a dependency (works in any git repo, no suede install required):
 ```bash
 bash <(curl -fsSL https://suede.sh/install/release) --repo OWNER/REPO
 ```
+
+That installs a **release** dependency. `--dev` installs a development one
+(entry unprefixed, nothing recorded in your manifest, its own dependencies not
+doubled as yours, packages into `devDependencies` / `requirements-dev.txt`) and
+`--vendor` a vendored one (source and all into `release/<name>`, with its whole
+closure vendored beside it, since vendored code ships whole). The two are
+mutually exclusive, and `--vendor` refuses `--target`.
 
 Useful install flags: `--dry-run`, `--plan-json`, `--yes` (skip the prompt —
 **use this in non-interactive runs**), `--commit`, `--name`, `--target`,
@@ -206,7 +215,9 @@ clears the leftovers that block the next publish.
 **Add a dependency.** Run the install one-liner with `--yes`. It resolves the
 whole closure, installs each dependency once flat at the root, creates the edge
 symlinks, and **stages without committing**. Review, then commit. Do not
-hand-clone a repo and hand-write a `.gitrepo`.
+hand-clone a repo and hand-write a `.gitrepo`. Add `--dev` when only your dev,
+test or example code will import it, and `--vendor` when the source has to ship
+inside `release/`.
 
 **Update a dependency.** Preview it with `bash <dep>/.suede/core/diff --sync`,
 then `bash <dep>/.suede/core/sync`. The working tree must be clean before the
@@ -236,6 +247,10 @@ job summary. Nothing about `release` is edited by hand — including
 **Promote a development dependency to a release dependency.** Rename its root
 entry to `$repo$SEP<name>` (or add a symlink with that name), update the
 `release/` imports, then run `check`. Demotion is the same rename in reverse.
+Promotion also promotes its **closure**: a release dependency's edges have to
+land on entries you declare, so give each of its own dependencies a root entry
+named `$repo$SEP<name>` as well — a symlink to the folder already installed is
+enough — and run `extract`. `check` names every one you miss.
 
 ## 8. Third-party packages (npm and PyPI)
 

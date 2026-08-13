@@ -12,6 +12,14 @@ Here are the three kinds of dependencies:
 
 The goal is the most _boring_ (but still ergonomic) solution. Folders and names — _chef's kiss_.
 
+Each kind has a flag on `install`, because "where do the bytes land" and "what is this" are the same question:
+
+```bash
+bash <(curl -fsSL https://suede.sh/install/release) --repo owner/name            # release
+bash <(curl -fsSL https://suede.sh/install/release) --repo owner/name --dev      # development
+bash <(curl -fsSL https://suede.sh/install/release) --repo owner/name --vendor   # vendored
+```
+
 > **Note**
 > `$repo`: the name of the repository, without the `owner/` prefix.
 > `$SEP`: the separator between `$repo` and the dependency name. See [Separators](#separators).
@@ -200,9 +208,11 @@ What's powerful is that the consumer can also resolve the dependency **another w
 
 The install script materializes a pointer by downloading the release-branch tree (no git history) and hand-writing the `.gitrepo`. `git subrepo` is **not** used to install — only afterwards, for [`pull` and `push`](#upgrading-ie-pulling). See [The install/git-subrepo contract](#the-installgit-subrepo-contract) for the invariants this depends on.
 
-**Layout:** flat at the repo root by default. Every install and every entry is a root-level sibling. `--target <path>` relocates the real install and is documented as [use-at-your-own-risk](#layout-on-main).
+**Layout:** flat at the repo root by default. Every install and every entry is a root-level sibling. `--target <path>` relocates the real install and is documented as [use-at-your-own-risk](#layout-on-main). `--vendor` puts everything inside `release/` instead, and refuses `--target` — vendored code has to live where it ships from.
 
 **Dedup:** before installing, the script checks whether the pointer's exact remote and commit are **already present** in the tree. If so it creates an edge symlink to the existing install rather than re-cloning. The filesystem is the lockfile — there is no state file, and every planning decision comes from scanning the working tree.
+
+What counts as "already present" depends on the kind being installed, because it is really the question *what may this edge point at*. A release dependency's edge must land on something declared at the root, or the tree would fail its own [declaration invariant](#what-the-checks-do-and-dont-enforce). A development dependency's edge may land on anything installed, prefixed or not. A vendored dependency's edge may only land inside `release/`.
 
 **Conflicts:** when two dependents want the same remote at different commits, the script offers three resolutions and never picks silently:
 
@@ -229,6 +239,31 @@ The definition: **any `.gitrepo`-containing folder that isn't announced by a `$r
 > **Note**
 > Option 3 is also the escape hatch for "I structured this like a release dependency, but on second thought it's dev-only." Rename the root entry to drop the prefix and the classification flips — no files moved, though dev-side imports need the matching rename. The reverse promotion is equally a rename.
 
+### Installing one
+
+```bash
+bash <(curl -fsSL https://suede.sh/install/release) --repo owner/some-suede-dependency --dev
+```
+
+`--dev` is option 1 and option 3 at once: the install lands at the repo root under its **own** name — `some-suede-dependency/`, no `$repo$SEP` prefix — so the classification rule reads it as development and `extract` never sees it. Nothing is written to `release/.suede/.dependencies/`.
+
+**Its dependencies are not doubled as yours.** This is the difference that matters, and it follows from the same rule. A release install flattens its whole closure into your root *and your manifest*, because your consumers have to resolve every pin you depend on. A development install has no consumers to inform, so its closure lands unprefixed and unrecorded:
+
+```
+some-suede-dependency/                      ← real folder, no prefix
+its-own-dependency/                         ← likewise, unrecorded
+some-suede-dependency.its-own-dependency    → symlink to ./its-own-dependency
+```
+
+If something already on disk satisfies one of those edges — a release dependency of yours, or a dev dependency installed earlier — the edge points at it and nothing is copied:
+
+```
+app.dockview-svelte-suede/                  ← already yours, a release dependency
+some-suede-dependency.dockview-svelte-suede → symlink to ./app.dockview-svelte-suede
+```
+
+Third-party packages follow the same logic: `devDependencies` and `requirements-dev.txt`, neither of which `extract` publishes.
+
 ---
 
 ## Vendored Release Dependency
@@ -243,6 +278,32 @@ Things to keep in mind once a dependency is vendored:
 - The install script must **report** vendored dependencies it finds, even though there's nothing to install — a subrepo inside a subrepo shouldn't be a surprise discovery.
 - Imports change. Code that referenced `../$repo$SEP$dependency` must be repointed at the new in-`release/` location. [`vendor`](#vendor) prints the files that need this.
 - There's no longer a qualifying root entry, so the classification rule cleanly lands it in step 1.
+
+### Installing one
+
+```bash
+bash <(curl -fsSL https://suede.sh/install/release) --repo owner/some-suede-dependency --vendor
+```
+
+The bytes land at **`release/<name>`** — the top of `release/`, beside the code that imports them, under the dependency's own name rather than a `$repo$SEP` one (the prefix announces a release dependency at the *root*, which this is not). Not somewhere under `release/.suede/`: a leading dot is unrepresentable in a Python import, so anything nested there would be reachable in some languages and not in others.
+
+**Vendoring is transitive, and it has to be.** Vendored code ships whole, so everything it imports has to ship with it — a sibling outside `release/` would reach a consumer as a dangling link. So every pin in the closure is vendored beside it:
+
+```
+release/
+  index.ts                                       →  imports ./some-suede-dependency
+  some-suede-dependency/                         ←  real bytes + .gitrepo
+  its-own-dependency/                            ←  real bytes + .gitrepo
+  some-suede-dependency.its-own-dependency       →  symlink to ./its-own-dependency
+```
+
+That holds **even when the same commit is already installed at your root**: `app.its-own-dependency/` does not ship, so a link to it would be broken by the time a consumer sees it. The two copies are intentional, and `check` fails on the arrangement that avoids them.
+
+Nothing is recorded in `release/.suede/.dependencies/` — there is no pointer to record, the source is right there. Third-party packages *are* merged into your own `package.json` and `requirements.txt`, because the shipped code needs them installable by whoever receives it.
+
+A project with no `release/` directory is refused rather than having one invented for it: with nothing to ship, vendoring means nothing. Install it as a release dependency, or with `--dev`.
+
+To vendor a dependency you **already** installed as a release dependency, use [`vendor`](#vendor) instead — it moves the folder you have (local modifications and all, which is usually the reason you are vendoring) rather than fetching the pin afresh.
 
 ---
 
@@ -324,9 +385,10 @@ Converts a [release dependency](#release-dependency) into a [vendored release de
 
 **Does:**
 
-1. `git mv` the backing folder to a destination inside `release/` (default `release/.suede/vendor/<name>`; accept a `--dest` override).
+1. `git mv` the backing folder to a destination inside `release/` (default `release/<name>`, where `<name>` is the dependency's own name — the `remote` basename, `.git` stripped — which is also what `install --vendor` calls it; accept a `--dest` override).
 2. If the root entry was a symlink, `git rm` it.
 3. `grep -r` across `release/` for references to the old entry name and print them as "files to review for refactoring".
+4. Read the moved dependency's own manifest and name every sibling it asks for that is not now beside it inside `release/`. Those are what [`check`](#what-the-checks-do-and-dont-enforce) reports as escaping edges, and they have to be vendored too.
 
 ### `diff`
 
@@ -361,13 +423,18 @@ Three different comparisons get confused with each other. They have different ve
 | --- | --- | --- | --- |
 | 1 | A dependency's local files vs **its own recorded commit** | **FAIL** | Your pointer is dishonest — you ship a pointer to code that isn't what you built against. |
 | 2 | Your recorded pin vs **what a dependent's manifest asked for** | **INFO** | You took ownership of the resolution. Different commit, different remote, or an entirely hand-written implementation are all legitimate. Surface it in `list`; never fail on it. |
-| 3 | An edge satisfied by a directory that is **not declared as a release dependency of `$repo`** | **FAIL** | This is an implicit dependency — exactly what the flattening rule exists to prevent. |
+| 3 | A **release** dependency's edge satisfied by a directory that is **not declared as a release dependency of `$repo`** | **FAIL** | This is an implicit dependency — exactly what the flattening rule exists to prevent. |
+| 3b | A **vendored** dependency's edge satisfied by a directory **outside `release/`** | **FAIL** | It ships as a link into a directory the consumer never receives. Vendor that one too. |
 
 **Check 3 — the declaration invariant — is the one worth stating precisely:**
 
 > For every entry `N.gitrepo` in every release dependency `D`'s manifest, the sibling `N` must exist, and the directory it resolves to must be the backing folder of some root entry `$repo$SEP X`.
 
 Note what this does **not** compare: not remotes, not commits. It's purely structural — "you didn't resolve anything implicitly." That is what makes check 2 free to be informational. The consumer's declared resolution is authoritative; the check only insists that a resolution _was_ declared.
+
+Note also **whose** manifest it is stated over: a release dependency's. That is the only kind that ships a pointer, so it is the only kind whose resolution a consumer inherits. A development dependency ships nothing and may be satisfied by anything on disk — which is what makes `--dev` installs unprefixed and unrecorded without failing the audit. A vendored dependency ships its own bytes, and check 3b is the same requirement rephrased for it: whatever satisfies its edge has to ship too.
+
+An edge with **no sibling at all** fails whatever the dependent's kind — something imports a path that isn't there.
 
 `check` also warns (not fails) on **dangling entries**: root entries matching `$repo$SEP` that don't resolve or lack a `.gitrepo`. The name signals intent, so silence is the wrong response.
 
