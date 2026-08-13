@@ -449,6 +449,9 @@ class Request:
     target: str = ""  # --target, repo-relative; "" => flat at the repo root
     link_mode: str = "symlink"  # symlink | copy
     commit_suffix: bool = False  # pin the entry name to the commit as well
+    # Name each transitive install after the edge that demands it, so the entry
+    # and the bytes are one thing instead of a folder plus a link.
+    edge_named: bool = False
 
 
 @dataclass(frozen=True)
@@ -480,10 +483,17 @@ class Naming:
     override: Optional[str] = None
     requested: tuple[Pin, ...] = ()
     commit_suffix: bool = False
+    # --edge-named: pin -> the entry name its dependent already asks for. Give
+    # the bytes that name and the edge needs no link, because the entry and the
+    # install are one thing. Nothing was asked for by name, so the requested
+    # pin keeps its own.
+    edge_names: Mapping[Pin, str] = field(default_factory=dict[Pin, str])
 
     def preferred(self, pin: Pin) -> str:
         if self.override and pin in self.requested:
             return self.override
+        if pin not in self.requested and pin in self.edge_names:
+            return self.edge_names[pin]
         name = self.repo + self.sep + pin.name if self.kind == RELEASE_KIND else pin.name
         return name + "-" + pin.short if self.commit_suffix and pin in self.requested else name
 
@@ -1643,6 +1653,7 @@ def _resolve(
         override=request.name,
         requested=request.pins,
         commit_suffix=request.commit_suffix,
+        edge_names=_edge_names(demands) if request.edge_named else {},
     )
     names = Names(declarations.taken_names(world, request.kind))
     declared = declarations.by_remote(world, request.kind)
@@ -1661,6 +1672,20 @@ def _resolve(
             resolution=resolution,
         )
     return resolution
+
+
+def _edge_names(demands: Sequence[Demand]) -> dict[Pin, str]:
+    """The entry name each pin is *first* asked for by.
+
+    Demands arrive in closure order, so the dependent nearest the request wins
+    the folder and everything asking for the same pin later gets the link. The
+    name is the manifest filename verbatim - the one thing that is already
+    fixed, by the dependent's authors, in the dependent's own separator.
+    """
+    names: dict[Pin, str] = {}
+    for demand in demands:
+        names.setdefault(demand.effective, demand.entry_name)
+    return names
 
 
 def _wanted_by_remote(pins: Sequence[Pin]) -> dict[str, list[Pin]]:
@@ -2052,6 +2077,10 @@ def _one_edge(
     world: World, path: str, demand: Demand, resolution: Resolution, layout: Layout
 ) -> tuple[list[Act], list[str]]:
     install = _where(world, resolution.entry_of[demand.effective], layout)
+    if path == install:
+        # `--edge-named` put the bytes where the link would have gone: the
+        # entry the dependent asks for *is* the install.
+        return [], []
     existing = world.entries.get(path)
     if existing is None:
         return [_link(layout, path, install)], []
@@ -2400,9 +2429,11 @@ def _header(world: World, request: Request, evidence: str) -> list[str]:
 
 
 def _layout_note(request: Request) -> str:
-    if request.kind == VENDORED_KIND:
-        return "%s/ (vendored)" % VENDOR_DIR
-    return request.target or "flat (repo root)"
+    where = "%s/ (vendored)" % VENDOR_DIR if request.kind == VENDORED_KIND else (
+        request.target or "flat (repo root)"
+    )
+    return where + ", edge-named (no link where the entry is the install)" if request.edge_named \
+        else where
 
 
 def _separator_note(world: World, evidence: str) -> str:
@@ -3210,6 +3241,12 @@ def _install_parser(
     )
     install.add_argument("--name", help="override the entry name")
     install.add_argument(
+        "--edge-named",
+        action="store_true",
+        help="name each transitive install after the edge that asks for it, so no link is"
+        " needed for it. Halves the entries a deep closure creates; --dev and --vendor only",
+    )
+    install.add_argument(
         "--commit-suffix", action="store_true", help="pin the entry name to the commit too"
     )
     install.add_argument("--target", default="", help="relocate the real install (at your own risk)")
@@ -3305,6 +3342,15 @@ def _request(args: argparse.Namespace) -> Request:
             "--vendor and --target disagree about where the bytes go: vendored code has to"
             " live inside %s/ to ship at all." % RELEASE_DIR
         )
+    if args.edge_named and kind == RELEASE_KIND:
+        # A release install is announced by its name. Named after a dependent's
+        # edge instead, it declares nothing, `check` calls every edge into it
+        # undeclared, and `extract` drops the records on its next run.
+        raise Usage(
+            "--edge-named needs --dev or --vendor. A release dependency is announced by being"
+            " named $repo$SEP<name> at the root - that name is the declaration, so it cannot"
+            " be whatever name a dependent happens to ask for."
+        )
     return Request(
         pins=(_requested_pin(args),),
         kind=kind,
@@ -3312,6 +3358,7 @@ def _request(args: argparse.Namespace) -> Request:
         target=args.target.strip("/"),
         link_mode=args.link_mode,
         commit_suffix=args.commit_suffix,
+        edge_named=args.edge_named,
     )
 
 

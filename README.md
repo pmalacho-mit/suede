@@ -156,6 +156,13 @@ an edge that something already installed can satisfy points there instead of
 being copied. Its npm and PyPI packages go to `devDependencies` and
 `requirements-dev.txt`, neither of which is published.
 
+Add `--edge-named` to halve what a deep closure creates. The ownership rule
+gives you a real folder *and* a link per dependency because the name in a
+shipped manifest has to be backed by bytes — which a dev install has no
+manifest to ship. With the flag, each transitive install simply takes the name
+its dependent asks for (`sweater-vest-suede.dockview-svelte-suede/`), and only a
+*second* dependent wanting the same pin still needs a link.
+
 ```bash
 bash <(curl -fsSL https://suede.sh/install/release) --repo <owner/name> --vendor
 ```

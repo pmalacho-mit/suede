@@ -264,6 +264,23 @@ some-suede-dependency.dockview-svelte-suede → symlink to ./app.dockview-svelte
 
 Third-party packages follow the same logic: `devDependencies` and `requirements-dev.txt`, neither of which `extract` publishes.
 
+#### Fewer entries: `--edge-named`
+
+A closure of five installs plus five edges is ten root entries. [The ownership rule](#the-ownership-rule) is what makes it ten, and its reason — the name that ships in a manifest must be backed by bytes, not by an indirection — does not apply to a dependency that ships no manifest. So `--dev --edge-named` (and `--vendor --edge-named`) names each transitive install after the edge that asks for it, and the entry *is* the install:
+
+```
+sweater-vest-suede/                                        ← requested; keeps its own name
+sweater-vest-suede.browser-control-container-suede/        ← real folders, named by the edge
+sweater-vest-suede.dockview-svelte-suede/
+sweater-vest-suede.programmatic-docker-suede/
+sweater-vest-suede.typescript-cli-suede/
+browser-control-container-suede.programmatic-docker-suede  → symlink to ./sweater-vest-suede.programmatic-docker-suede
+```
+
+Ten entries become six. The one link left is the one links are actually for: a *second* dependent wanting a pin the first already owns. The names are manifest filenames verbatim, so each dependent's own separator is preserved without anything being parsed — the same rule as everywhere else, used as a directory name instead of a link name.
+
+It is refused for release dependencies, where the `$repo$SEP<name>` name is the declaration itself.
+
 ---
 
 ## Vendored Release Dependency
