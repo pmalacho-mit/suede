@@ -170,10 +170,12 @@ doubled as yours, packages into `devDependencies` / `requirements-dev.txt`) and
 closure vendored beside it, since vendored code ships whole). The two are
 mutually exclusive, and `--vendor` refuses `--target`.
 
-With either of those, `--edge-named` names each transitive install after the
-edge that asks for it instead of creating a folder plus a link — half the
-entries for a deep closure. It is refused for release installs, where the
-`$repo$SEP<name>` name *is* the declaration.
+Both name each transitive install after the edge that asks for it, so the entry
+*is* the install and a closure costs one entry per dependency instead of a
+folder plus a link. Only a second dependent wanting the same pin gets a link.
+`--root-owned` restores the release arrangement (own name, link per edge); a
+release install is always root-owned, since there the `$repo$SEP<name>` name
+*is* the declaration.
 
 Useful install flags: `--dry-run`, `--plan-json`, `--yes` (skip the prompt —
 **use this in non-interactive runs**), `--commit`, `--name`, `--target`,

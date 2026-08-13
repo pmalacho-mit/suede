@@ -151,17 +151,10 @@ bash <(curl -fsSL https://suede.sh/install/release) --repo <owner/name> --dev
 A **development dependency** — a test harness, a fixture, an example app.
 Installed at the root under its own name with no `$repo.` prefix, so the
 classification rule reads it as dev and `extract` never ships it. Its own
-dependencies are installed the same way rather than being doubled as yours, and
-an edge that something already installed can satisfy points there instead of
-being copied. Its npm and PyPI packages go to `devDependencies` and
-`requirements-dev.txt`, neither of which is published.
-
-Add `--edge-named` to halve what a deep closure creates. The ownership rule
-gives you a real folder *and* a link per dependency because the name in a
-shipped manifest has to be backed by bytes — which a dev install has no
-manifest to ship. With the flag, each transitive install simply takes the name
-its dependent asks for (`sweater-vest-suede.dockview-svelte-suede/`), and only a
-*second* dependent wanting the same pin still needs a link.
+dependencies are installed rather than doubled as yours, and an edge that
+something already installed can satisfy points there instead of being copied.
+Its npm and PyPI packages go to `devDependencies` and `requirements-dev.txt`,
+neither of which is published.
 
 ```bash
 bash <(curl -fsSL https://suede.sh/install/release) --repo <owner/name> --vendor
@@ -173,6 +166,15 @@ everything it depends on: vendored code ships whole, so a sibling outside
 `release/` would reach your consumers as a dangling link. That holds even when
 you already have the same commit installed at the root, because the root copy
 does not ship. Nothing is recorded — there is no pointer to record.
+
+Both kinds create **one entry per dependency, not two**. The ownership rule
+above — a folder plus a link each — exists so the name in a shipped manifest is
+backed by real bytes, and neither kind ships such a name. So a transitive
+install simply takes the name its dependent asks for
+(`sweater-vest-suede.dockview-svelte-suede/`), and only a *second* dependent
+wanting the same pin needs a link. Pass `--root-owned` for the release
+arrangement instead, when you want a name that doesn't depend on who asked for
+it.
 
 ### Third-party packages
 

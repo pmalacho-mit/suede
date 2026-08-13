@@ -43,6 +43,8 @@
 
 **The root owns the bytes; dependents get links.** One real install per distinct pin, named `$repo$SEP<name>`, at the repo root. Every dependent edge `<dependent>$SEP<name>` is a relative symlink to it. Full rationale in the design doc.
 
+That is the rule for **release** installs, which is where it earns its cost; `--dev` and `--vendor` default to the dependent owning the bytes instead. See [Who owns the bytes](#who-owns-the-bytes-and-the-naming-that-follows).
+
 **The separator belongs to the dependent.** `X$SEP Y` is read by `X`'s source, whose imports contain the literal `../X$SEP Y`. So:
 
 | You need | Read it from |
@@ -62,9 +64,9 @@ The three kinds in [`DEPENDENCIES-OF-DEPENDENCIES.md`](./DEPENDENCIES-OF-DEPENDE
 
 | | `release` (default) | `development` (`--dev`) | `vendored` (`--vendor`) |
 | --- | --- | --- | --- |
-| Entry name | `$repo$SEP<name>` | `<name>` | `<name>` |
+| Entry name | `$repo$SEP<name>` | the edge that asks for it, else `<name>` | the edge that asks for it, else `<name>` |
 | Real install at | repo root (or `--target`) | repo root | `release/<name>` |
-| Edge entries | beside the dependent (and at the root under `--target`) | beside the dependent | beside the dependent, inside `release/` only |
+| Edge entries | beside the dependent (and at the root under `--target`) | none, unless a second dependent wants the same pin | the same, inside `release/` only |
 | May be satisfied by | a root entry declared as a release dependency | anything already installed, prefixed or not | only what is already vendored inside `release/` |
 | Recorded in `release/.suede/.dependencies/` | the whole closure | nothing | nothing |
 | npm / PyPI packages merge into | `dependencies`, `requirements.txt` | `devDependencies`, `requirements-dev.txt` | `dependencies`, `requirements.txt` |
@@ -76,25 +78,29 @@ Four consequences worth stating on their own:
 - **`--vendor` vendors transitively.** Vendored code ships whole, so a sibling outside `release/` would reach a consumer as a dangling link. Every pin in a vendored closure is therefore vendored beside it, even when the same commit is already installed at the root — the root copy does not ship.
 - **`--vendor` needs somewhere to ship.** No `release/` directory is a precondition failure, not an invitation to create one.
 
-### `--edge-named`
+### Who owns the bytes, and the naming that follows
 
-The ownership rule — *the root owns the bytes, dependents get links* — exists so that **the name shipped in a manifest is backed by real bytes** rather than by an indirection into a folder named after a different project. A `--dev` or `--vendor` install ships no such name, so that reason is absent, and the flag drops the indirection:
+The ownership rule — *the root owns the bytes, dependents get links* — exists so that **the name shipped in a manifest is backed by real bytes** rather than by an indirection into a folder named after a different project. A release install is bound by it. A `--dev` or `--vendor` install ships no such name, so the rule buys them nothing and costs an entry per edge. **Both therefore default to the dependent owning the bytes:**
 
-> Name each transitive install after the **first edge that demands it**, and the entry the dependent asks for *is* the install. Only a second dependent wanting the same pin still needs a link.
+> Name each transitive install after the **first edge that demands it**, so the entry the dependent asks for *is* the install. Only a second dependent wanting the same pin still needs a link.
 
 ```
-                        default                     --edge-named
-  install   sweater-vest-suede            sweater-vest-suede
-  install   dockview-svelte-suede         sweater-vest-suede.dockview-svelte-suede
-  link      sweater-vest-suede.dockview-svelte-suede -> ./dockview-svelte-suede
+                 --dev (default)                       --dev --root-owned
+  install   sweater-vest-suede                    sweater-vest-suede
+  install   sweater-vest-suede.dockview-suede     dockview-suede
+  link                                            sweater-vest-suede.dockview-suede -> ./dockview-suede
 ```
 
-Four properties hold it together:
+Four properties hold the default together:
 
 - **The name is the manifest filename, verbatim.** It is already fixed, by the dependent's authors, in the dependent's own separator — which is exactly what makes it usable as a directory name here. Nothing is parsed or assembled.
 - **What was requested keeps its own name.** Nothing asked for it by name, so there is no edge name to take. `--name` still overrides it.
 - **First demand in closure order wins the folder.** Closure order is breadth-first from the request, so the dependent nearest the request owns the bytes and later claimants get the link — deterministic, and the same on every re-run.
-- **Refused for release installs.** There, the `$repo$SEP<name>` name *is* the declaration: named after some dependent's edge instead it declares nothing, check 3 calls every edge into it undeclared, and `extract` drops the records on its next run.
+- **A release install never takes an edge name.** There, the `$repo$SEP<name>` name *is* the declaration: named after some dependent's edge instead it declares nothing, check 3 calls every edge into it undeclared, and `extract` drops the records on its next run. `--root-owned` is accepted there and does nothing, because it describes what already happens.
+
+**`--root-owned` restores the release arrangement** for a `--dev` or `--vendor` install: one install per pin under the dependency's own name, and an entry of its own for every edge. Reach for it when you want a canonical, dependent-independent name — because you import a transitive dependency directly yourself, or expect to promote it later.
+
+Either arrangement is read correctly on a later run, so **a tree written one way is not disturbed by a run using the other**: an install that already satisfies a pin is reused wherever it sits and under whatever name, and naming only decides what a *new* install is called.
 
 ---
 
@@ -289,9 +295,11 @@ suede install --gitrepo <path|->  [options]
                               and all into release/<name>, with its own
                               dependencies vendored beside it
 
-  --edge-named                name each transitive install after the edge that
-                              asks for it, so no link is needed for it
-                              (--dev / --vendor only)
+  --root-owned                install each dependency under its own name and
+                              give every edge a link, the way a release
+                              dependency must be. --dev and --vendor otherwise
+                              name a transitive install after the edge that
+                              asks for it, which needs no link
 
   --name <entry>              override the derived entry name
   --separator <str>           override $SEP for this project's own entries

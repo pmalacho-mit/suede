@@ -260,9 +260,8 @@ class DevelopmentInstall(Fixture):
     def test_its_own_dependencies_are_not_doubled_as_this_projects(self):
         self.install("sweater", "--dev")
 
-        self.assertTrue(self.exists("dockview", "index.ts"))
+        self.assertTrue(self.exists("sweater.dockview", "index.ts"))
         self.assertFalse(self.exists("app.dockview"))
-        self.assertEqual(os.readlink(self.path("sweater.dockview")), "./dockview")
 
     def test_a_dependency_already_installed_is_reused_rather_than_copied(self):
         self.install("dockview")
@@ -291,7 +290,7 @@ class DevelopmentInstall(Fixture):
         rows = suede.listing(suede.scan(self.consumer, "app", ".", "flag"))
 
         self.assertEqual(sorted((row.kind, row.path) for row in rows),
-                         [("development", "dockview"), ("development", "sweater")])
+                         [("development", "sweater"), ("development", "sweater.dockview")])
 
     def test_a_second_run_changes_nothing(self):
         self.install("sweater", "--dev")
@@ -302,49 +301,40 @@ class DevelopmentInstall(Fixture):
         self.assertEqual(self.status(), before)
 
 
-class EdgeNamedInstall(Fixture):
-    """`--edge-named`: the bytes take the name the dependent asks for, so a
-    deep closure stops creating a folder *and* a link for every pin."""
+class EdgeNaming(Fixture):
+    """What `--dev` and `--vendor` do by default: the bytes take the name the
+    dependent asks for, so a deep closure stops creating a folder *and* a link
+    for every pin."""
 
     release = True
 
     def entries(self):
+        """Everything the install put at the root. Hidden entries are suede's
+        own bookkeeping (`.suede/.dependencies/separator`), not dependencies."""
         return sorted(name for name in os.listdir(self.consumer)
-                      if name not in (".git", "src", "release"))
+                      if not name.startswith(".") and name not in ("src", "release"))
 
     def test_the_install_is_the_entry_its_dependent_imports(self):
-        self.assertEqual(self.install("sweater", "--dev", "--edge-named"), suede.Exit.OK)
+        self.assertEqual(self.install("sweater", "--dev"), suede.Exit.OK)
 
         self.assertTrue(os.path.isdir(self.path("sweater.dockview")))
         self.assertFalse(os.path.islink(self.path("sweater.dockview")))
         self.assertTrue(self.exists("sweater.dockview", "index.ts"))
 
     def test_no_second_entry_is_created_for_it(self):
-        self.install("sweater", "--dev", "--edge-named")
+        self.install("sweater", "--dev")
 
         self.assertEqual(self.entries(), ["sweater", "sweater.dockview"])
 
-    def test_the_same_tree_without_the_flag_creates_twice_as_many(self):
-        self.install("sweater", "--dev")
+    def test_root_owned_creates_twice_as_many(self):
+        self.install("sweater", "--dev", "--root-owned")
 
         self.assertEqual(self.entries(), ["dockview", "sweater", "sweater.dockview"])
-
-    def test_the_installed_tree_passes_check(self):
-        self.install("sweater", "--dev", "--edge-named")
-
-        self.assertEqual(self.suede("check"), suede.Exit.OK)
-
-    def test_a_second_run_changes_nothing(self):
-        self.install("sweater", "--dev", "--edge-named")
-        before = self.status()
-
-        self.assertEqual(self.install("sweater", "--dev", "--edge-named"), suede.Exit.OK)
-
-        self.assertEqual(self.status(), before)
+        self.assertEqual(os.readlink(self.path("sweater.dockview")), "./dockview")
 
     def test_a_second_dependent_still_gets_a_link(self):
         """Only one dependent can own the folder; the rest are why links exist."""
-        code = self.install("bundle", "--dev", "--edge-named", "--on-conflict", "unify-newest")
+        code = self.install("bundle", "--dev", "--on-conflict", "unify-newest")
 
         self.assertEqual(code, suede.Exit.OK)
         self.assertTrue(os.path.isdir(self.path("sweater.dockview")))
@@ -354,12 +344,27 @@ class EdgeNamedInstall(Fixture):
             ["bundle", "bundle.renderer", "bundle.sweater", "renderer.dockview", "sweater.dockview"],
         )
 
-    def test_a_release_install_refuses_it(self):
+    def test_a_release_install_is_never_edge_named(self):
         """The `$repo$SEP` name is the declaration; it cannot be a name some
         dependent happened to choose."""
-        self.assertEqual(self.install("sweater", "--edge-named"), suede.Exit.USAGE)
+        self.assertEqual(self.install("sweater"), suede.Exit.OK)
 
-        self.assertEqual(self.status(), "")
+        self.assertEqual(self.entries(), ["app.dockview", "app.sweater", "sweater.dockview"])
+        self.assertEqual(os.readlink(self.path("sweater.dockview")), "./app.dockview")
+
+    def test_root_owned_is_accepted_and_changes_nothing_for_a_release_install(self):
+        self.assertEqual(self.install("sweater", "--root-owned"), suede.Exit.OK)
+
+        self.assertEqual(self.entries(), ["app.dockview", "app.sweater", "sweater.dockview"])
+
+    def test_a_root_owned_tree_is_left_alone_on_a_later_default_run(self):
+        """Flipping the default must not make an existing tree look stale."""
+        self.install("sweater", "--dev", "--root-owned")
+        before = self.status()
+
+        self.assertEqual(self.install("sweater", "--dev"), suede.Exit.OK)
+
+        self.assertEqual(self.status(), before)
 
 
 class VendoredInstall(Fixture):
@@ -371,12 +376,18 @@ class VendoredInstall(Fixture):
         self.assertEqual(self.install("sweater", "--vendor"), suede.Exit.OK)
 
         self.assertTrue(self.exists("release", "sweater", "index.ts"))
-        self.assertTrue(self.exists("release", "dockview", "index.ts"))
+        self.assertTrue(self.exists("release", "sweater.dockview", "index.ts"))
         self.assertEqual(self.pin_of("release", "sweater", ".gitrepo").commit,
                          self.nodes["sweater"].commits[-1])
 
-    def test_the_edge_is_a_sibling_inside_release_and_nowhere_else(self):
+    def test_the_sibling_it_imports_is_inside_release_and_nowhere_else(self):
         self.install("sweater", "--vendor")
+
+        self.assertTrue(os.path.isdir(self.path("release", "sweater.dockview")))
+        self.assertFalse(self.exists("sweater.dockview"))
+
+    def test_root_owned_puts_the_link_inside_release_and_nowhere_else(self):
+        self.install("sweater", "--vendor", "--root-owned")
 
         self.assertEqual(os.readlink(self.path("release", "sweater.dockview")), "./dockview")
         self.assertTrue(self.exists("release", "sweater.dockview", "index.ts"))
@@ -400,7 +411,7 @@ class VendoredInstall(Fixture):
         rows = suede.listing(suede.scan(self.consumer, "app", ".", "flag"))
 
         self.assertEqual(sorted((row.kind, row.path) for row in rows),
-                         [("vendored", "release/dockview"), ("vendored", "release/sweater")])
+                         [("vendored", "release/sweater"), ("vendored", "release/sweater.dockview")])
 
     def test_diff_does_not_police_vendored_code(self):
         """Vendoring exists so a dependency *can* diverge from its pin."""
@@ -425,8 +436,8 @@ class VendoredInstall(Fixture):
         self.install("sweater", "--vendor")
 
         self.assertTrue(self.exists("app.dockview", "index.ts"))
-        self.assertTrue(self.exists("release", "dockview", "index.ts"))
-        self.assertFalse(os.path.islink(self.path("release", "dockview")))
+        self.assertTrue(self.exists("release", "sweater.dockview", "index.ts"))
+        self.assertFalse(os.path.islink(self.path("release", "sweater.dockview")))
 
     def test_target_is_refused_because_the_destination_is_not_negotiable(self):
         self.assertEqual(self.install("sweater", "--vendor", "--target", "deps"), suede.Exit.USAGE)
