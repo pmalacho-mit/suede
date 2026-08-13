@@ -76,6 +76,26 @@ Four consequences worth stating on their own:
 - **`--vendor` vendors transitively.** Vendored code ships whole, so a sibling outside `release/` would reach a consumer as a dangling link. Every pin in a vendored closure is therefore vendored beside it, even when the same commit is already installed at the root — the root copy does not ship.
 - **`--vendor` needs somewhere to ship.** No `release/` directory is a precondition failure, not an invitation to create one.
 
+### `--edge-named`
+
+The ownership rule — *the root owns the bytes, dependents get links* — exists so that **the name shipped in a manifest is backed by real bytes** rather than by an indirection into a folder named after a different project. A `--dev` or `--vendor` install ships no such name, so that reason is absent, and the flag drops the indirection:
+
+> Name each transitive install after the **first edge that demands it**, and the entry the dependent asks for *is* the install. Only a second dependent wanting the same pin still needs a link.
+
+```
+                        default                     --edge-named
+  install   sweater-vest-suede            sweater-vest-suede
+  install   dockview-svelte-suede         sweater-vest-suede.dockview-svelte-suede
+  link      sweater-vest-suede.dockview-svelte-suede -> ./dockview-svelte-suede
+```
+
+Four properties hold it together:
+
+- **The name is the manifest filename, verbatim.** It is already fixed, by the dependent's authors, in the dependent's own separator — which is exactly what makes it usable as a directory name here. Nothing is parsed or assembled.
+- **What was requested keeps its own name.** Nothing asked for it by name, so there is no edge name to take. `--name` still overrides it.
+- **First demand in closure order wins the folder.** Closure order is breadth-first from the request, so the dependent nearest the request owns the bytes and later claimants get the link — deterministic, and the same on every re-run.
+- **Refused for release installs.** There, the `$repo$SEP<name>` name *is* the declaration: named after some dependent's edge instead it declares nothing, check 3 calls every edge into it undeclared, and `extract` drops the records on its next run.
+
 ---
 
 ## 3. Install algorithm
@@ -268,6 +288,10 @@ suede install --gitrepo <path|->  [options]
   --vendor                    install as a vendored release dependency: source
                               and all into release/<name>, with its own
                               dependencies vendored beside it
+
+  --edge-named                name each transitive install after the edge that
+                              asks for it, so no link is needed for it
+                              (--dev / --vendor only)
 
   --name <entry>              override the derived entry name
   --separator <str>           override $SEP for this project's own entries

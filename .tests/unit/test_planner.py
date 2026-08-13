@@ -425,6 +425,86 @@ class DevelopmentInstall(unittest.TestCase):
         self.assertTrue(plan.blockers)
 
 
+class EdgeNamedInstall(unittest.TestCase):
+    """`--edge-named`. The ownership rule exists so the name that ships in a
+    manifest is backed by real bytes; a development install ships no manifest,
+    so the bytes can simply take the name the dependent asks for and the link
+    disappears."""
+
+    def plan(self, tree=None, manifests=None, kind=suede.DEVELOPMENT_KIND, pins=(A,)):
+        return suede.plan(
+            tree or world(),
+            request(*pins, kind=kind, edge_named=True),
+            suede.Policy(),
+            manifests if manifests is not None else {A: manifest({"A.B": B}), B: manifest()},
+        )
+
+    def test_a_transitive_install_takes_the_name_its_dependent_asks_for(self):
+        plan = self.plan()
+
+        self.assertEqual(entries_of(plan, "install"), ["A", "A.B"])
+        self.assertEqual(ops(plan, "link"), [])
+
+    def test_what_was_requested_keeps_its_own_name(self):
+        """Nothing asked for it by name, so there is no edge name to take."""
+        plan = self.plan()
+
+        self.assertEqual([act.entry for act in ops(plan, "install") if act.pin == A], ["A"])
+
+    def test_the_separator_is_the_dependents_own_verbatim(self):
+        """It is the manifest filename, not a name suede assembles - which is
+        the whole reason this can replace the link at all."""
+        manifests = {A: manifest({"A__B": B}), B: manifest()}
+
+        plan = self.plan(manifests=manifests)
+
+        self.assertEqual(entries_of(plan, "install"), ["A", "A__B"])
+
+    def test_a_second_dependent_gets_the_link(self):
+        """A → B and A → D, both wanting C. The first demand in closure order
+        owns the folder; the other still needs an entry of its own."""
+        manifests = {
+            A: manifest({"A.B": B, "A.D": D}),
+            B: manifest({"B.C": C}),
+            D: manifest({"D.C": C}),
+            C: manifest(),
+        }
+
+        plan = self.plan(manifests=manifests)
+
+        self.assertEqual(entries_of(plan, "install"), ["A", "A.B", "A.D", "B.C"])
+        self.assertEqual(entries_of(plan, "link"), ["D.C"])
+        self.assertEqual([act.target for act in ops(plan, "link")], ["./B.C"])
+
+    def test_it_halves_what_a_chain_creates(self):
+        manifests = {A: manifest({"A.B": B}), B: manifest({"B.C": C}), C: manifest()}
+
+        plan = self.plan(manifests=manifests)
+
+        self.assertEqual(entries_of(plan, "install"), ["A", "A.B", "B.C"])
+        self.assertEqual(ops(plan, "link"), [])
+
+    def test_an_already_installed_dependency_is_still_reused(self):
+        tree = world(installs={"app.B": B}, records={"app.B": B})
+
+        plan = self.plan(tree)
+
+        self.assertEqual(entries_of(plan, "install"), ["A"])
+        self.assertEqual(entries_of(plan, "link"), ["A.B"])
+        self.assertEqual([act.target for act in ops(plan, "link")], ["./app.B"])
+
+    def test_a_second_run_changes_nothing(self):
+        satisfied = world(installs={"A": A, "A.B": B})
+
+        self.assertEqual(self.plan(satisfied).acts, ())
+
+    def test_vendored_installs_take_edge_names_too(self):
+        plan = self.plan(kind=suede.VENDORED_KIND)
+
+        self.assertEqual({act.dest for act in ops(plan, "install")}, {"release/A", "release/A.B"})
+        self.assertEqual(ops(plan, "link"), [])
+
+
 class VendoredInstall(unittest.TestCase):
     """`--vendor`. The bytes ship, so everything the bytes need ships with
     them - a vendored dependency's own dependencies are vendored beside it."""
