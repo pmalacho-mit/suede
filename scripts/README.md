@@ -79,6 +79,28 @@ It replaced three scripts (`init-release-core.sh`, `init-main-core.sh`,
 `init-release-subrepo.sh`); the first is gone entirely, since nothing needs to
 be cloned onto the `release` branch any more.
 
+### `actions/push-main.sh`
+
+Pushes the current branch to `main`, replaying onto whatever landed there first
+instead of failing. Used by every workflow step in this repository that writes
+to `main`.
+
+```bash
+./scripts/actions/push-main.sh [BRANCH]        # BRANCH defaults to main
+```
+
+One push to `main` starts several workflows at once, more than one of them
+writes back, and they check out the same commit within a second of each other —
+so the one that finishes second is pushing against a tip that has moved, and git
+rejects it. What these jobs add is bookkeeping (a `.gitrepo` pointer, a
+generated README block) authored against a commit that has nothing to do with
+whatever landed underneath, so replaying it onto the new tip is exactly right
+and leaves `main` linear. A rebase *conflict* is a real disagreement rather than
+a scheduling accident: it aborts and fails the job.
+
+`PUSH_ATTEMPTS` (default 5) caps the retries so a push that can never succeed
+fails rather than spinning until the runner times out.
+
 ## `create/`
 
 ### `create/dependency.sh`

@@ -1,8 +1,12 @@
 name: Check deploy token expiry
 
+# Deliberately NOT on push. The banner carries a "last checked" date, so it
+# changes on the first push of every UTC day whether or not the token status
+# did — and that commit lands on main while the other workflows that same push
+# started are still running, taking the tip out from under them. A weekly check
+# is what the banner actually reports; anything more often was churn that only
+# ever raced.
 on:
-  push:
-    branches: [main]
   schedule:
     - cron: '0 9 * * 1'   # Mondays, 09:00 UTC
   workflow_dispatch:
@@ -10,12 +14,22 @@ on:
 permissions:
   contents: write          # to commit the README update
 
+# Shared with every other workflow that writes to main (see
+# propagate-changes.yml). Nothing should overlap this now that the push trigger
+# is gone, but a Monday run and a manual dispatch can still coincide.
+concurrency:
+  group: writes-to-main
+  cancel-in-progress: false
+
 jobs:
   token-expiry:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        # Full history: push-main.sh rebases onto whatever landed first, and a
+        # shallow clone may not have the merge base to replay against.
+        with: { fetch-depth: 0 }
 
       - name: Build status banner and update README
         env:
@@ -73,5 +87,5 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add README.md
             git commit -m "docs: update deploy-token status banner"
-            git push
+            ./scripts/actions/push-main.sh
           fi

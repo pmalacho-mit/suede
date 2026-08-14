@@ -11,10 +11,21 @@ on:
       - 'dependency/release/template/**'
       - 'dependency/release/workflows/**'
       - 'sites/suede.sh/**'
+  # A failed run leaves main's pointer behind the branch it already pushed. The
+  # next push under one of those paths would reconcile it, but there may not be
+  # one for weeks, so allow the sync to be re-driven on its own. `detect` reads
+  # `github.event.before`, which a dispatch does not set; it already falls back
+  # to the parent commit.
+  workflow_dispatch:
 
-# Serialize runs so two pushes don't race on `git push` to main.
+# Serialize runs so two pushes don't race on `git push` to main. The group is
+# shared with every other workflow that writes to main (see token-expiry.yml):
+# a group is repo-wide, not per-workflow, so naming it after the resource rather
+# than the workflow is what keeps two *different* workflows off it at once.
+# Belt and braces with push-main.sh, which handles the writers this cannot
+# serialize — a person pushing while a run is in flight.
 concurrency:
-  group: propagate-changes
+  group: writes-to-main
   cancel-in-progress: false
 
 permissions:
@@ -72,7 +83,7 @@ jobs:
           source ~/.git-subrepo/.rc
           set -euo pipefail
           ./scripts/push.sh --internal
-          git push
+          ./scripts/actions/push-main.sh
 
   # ── Per involved variant, reconcile suede's template subrepo with the external
   #    template repo in BOTH directions, then re-vendor it back into suede. Three
@@ -128,7 +139,7 @@ jobs:
           git config url."https://x-access-token:${PAT}@github.com/${TEMPLATE_REPO}".insteadOf  "https://github.com/${TEMPLATE_REPO}"
           git config url."https://x-access-token:${GH_TOKEN}@github.com/${SUEDE_REPO}".insteadOf "https://github.com/${SUEDE_REPO}"
           git subrepo push dependency/${{ matrix.variant }}/template   # -> template repo (PAT)
-          git push                                                     # -> suede main (GITHUB_TOKEN)
+          ./scripts/actions/push-main.sh                               # -> suede main (GITHUB_TOKEN)
 
       # 2) Inside the template repo, refresh its vendored workflows (a NESTED
       #    subrepo suede cannot push from here) from suede's workflows branch.
@@ -159,4 +170,4 @@ jobs:
           source ~/.git-subrepo/.rc
           set -euo pipefail
           git subrepo pull dependency/${{ matrix.variant }}/template
-          git push
+          ./scripts/actions/push-main.sh
