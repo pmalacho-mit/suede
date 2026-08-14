@@ -62,6 +62,7 @@ VENDOR_DIR = RELEASE_DIR
 LEGACY_MANIFEST_DIR = ".dependencies"
 SEPARATOR_FILE = os.path.join(MANIFEST_DIR, "separator")
 GITREPO = ".gitrepo"
+GIT_DIR = ".git"
 RELEASE_BRANCH = "release"
 SHORT_SHA = 7
 
@@ -130,7 +131,7 @@ SSH_ATTEMPT = "ssh -o BatchMode=yes -o ConnectTimeout=5"
 CACHE_DIR = os.path.join(".git", "suede-cache")
 CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 
-NEVER_WALK = (".git", "node_modules")
+NEVER_WALK = (GIT_DIR, "node_modules")
 
 # Prompts go here, never to stdin: the bootstrap pipes a .gitrepo into stdin.
 TERMINAL = "/dev/tty"
@@ -1063,12 +1064,30 @@ def _walk_outside_release(root: str) -> Iterable[str]:
     """Yields candidate directories, never descending into an install: what
     lives inside one is that dependency's business, not ours."""
     for directory, subdirs, _ in os.walk(root):
-        subdirs[:] = sorted(d for d in subdirs if d not in NEVER_WALK)
+        subdirs[:] = _walkable(directory, subdirs)
         if directory == root:
             subdirs[:] = [d for d in subdirs if d != RELEASE_DIR]
         elif os.path.isfile(os.path.join(directory, GITREPO)):
             subdirs[:] = []
             yield directory
+
+
+def _walkable(directory: str, subdirs: Sequence[str]) -> list[str]:
+    return sorted(
+        name
+        for name in subdirs
+        if name not in NEVER_WALK and not _is_checkout(os.path.join(directory, name))
+    )
+
+
+def _is_checkout(directory: str) -> bool:
+    """A git checkout of its own inside the tree: a clone, a submodule, or a
+    worktree parked under `.worktrees/`. Its files are the same files, seen a
+    second time - walk in and every install is found twice, so `list` doubles
+    and `check` reports every finding twice. CI clones clean and never sees it;
+    the person running `check` locally does. A subrepo carries a `.gitrepo` and
+    never a `.git`, so this prunes no dependency."""
+    return os.path.exists(os.path.join(directory, GIT_DIR))
 
 
 def _read_install(root: str, directory: str) -> Optional[Install]:
@@ -1087,7 +1106,7 @@ def _find_vendored(root: str) -> dict[str, Install]:
         return {}
     found: dict[str, Install] = {}
     for directory, subdirs, _ in os.walk(release):
-        subdirs[:] = sorted(d for d in subdirs if d not in NEVER_WALK)
+        subdirs[:] = _walkable(directory, subdirs)
         # `release/.gitrepo` is the pointer for release/ itself - the folder
         # published to the release branch - not a dependency vendored into it.
         if directory == release:

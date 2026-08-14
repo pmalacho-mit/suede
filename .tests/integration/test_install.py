@@ -531,6 +531,24 @@ class Vendoring(Fixture):
         self.assertEqual(world.installs, {})
 
 
+class NestedCheckouts(Fixture):
+    """A second checkout of the same repository living inside it - a worktree
+    under `.worktrees/`, a stray clone - holds the same installs. Scanning it
+    finds each of them a second time, at a path nobody declared."""
+
+    def test_a_worktree_inside_the_repo_is_not_scanned(self):
+        self.install("sweater", "--commit")
+        make_graph.git(
+            "worktree", "add", "--quiet", "--detach",
+            os.path.join(".worktrees", "spike"), cwd=self.consumer,
+        )
+
+        world = suede.scan(self.consumer, "app", ".", "flag")
+
+        self.assertEqual(sorted(world.installs), ["app.dockview", "app.sweater"])
+        self.assertEqual(suede.check(world), ())
+
+
 class UnbornHead(unittest.TestCase):
     def test_refuses_to_install_before_the_first_commit(self):
         directory = tempfile.mkdtemp(prefix="suede-test-")

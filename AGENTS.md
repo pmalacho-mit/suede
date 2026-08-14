@@ -297,10 +297,25 @@ implicitly — and stays informational about *which* commit you chose.
 | Code | Level | Meaning |
 | --- | --- | --- |
 | `missing-edge` | FAIL | A dependency expects a sibling that is absent or dangling. Install it, or declare your own resolution at the root. |
-| `undeclared-edge` | FAIL | An edge resolves to a folder no root entry declares. That is an implicit dependency — give it a root entry. |
+| `undeclared-edge` | FAIL | A **release** dependency's edge resolves to a folder no root entry declares. That is an implicit dependency — give it a root entry. |
+| `escaping-edge` | FAIL | A **vendored** dependency's edge resolves outside `release/`. It ships as a broken link — vendor that dependency too. |
 | `dangling-entry` | WARN | An entry named like a release dependency that does not resolve or has no `.gitrepo`. Unfinished install or leftover. |
 | `case-collision` | WARN | Entries differing only by case. One entry on macOS, two on Linux CI. |
 | `remote-differs`, `pin-differs` | INFO | You resolved a dependency differently than it asked for. Legitimate — you took ownership. Never a failure. |
+
+Which rule an edge is held to depends on the kind of the dependent that asks
+for it, because the three kinds ship differently. Only a release dependency
+ships a pointer, so only its resolutions have to be declared; a **development
+dependency ships nothing and may be satisfied by anything on disk** — its own
+dependencies are not doubled as yours, and demanding root entries for them
+would put dev-only tooling in your manifest. `missing-edge` binds all three: a
+sibling that is not there breaks dev tooling exactly as it breaks a shipped
+dependency.
+
+A second checkout of the repository inside the repository — a `git worktree`
+under `.worktrees/`, a stray clone — is skipped rather than walked. Its files
+are the same files, so scanning it would report every install and every finding
+twice.
 
 Exit codes, for scripting: `0` success, `2` usage, `3` precondition (includes a
 blocked package merge), `4` unresolved conflict, `5` `check` found a FAIL.

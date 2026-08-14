@@ -13,6 +13,7 @@ from support import manifest, pin, request, suede, world
 B = pin("B", "b")
 C = pin("C", "c")
 C_OTHER = pin("C", "9")
+D = pin("D", "d")
 LEGACY = suede.LEGACY_MANIFEST_DIR
 
 
@@ -98,6 +99,29 @@ class WhoTheInvariantBinds(unittest.TestCase):
         )
 
         self.assertEqual(levels(suede.check(tree), "undeclared-edge"), ["FAIL"])
+
+    def test_the_invariant_reaches_a_release_dependency_two_hops_in(self):
+        """A release dependency's dependency ships too, so it is a release
+        dependency itself and carries the invariant onward: an implicit
+        resolution behind it is no more shippable for being one hop further."""
+        tree = world(
+            installs={"app.B": B, "app.C": C, "vendor/D": D},
+            links={"B.C": "app.C", "C.D": "vendor/D"},
+            edges=[("app.B", "B.C", C), ("app.C", "C.D", D)],
+        )
+
+        findings = suede.check(tree)
+
+        self.assertEqual(levels(findings, "undeclared-edge"), ["FAIL"])
+        self.assertEqual([f.where for f in findings if f.code == "undeclared-edge"], ["C.D"])
+
+    def test_a_development_dependency_is_still_held_to_its_siblings_existing(self):
+        """Exempt from the declaration invariant, not from resolution: a
+        dangling sibling breaks dev tooling exactly as it breaks a shipped
+        dependency."""
+        tree = world(installs={"sweater": B}, edges=[("sweater", "sweater.dockview", C)])
+
+        self.assertEqual(levels(suede.check(tree), "missing-edge"), ["FAIL"])
 
 
 class MissingEdges(unittest.TestCase):
