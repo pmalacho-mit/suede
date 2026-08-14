@@ -28,7 +28,24 @@ setup() {
   git subrepo clone --branch=release "$BARE" release >/dev/null
   git subrepo clone --branch=dependency/release/core "$LIB" release/.suede/core >/dev/null
   vendor_workflows_as_a_template_would
+  install_a_dependency_that_carries_its_own_core
   cp "$SYNC" .suede/core/sync.sh && git add -A && git commit --quiet -m "vendor sync.sh"
+}
+
+# An installed suede dependency ships `.suede/core` and `.github/workflows` of
+# its own, each a subrepo of this same library. They are the dependency's, not
+# this repository's, and pulling one would make it diverge from the commit its
+# .gitrepo names - which is exactly what the publish guard refuses.
+install_a_dependency_that_carries_its_own_core() {
+  local dep="app.some-suede"
+  mkdir -p "$dep/.suede/core" "$dep/.github/workflows"
+  printf '[subrepo]\n\tremote = %s\n\tbranch = release\n\tcommit = %s\n' \
+    "$BARE" "$(git rev-parse HEAD)" > "$dep/.gitrepo"
+  printf '[subrepo]\n\tremote = %s\n\tbranch = dependency/release/core\n\tcommit = %s\n' \
+    "$LIB" "$(git -C "$LIBWORK" rev-parse dependency/release/core)" > "$dep/.suede/core/.gitrepo"
+  printf '[subrepo]\n\tremote = %s\n\tbranch = dependency/release/workflows\n\tcommit = %s\n' \
+    "$LIB" "$(git -C "$LIBWORK" rev-parse dependency/release/workflows)" > "$dep/.github/workflows/.gitrepo"
+  printf 'consumer tools v1\n' > "$dep/.suede/core/sync"
 }
 
 cleanup() { [[ -n "$WORK" ]] && rm -rf "$WORK"; }
@@ -47,6 +64,10 @@ vendor_workflows_as_a_template_would() {
     mkdir -p "$path" && cp -r "$template/$path/." "$path/"
   done
   git add -A && git commit --quiet -m "workflows, as the template shipped them"
+  # The initialize workflow's last act is to delete itself, so every
+  # initialized repository is missing a file the branch it tracks still has.
+  git rm -q .github/workflows/initialize.yml release/.github/workflows/initialize.yml
+  git commit --quiet -m "chore(suede-init): remove initialization workflow"
 }
 
 sync() { SUEDE_LIBRARY_URL="$LIB" bash .suede/core/sync.sh "$@" 2>&1; }
@@ -66,20 +87,52 @@ it_finds_every_library_subrepo_and_no_others() {
     log_failure "sync pulled ./release, which push-release.sh owns"; return 1
   fi
   log_pass "and ./release itself was left alone"
+
+  # The one that matters most: an installed dependency's own vendored core is
+  # a subrepo of this same library, and touching it would break the publish.
+  if grep -q 'app.some-suede' <<<"$output"; then
+    log_failure "sync reached into an installed dependency's vendored core"
+    printf '%s\n' "$output" | sed 's/^/    /' >&2
+    return 1
+  fi
+  log_pass "and an installed dependency's own .suede/core was not touched"
 }
 
-it_repairs_a_parent_that_exists_nowhere_in_this_history() {
+# The first sync of a real repository hits both problems in a row, which is why
+# they are one test: the parent has to be repaired before the pull gets far
+# enough to reach the merge where the deleted file conflicts.
+the_first_sync_of_a_template_made_repository() {
   local absent; absent="$(git config -f .github/workflows/.gitrepo --get subrepo.parent)"
   git cat-file -e "$absent" 2>/dev/null && { log_failure "fixture is wrong: parent exists here"; return 1; }
   log_pass "the template left a parent this repository has never seen ($(printf %.7s "$absent"))"
 
-  chain_advance_library_branch "$LIB" "$LIBWORK" dependency/main/workflows "name: workflows v2"
+  # Upstream changes both the file this repository deleted and one it kept.
+  ( cd "$LIBWORK"
+    git checkout --quiet dependency/main/workflows
+    printf 'name: Initialize v2\n' > initialize.yml
+    printf 'name: workflows v2\n' > subrepo-push-release.yml
+    git commit --quiet -am "workflows v2"
+    git push --quiet "$LIB" dependency/main/workflows )
+
   local output; output="$(sync)"
 
   grep -q 'repointing at' <<<"$output" || {
     log_failure "sync did not repair the parent"; printf '%s\n' "$output" | sed 's/^/    /' >&2; return 1
   }
-  assert_file_matches .github/workflows/subrepo-push-release.yml 'v2' "and the update landed"
+  log_pass "the parent was repaired"
+
+  grep -q 'keeping your deletion of initialize.yml' <<<"$output" || {
+    log_failure "the deletion conflict was not resolved"
+    printf '%s\n' "$output" | sed 's/^/    /' >&2; return 1
+  }
+  log_pass "and the conflict resolved in favour of the deletion"
+
+  [[ -f .github/workflows/initialize.yml ]] && { log_failure "initialize.yml came back"; return 1; }
+  assert_file_matches .github/workflows/subrepo-push-release.yml 'v2' \
+    "while the rest of the workflows still updated" || return 1
+  [[ -z "$(git status --porcelain)" ]] \
+    && log_pass "leaving a clean tree, not a half-finished merge" \
+    || { log_failure "the tree was left mid-merge"; git status --short | sed 's/^/    /' >&2; return 1; }
 }
 
 it_repairs_a_parent_that_belongs_to_another_branch() {
@@ -118,9 +171,11 @@ a_second_run_reports_no_movement() {
   fi
 }
 
+# Order matters: the parent test needs the template's untouched .gitrepo, and
+# every other test moves the repository on from there.
 run_test_suite --setup setup --cleanup cleanup \
+  the_first_sync_of_a_template_made_repository \
   it_finds_every_library_subrepo_and_no_others \
-  it_repairs_a_parent_that_exists_nowhere_in_this_history \
   it_repairs_a_parent_that_belongs_to_another_branch \
   it_leaves_the_publish_path_usable \
   a_second_run_reports_no_movement

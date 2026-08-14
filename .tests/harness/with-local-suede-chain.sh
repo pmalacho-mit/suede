@@ -46,10 +46,15 @@ chain_seed_library_branches() { # <bare> <work>
     git push --quiet "$bare" dependency/main/core
     for branch in dependency/release/core dependency/main/workflows dependency/release/workflows; do
       git checkout --quiet --orphan "$branch"
-      git rm -rq --cached . >/dev/null 2>&1 || true; rm -f ./*.sh ./*.yml sync 2>/dev/null || true
+      # A clean slate, or each branch inherits the last one's files.
+      git rm -rq --cached . >/dev/null 2>&1 || true
+      find . -maxdepth 1 ! -name . ! -name .git -exec rm -rf {} + 2>/dev/null || true
       case "$branch" in
         */core)      printf 'consumer tools v1\n' > sync ;;
-        */workflows) printf 'name: %s v1\n' "${branch##*/}" > subrepo-push-release.yml ;;
+        # initialize.yml ships in the workflows branch and every initialized
+        # repository deletes it, which is what makes it the conflict case.
+        */workflows) printf 'name: %s v1\n' "${branch##*/}" > subrepo-push-release.yml
+                     printf 'name: Initialize v1\n' > initialize.yml ;;
       esac
       git add -A; git commit --quiet -m "$branch v1"
       git push --quiet "$bare" "$branch"
