@@ -245,6 +245,12 @@ class remotes:
         return url.rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1].removesuffix(".git")
 
     @staticmethod
+    def host(url: str) -> Optional[str]:
+        """The address part, or None where there is no host to speak of."""
+        pair = remotes._host_and_path(url)
+        return pair[0] if pair else None
+
+    @staticmethod
     def _host_and_path(url: str) -> Optional[tuple[str, str]]:
         pair = remotes._scheme_form(url) if "://" in url else remotes._scp_form(url)
         if pair is None:
@@ -565,6 +571,25 @@ def relative_link(link_path: str, install_path: str) -> str:
     return target if target.startswith(".") else "./" + target
 
 
+class progress:
+    """What is happening, while it happens.
+
+    Everything slow about an install is a network round trip, and all of it
+    happens before there is a plan to show - so without this the command prints
+    the bootstrap's curl meter and then appears to hang for a minute. On
+    stderr, so `--plan-json` and the announce block stay pipeable.
+    """
+
+    enabled: bool = True
+
+    @staticmethod
+    def say(message: str) -> None:
+        if not progress.enabled:
+            return
+        sys.stderr.write("  %s\n" % message)
+        sys.stderr.flush()
+
+
 # --------------------------------------------------------------------------- #
 # 4. Git - the only place subprocess appears                                   #
 # --------------------------------------------------------------------------- #
@@ -624,6 +649,20 @@ class git:
         except SuedeError:
             return None
 
+    # Hosts whose SSH spelling has already failed this run. An install makes a
+    # dozen remote calls, and without this every one of them re-pays the same
+    # failure: five seconds of ConnectTimeout where port 22 is dropped, which
+    # was most of the wall clock of an install that had nothing else wrong with
+    # it. One host answers or does not; asking twelve times does not change it.
+    _ssh_refused: set[str] = set()
+
+    @staticmethod
+    def forget_refusals() -> None:
+        """Start the run with no opinion about any host. A command is one
+        process, so this exists for the tests and for anything that calls into
+        suede twice - the memo is scoped to a run, not to an interpreter."""
+        git._ssh_refused.clear()
+
     @staticmethod
     def over(url: str, reach: Callable[[str], _T]) -> _T:
         """Run `reach` against each spelling of `url` until one answers.
@@ -633,14 +672,35 @@ class git:
         works. A remote with only one spelling makes exactly one attempt, which
         is every local path and every address carrying a port.
         """
-        attempts = remotes.candidates(url)
+        attempts = git._worth_trying(remotes.candidates(url))
         for index, candidate in enumerate(attempts):
             try:
                 return reach(candidate)
             except SuedeError as failure:
+                git._remember_refusal(candidate, attempts)
                 if index == len(attempts) - 1:
                     raise git._exhausted(url, attempts, failure)
         raise git._exhausted(url, attempts, SuedeError("no spelling to try"))
+
+    @staticmethod
+    def _worth_trying(attempts: tuple[str, ...]) -> tuple[str, ...]:
+        """Drop the SSH spelling once this run has established it is no use.
+        Never drop the last one: a remote with a single spelling is tried
+        whatever happened before, so the failure reported is a real one."""
+        if len(attempts) < 2:
+            return attempts
+        host = remotes.host(attempts[0])
+        if host and host in git._ssh_refused:
+            return attempts[1:]
+        return attempts
+
+    @staticmethod
+    def _remember_refusal(candidate: str, attempts: Sequence[str]) -> None:
+        if len(attempts) > 1 and candidate == attempts[0]:
+            host = remotes.host(candidate)
+            if host and host not in git._ssh_refused:
+                git._ssh_refused.add(host)
+                progress.say("ssh to %s did not answer; using https for the rest of this run" % host)
 
     @staticmethod
     def _exhausted(url: str, attempts: Sequence[str], last: SuedeError) -> SuedeError:
@@ -1381,6 +1441,7 @@ def stage(
     """Fetch every pin in the closure into `.git/suede-cache/` and read its
     manifest from there. Staging before planning is what lets the announce
     block name a dependency's dependencies before anything is installed."""
+    progress.say("reading what %s depends on" % ", ".join(pin.name for pin in pins))
     cache.prune(world.root)
     installed = _installed_manifests(world)
     reusable = _reusable_manifests(world, installed, kind)
@@ -1453,7 +1514,9 @@ class cache:
         # that says otherwise hands one dependency's tree to another.
         destination = os.path.join(cache.directory(root), _slug(pin.remote) + "-" + pin.short)
         if use_cache and cache.holds(destination, pin):
+            progress.say("%s@%s is already cached" % (pin.name, pin.short))
             return destination
+        progress.say("fetching %s@%s" % (pin.name, pin.short))
         shutil.rmtree(destination, ignore_errors=True)
         try:
             git.fetch_commit(pin.remote, pin.commit, pin.branch, destination)
@@ -1500,6 +1563,7 @@ class cache:
         destination = os.path.join(cache.directory(root), "history", _slug(remote) + ".git")
         if os.path.isdir(destination):
             return destination
+        progress.say("reading the history of %s, to compare two commits of it" % remotes.name(remote))
         try:
             git.fetch_history(remote, branch, destination)
         except SuedeError:
@@ -3276,6 +3340,9 @@ def _parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--repo-name", help="override $repo detection")
     common.add_argument("--separator", help="override $SEP for this project's own entries")
+    common.add_argument(
+        "--quiet", action="store_true", help="do not narrate the fetching on stderr"
+    )
     commands = parser.add_subparsers(dest="command")
     _install_parser(commands, common)
     _audit_parsers(commands, common)
@@ -3385,6 +3452,8 @@ def _requested_pin(args: argparse.Namespace) -> Pin:
     if args.gitrepo:
         return _pin_from_gitrepo(args.gitrepo)
     remote = remote_from(args.repo)
+    if not args.at:
+        progress.say("resolving %s on %s" % (remotes.name(remote), args.branch))
     commit = args.at or git.resolve_branch(remote, args.branch)
     return Pin(remote=remote, commit=commit, branch=args.branch)
 
@@ -3473,6 +3542,7 @@ def _report(notes: Sequence[str], text: str) -> None:
     for note in notes:
         sys.stderr.write("warning: %s\n" % note)
     print(text)
+
 
 
 def _carry_out(
@@ -3588,6 +3658,7 @@ def main(argv: Sequence[str]) -> int:
     if not args.command:
         parser.print_help()
         return Exit.USAGE
+    progress.enabled = not getattr(args, "quiet", False)
     try:
         return COMMANDS[args.command](args)
     except SuedeError as failure:

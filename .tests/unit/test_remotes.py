@@ -86,6 +86,11 @@ class FallingBack(unittest.TestCase):
     reaching as a callable, so the order and the reporting are provable without
     a network."""
 
+    def setUp(self):
+        # Whether SSH is worth trying is remembered for the length of a run,
+        # and these cases each assume a run that has learned nothing yet.
+        suede.git.forget_refusals()
+
     def reaching(self, works):
         tried = []
 
@@ -189,3 +194,52 @@ class PinIdentity(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RememberingThatSshIsNoUse(unittest.TestCase):
+    """An install makes a dozen remote calls. Where SSH is blocked rather than
+    refused, each one pays a full connect timeout - which was six sevenths of
+    the wall clock of an install with nothing else wrong with it."""
+
+    def setUp(self):
+        suede.git.forget_refusals()
+
+    def reaching_https_only(self):
+        tried = []
+
+        def reach(candidate):
+            tried.append(candidate)
+            if candidate.startswith("git@"):
+                raise suede.SuedeError("port 22 is dropped here")
+            return candidate
+
+        return tried, reach
+
+    def test_ssh_is_tried_once_per_host_and_not_again(self):
+        tried, reach = self.reaching_https_only()
+
+        for _ in range(4):
+            self.assertEqual(suede.git.over(HTTPS, reach), HTTPS)
+
+        self.assertEqual(tried.count(SSH), 1)
+        self.assertEqual(tried.count(HTTPS), 4)
+
+    def test_another_host_is_still_given_its_own_chance(self):
+        tried, reach = self.reaching_https_only()
+        suede.git.over(HTTPS, reach)
+
+        suede.git.over("https://gitlab.test/acme/thing.git", reach)
+
+        self.assertIn("git@gitlab.test:acme/thing.git", tried)
+
+    def test_a_host_that_answers_over_ssh_keeps_being_asked(self):
+        tried = []
+
+        def reach(candidate):
+            tried.append(candidate)
+            return candidate
+
+        for _ in range(3):
+            self.assertEqual(suede.git.over(HTTPS, reach), SSH)
+
+        self.assertEqual(tried, [SSH, SSH, SSH])

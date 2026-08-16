@@ -223,9 +223,14 @@ python3 <(curl -fsSL https://suede.sh/suede) check
 
 Useful install flags: `--dry-run`, `--plan-json`, `--yes`, `--commit`,
 `--on-conflict coexist|unify-newest|defer`, `--allow-conflicting-packages`,
-`--no-npm`, `--no-python`, `--separator`, `--target`, `--name`. Exit codes: `0`
-success, `2` usage, `3` precondition, `4` unresolved conflict, `5` `check`
-found a failure.
+`--no-npm`, `--no-python`, `--separator`, `--target`, `--name`, `--quiet`. Exit
+codes: `0` success, `2` usage, `3` precondition, `4` unresolved conflict, `5`
+`check` found a failure.
+
+While it works, the installer narrates what it is fetching on stderr — every
+slow part of an install is a network round trip, and all of them happen before
+there is a plan to show. `--quiet` turns that off; the plan itself always goes
+to stdout, so piping is unaffected.
 
 You then have the dependency's source code [vendored](https://htmx.org/essays/vendoring/) into your repository. You can modify and track changes to it the same as any other code in your repository and only need to amend your typical development workflow when you want to:
 - Sync the dependency (see [upgrading](#upgrading-ie-pulling)).

@@ -318,6 +318,7 @@ suede install --gitrepo <path|->  [options]
 
   --dry-run                   plan and announce, change nothing
   --plan-json                 emit the plan as JSON
+  --quiet                     do not narrate the fetching on stderr
   --yes                       accept the plan
   --commit                    commit the result
 
