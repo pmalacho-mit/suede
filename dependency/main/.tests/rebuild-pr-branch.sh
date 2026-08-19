@@ -29,10 +29,23 @@ setup() {
   w_nonoverlap(){ printf 'alpha\nbeta\ngamma\ndelta\n' > lib.txt; }
   w_overlap()   { printf 'CONSUMER\nbeta\ngamma\n'     > lib.txt; }
   w_noop()      { :; }
+  # A re-rooted split: `git subrepo push` does not always leave the branch it
+  # publishes attached to the release commit it was taken from, and then the
+  # only surviving record of the base is the `commit =` field of the .gitrepo
+  # the split carries at its root. The remote in that file is the CONSUMER's -
+  # ssh, for their own push credentials - and must not reach the PR.
+  mk_rerooted() { ( cd "$seed"; git checkout --quiet --orphan "ds-$1"
+    git rm -rq --cached . >/dev/null 2>&1 || true; rm -rf src release lib.txt
+    printf 'alpha\nbeta\ngamma\ndelta\n' > lib.txt
+    printf '[subrepo]\n\tremote = git@consumer.example.com:someone/dep.git\n\tbranch = release\n\tcommit = %s\n' "$2" > .gitrepo
+    git add -A; git commit --quiet -m "$1"
+    git push --quiet --force origin "ds-$1:refs/heads/downstream/$1" ) ; }
+
   mk clean-current "$RELEASE_TIP" w_clean
   mk stale-nonoverlap "$BASE0" w_nonoverlap
   mk stale-overlap "$BASE0" w_overlap
   mk noop "$RELEASE_TIP" w_noop
+  mk_rerooted rerooted "$BASE0"
 }
 cleanup() { [[ -n "${TEST_DIR:-}" && -d "$TEST_DIR" ]] && rm -rf "$TEST_DIR"; disable_url_mocking; }
 
@@ -66,4 +79,15 @@ noop_proposes_nothing() {
   echo "$RES" | grep -q 'has_changes=false' && log_pass "no-op detected" || { log_failure "no-op"; return 1; }
 }
 
-run_test_suite --setup setup --cleanup cleanup   clean_current_applies_on_top_of_release   stale_nonoverlap_does_not_revert_upstream   stale_overlap_surfaces_conflict_markers   noop_proposes_nothing
+rerooted_split_recovers_its_base_from_gitrepo() {
+  _rebuild rerooted
+  echo "$RES" | grep -q "base=$BASE0" && log_pass "recovered the base from the split's .gitrepo" || { log_failure "base"; return 1; }
+  assert_file_matches release/lib.txt '^ALPHA$' "upstream change PRESERVED (not reverted)"
+  assert_file_matches release/lib.txt '^delta$' "consumer change applied"
+  grep -q 'consumer.example.com' release/.gitrepo \
+    && { log_failure "the consumer's .gitrepo remote leaked into the PR"; return 1; } \
+    || log_pass "main's .gitrepo kept, the consumer's discarded"
+  [[ -z "$(git replace -l)" ]] && log_pass "no replace refs left behind" || { log_failure "replace refs"; return 1; }
+}
+
+run_test_suite --setup setup --cleanup cleanup   clean_current_applies_on_top_of_release   stale_nonoverlap_does_not_revert_upstream   stale_overlap_surfaces_conflict_markers   noop_proposes_nothing   rerooted_split_recovers_its_base_from_gitrepo
