@@ -24,6 +24,8 @@
 #   - always prints: RESULT base=<sha> conflicted=<bool> has_changes=<bool>
 set -euo pipefail
 
+die() { echo "::error::rebuild-pr-branch: $*" >&2; exit 1; }
+
 REMOTE="${REMOTE:-origin}"
 MAIN_BRANCH="${MAIN_BRANCH:-main}"
 RELEASE_BRANCH="${RELEASE_BRANCH:-release}"
@@ -39,9 +41,38 @@ git fetch --quiet "$REMOTE" \
 
 release_commit="$(git rev-parse "refs/remotes/${REMOTE}/${RELEASE_BRANCH}")"
 submission_commit="$(git rev-parse "refs/remotes/${REMOTE}/${SUBMISSION_REF}")"
-# release_commit and submission_commit share the base the consumer branched
-# from; merge-base recovers it for free.
-base_commit="$(git merge-base "$release_commit" "$submission_commit")"
+
+# The base the consumer actually had. Usually release_commit and
+# submission_commit share it outright and merge-base recovers it for free.
+#
+# Usually, not always: `git subrepo push` does not guarantee the split it
+# publishes stays attached to the branch it was split from. When it re-roots
+# the split, the submission is a parentless history with no ancestor in common
+# with release, merge-base answers nothing, and every three-way below would
+# have nothing to be three-way about. The base is still recorded, though: a
+# re-rooted split carries the dependency's own .gitrepo at its root, and that
+# file's `commit =` field IS the release commit the consumer had. Recover it
+# from there and graft the split onto it, which puts the history back in the
+# shape the rest of this script already knows how to handle.
+base_commit="$(git merge-base "$release_commit" "$submission_commit" || true)"
+graft_root=""
+if [ -z "$base_commit" ]; then
+  echo "note: ${SUBMISSION_REF} shares no history with ${RELEASE_BRANCH};" \
+       "recovering the base from the submission's .gitrepo"
+  git cat-file -e "${submission_commit}:.gitrepo" 2>/dev/null \
+    || die "the submission shares no history with ${RELEASE_BRANCH} and carries no .gitrepo to recover the base from"
+  recorded="$(git config --blob "${submission_commit}:.gitrepo" subrepo.commit || true)"
+  [ -n "$recorded" ] \
+    || die "the submission's .gitrepo has no 'commit =' field, so the base it was taken from cannot be recovered"
+  base_commit="$(git rev-parse --quiet --verify "${recorded}^{commit}")" \
+    || die "the submission's .gitrepo names base ${recorded}, which is not a commit in this repository"
+  git merge-base --is-ancestor "$base_commit" "$release_commit" \
+    || die "the submission's .gitrepo names base ${recorded}, which is not on ${RELEASE_BRANCH}"
+  # Only the first-parent root matters: the split is the linear chain the
+  # consumer's commits became, and that chain is what needs a base underneath.
+  graft_root="$(git rev-list --first-parent --max-parents=0 "$submission_commit" | tail -n 1)"
+  git replace --graft "$graft_root" "$base_commit" >/dev/null
+fi
 
 # Replay the submission onto the latest release in release-shaped space. Both
 # share the recovered base, so git uses it automatically; conflicts -> markers.
@@ -53,6 +84,10 @@ if ! git merge --no-edit --no-ff "$submission_commit"; then
   git commit --no-edit --quiet \
     -m "MERGE CONFLICTS: consumer changes vs. latest release — resolve before merge"
 fi
+
+# The graft has done its job once the replay is a real commit; drop it so no
+# later command in this job sees a rewritten history.
+if [ -n "$graft_root" ]; then git replace -d "$graft_root" >/dev/null; fi
 
 # Transplant the merged tree under release/ on top of main; keep main's .gitrepo.
 git checkout --quiet -B "$PR_HEAD_BRANCH" "refs/remotes/${REMOTE}/${MAIN_BRANCH}"
