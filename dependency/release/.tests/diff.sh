@@ -126,6 +126,32 @@ arguments_reach_git_diff() {
   assert_shows '^local/lib/added\.js$' "--name-only reached git diff"
 }
 
+at_compares_against_a_commit_other_than_the_pin() {
+  local pin tip
+  pin="$(git config -f "$WORK/consumer/deps/foo/.gitrepo" subrepo.commit)"
+  publish "export const v = 3;"
+  tip="$(git ls-remote "$WORK/bare" refs/heads/release | cut -f1)"
+
+  run_diff --at "$tip"
+
+  assert_status 1 "the tree differs from the tip" || return 1
+  assert_shows "against ${tip:0:7} \(your pin is ${pin:0:7}\)" "both commits are named" || return 1
+  assert_shows '^-export const v = 3;' "what the other commit has and you do not is a - line"
+}
+
+at_and_sync_do_not_mix() {
+  run_diff --sync --at HEAD
+  assert_status 2 "asking for two right-hand sides is a usage failure, exit 2"
+}
+
+in_points_the_script_at_another_dependency() {
+  local elsewhere="$WORK/consumer/not-a-dependency/.suede/core"
+  mkdir -p "$elsewhere" && cp "$DIFF" "$elsewhere/diff"
+  STATUS=0
+  OUTPUT="$( ( cd "$WORK" && bash "$elsewhere/diff" --in "$WORK/consumer/deps/foo" --name-only ) 2>&1 )" || STATUS=$?
+  assert_shows 'local/lib/added\.js' "--in reached deps/foo from a copy of the script that lives elsewhere"
+}
+
 outside_a_dependency_it_refuses_distinguishably() {
   local elsewhere="$WORK/consumer/not-a-dependency/.suede/core"
   mkdir -p "$elsewhere" && cp "$DIFF" "$elsewhere/diff"
@@ -145,4 +171,7 @@ run_test_suite --setup setup --cleanup cleanup \
   sync_shows_what_the_tip_would_bring \
   sync_says_so_when_the_pin_is_already_the_tip \
   arguments_reach_git_diff \
+  at_compares_against_a_commit_other_than_the_pin \
+  at_and_sync_do_not_mix \
+  in_points_the_script_at_another_dependency \
   outside_a_dependency_it_refuses_distinguishably

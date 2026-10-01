@@ -23,10 +23,9 @@ Not convinced? Jump down to [why](#why).
 In addition to [git](https://git-scm.com/)...
 
 - [git-subrepo](https://github.com/ingydotnet/git-subrepo): Enables us to more easily include git repositories as project dependencies (as compared to [git submodules](https://www.atlassian.com/git/tutorials/git-submodule) and/or [subtrees](https://www.atlassian.com/git/tutorials/git-subtree))  
-- [Python 3.9+](#python-39-or-newer): The installer is a single dependency-free file, [`scripts/suede.py`](./scripts/suede.py). Everything `install`, `check`, `list`, `diff`, `remove` and `extract` do lives there.
-- [Github Actions](https://github.com/features/actions): Enables us to keep our remote subrepo dependency branches (`main` and `release`) up to date with each other. See more about branch structure in [Anatomy of a Suede Dependency](#anatomy-of-a-suede-dependency).
-- [Bash scripts](https://github.com/pmalacho-mit/suede/tree/main/scripts): Thin, readable wrappers around the above — the install bootstrap, the publish flow, and the tools a consumer gets inside an installed dependency.
+- [Bash scripts](https://github.com/pmalacho-mit/suede/tree/main/scripts): Everything suede does — the [installer](./scripts/install/release.sh), the publish flow, and the tools a consumer gets inside an installed dependency — is a short bash script you can read. Nothing else to install: no Python, no Node.
    - For convenience, [suede.sh](https://suede.sh) acts as a proxy for script content, [see more](#suedesh).
+- [Github Actions](https://github.com/features/actions): Enables us to keep our remote subrepo dependency branches (`main` and `release`) up to date with each other. See more about branch structure in [Anatomy of a Suede Dependency](#anatomy-of-a-suede-dependency).
  
 It is also highly ***recommended*** to use:
 - [devcontainers](https://containers.dev/): Enables us to easily spin up a (typically [linux-based](https://mcr.microsoft.com/en-us/artifact/mar/devcontainers/base/about)) development environment that has [git-subrepo installed as a feature](https://github.com/pmalacho-mit/devcontainer-features/tree/main/src/git-subrepo).
@@ -59,10 +58,11 @@ The `main` branch serves as the primary development branch where all work happen
   - The branch name (`release`)
   - The commit hash from the `release` branch that the `./release` folder currently reflects
   - Parent commit information for tracking history
-- **`./release/.suede/.dependencies/` folder:** The **published manifest** — one `.gitrepo` pointer per [release dependency](#dependencies-of-dependencies), plus a `package.json` and/or `requirements.txt` naming the third-party packages your code needs. It is **generated** by `suede extract` and refreshed on every publish; never edit it by hand.
-- **`./.suede/core/` folder:** The maintainer's tools and the scripts CI runs, vendored as a subrepo of this library. Update them with `git subrepo pull .suede/core` rather than by editing them.
-- **`./release/.suede/core/` folder:** The consumer-facing tools ([`sync`](./dependency/release/core/sync), [`upstream`](./dependency/release/core/upstream), [`diff`](./dependency/release/core/diff)), vendored *inside* `release/` so they ship with it. They live on `main` like everything else you develop, and reach the `release` branch through it — update them with `git subrepo pull release/.suede/core`, never by checking `release` out.
-- **`./.suede/.dependencies/separator` file:** One line recording your project's [separator](#dependencies-of-dependencies). It lives at the root and is **never** copied into `release/` — a consumer's separator is their own choice.
+- **`./release/.suede/.dependencies/` folder:** The **published records** — one `<entry>.gitrepo` per [release dependency](#dependencies-of-dependencies), naming the remote, branch and commit a consumer should put beside your dependency. It is **generated** by `extract.sh` and refreshed on every publish; never edit it by hand.
+- **`./release/package.json`:** Optional, and yours. `release/` is a package in its own right; it names the third-party packages its code imports, and you treat it as a [workspace](#third-party-packages).
+- **Installed dependencies and their symlinks:** `widget/` holds a dependency you installed; `my-app.widget -> widget` beside it declares it a *release* dependency. See [Dependencies of Dependencies](#dependencies-of-dependencies).
+- **`./.suede/core/` folder:** The maintainer's tools and the scripts CI runs, vendored as a subrepo of this library. Update them with `bash .suede/core/sync.sh` rather than by editing them.
+- **`./release/.suede/core/` folder:** The consumer-facing tools ([`deps.sh`](./dependency/release/core/deps.sh), [`diff`](./dependency/release/core/diff), [`sync`](./dependency/release/core/sync), [`upstream`](./dependency/release/core/upstream)), vendored *inside* `release/` so they ship with it. They live on `main` like everything else you develop, and reach the `release` branch through it — `sync.sh` updates them too, never by checking `release` out.
 
 When you push changes to `main`, the [subrepo-push-release](./dependency/main/workflows/subrepo-push-release.yml) GitHub Action automatically syncs the contents of `./release/` to the `release` branch.
 
@@ -72,7 +72,8 @@ The `release` branch is a clean, distribution-only branch that contains:
 
 - **Only distributable code:** Just the files from the `./release/` folder on `main`
 - **`.gitrepo` file:** Tracks the subrepo metadata for consumers who install this dependency
-- **`.suede/core/`:** The consumer-facing tools — [`sync`](./dependency/release/core/sync), [`upstream`](./dependency/release/core/upstream) and [`diff`](./dependency/release/core/diff) — which ship inside the dependency and end up at `<dependency>/.suede/core/` in every consumer's repository.
+- **`.suede/core/`:** The consumer-facing tools — [`deps.sh`](./dependency/release/core/deps.sh), [`diff`](./dependency/release/core/diff), [`sync`](./dependency/release/core/sync) and [`upstream`](./dependency/release/core/upstream) — which ship inside the dependency and end up at `<dependency>/.suede/core/` in every consumer's repository.
+- **`.suede/.dependencies/`:** The records of what this dependency needs beside it, which `deps.sh` reads.
 
 This branch is what consumers actually install. It's kept automatically synchronized with `./release/` on `main` via GitHub Actions, ensuring that the distributed code is always up-to-date.
 
@@ -107,130 +108,90 @@ bash <(curl -fsSL https://raw.githubusercontent.com/pmalacho-mit/suede/refs/head
 
 </details>
 
-The one-liner is a bootstrap: it finds a Python 3.9+, downloads
-[`scripts/suede.py`](./scripts/suede.py), and runs it. Nothing is installed on
-your system, and `git` does all the network access — so private repositories,
-SSH keys and credential helpers work with no extra setup.
+Run it **in the directory where you want the dependency**. It is one bash
+script; nothing is installed on your system, and `git` does all the network
+access — so private repositories, SSH keys and credential helpers work with no
+extra setup. It does five things and stops:
 
-The installer resolves the dependency's `release` branch, then **its**
-dependencies, and so on, and shows you the whole plan before touching anything:
+1. Fetches the dependency's `release` branch — no history — into `./<name>`,
+   where `<name>` is the repository's name.
+2. Writes a `.gitrepo` there, so [`sync`](#upgrading-ie-pulling) and
+   [`upstream`](#modifying-ie-contributing-back) work later.
+3. If **your** repository is itself a suede dependency and you are at its root,
+   creates a symlink `<your-repo>.<name> -> <name>` beside the folder. That
+   symlink **declares** the install a release dependency of yours — see
+   [Dependencies of Dependencies](#dependencies-of-dependencies). In a plain
+   application there is nothing to declare and no symlink is made.
+4. Stages everything. **Nothing is committed**: review, then `git commit`.
+5. Runs the dependency's own `deps.sh`, which prints what else has to be
+   installed beside it, and the exact commands:
 
 ```
-PLAN
+install: pmalacho-mit/sweater-vest-suede, release @ 86abeeb  ->  ./sweater-vest-suede
+install: declared as a release dependency of my-app:
+           my-app.sweater-vest-suede -> sweater-vest-suede
+install: staged, not committed
 
-  install   my-app.sweater-vest-suede            @ 86abeeb   (requested)
-  install   my-app.dockview-svelte-suede         @ 4f10c2a   (required by sweater-vest-suede)
-  reuse     my-app.mixin-suede                   @ 9bb0e41   (already present)
+deps: sweater-vest-suede needs 2 sibling(s) at the repository root
 
-  link      sweater-vest-suede.dockview-svelte-suede  -> ./my-app.dockview-svelte-suede
+[1] sweater-vest-suede.dockview-svelte-suede
+    https://github.com/pmalacho-mit/dockview-svelte-suede @ 4f10c2a
+    not installed anywhere in this repository
+    bash <(curl -fsSL https://suede.sh/install/release) --repo https://github.com/pmalacho-mit/dockview-svelte-suede --at 4f10c2a…
+    ln -s dockview-svelte-suede sweater-vest-suede.dockview-svelte-suede
 
-Proceed? [Y/n]
+    [1.1] dockview-svelte-suede.mixin-suede
+        …
+
+[2] sweater-vest-suede.mixin-suede
+    https://github.com/pmalacho-mit/mixin-suede @ 9bb0e41
+    same install as [1.1]
+    ln -s mixin-suede sweater-vest-suede.mixin-suede
+
+deps: 0 satisfied, 3 to resolve.
 ```
 
-Everything in the closure is installed once, flat at the repo root, named
-`$repo.<dependency>`; each dependent gets a symlink to it. Two dependents
-wanting the same dependency at different commits is a **conflict**, and the
-installer offers the resolutions rather than picking one. See
-[DEPENDENCIES-OF-DEPENDENCIES.md](./DEPENDENCIES-OF-DEPENDENCIES.md) for why,
-and [INSTALL.md](./INSTALL.md) for the full algorithm.
+Paste the commands, re-run `bash sweater-vest-suede/.suede/core/deps.sh` to see
+`everything is in place`, commit. The recipe is complete before you run any of
+it, and nothing in it is done for you. When a dependency is **already** on disk
+at the same commit with no local changes, the recipe is one `ln -s`; when what
+you have differs, `deps.sh` shows you the `diff` and offers both ways out
+(link to yours, or install the exact commit under another name) and lets you
+choose. [INSTALL.md](./INSTALL.md) has every case.
 
-Installs are **staged, not committed** — review them, then `git commit`, or
-pass `--commit`.
-
-### Dev and vendored installs
-
-The default installs a **release dependency**: prefixed, flat at the root, and
-recorded in your manifest so your own consumers can resolve it. Two flags pick
-the other kinds — see
-[DEPENDENCIES-OF-DEPENDENCIES.md](./DEPENDENCIES-OF-DEPENDENCIES.md) for what
-they are.
-
-```bash
-bash <(curl -fsSL https://suede.sh/install/release) --repo <owner/name> --dev
-```
-
-A **development dependency** — a test harness, a fixture, an example app.
-Installed at the root under its own name with no `$repo.` prefix, so the
-classification rule reads it as dev and `extract` never ships it. Its own
-dependencies are installed rather than doubled as yours, and an edge that
-something already installed can satisfy points there instead of being copied.
-Its npm and PyPI packages go to `devDependencies` and `requirements-dev.txt`,
-neither of which is published.
-
-```bash
-bash <(curl -fsSL https://suede.sh/install/release) --repo <owner/name> --vendor
-```
-
-A **vendored release dependency** — the source ships with your `release`
-branch instead of a pointer to it. It lands at `release/<name>`, and so does
-everything it depends on: vendored code ships whole, so a sibling outside
-`release/` would reach your consumers as a dangling link. That holds even when
-you already have the same commit installed at the root, because the root copy
-does not ship. Nothing is recorded — there is no pointer to record.
-
-Both kinds create **one entry per dependency, not two**. The ownership rule
-above — a folder plus a link each — exists so the name in a shipped manifest is
-backed by real bytes, and neither kind ships such a name. So a transitive
-install simply takes the name its dependent asks for
-(`sweater-vest-suede.dockview-svelte-suede/`), and only a *second* dependent
-wanting the same pin needs a link. Pass `--root-owned` for the release
-arrangement instead, when you want a name that doesn't depend on who asked for
-it.
+Useful flags: `--at <commit>`, `--branch`, `--sep` (the separator in the
+declaring symlink; `__` for Python and Rust), `--name`, `--prefix`, `--suffix`
+(for a second copy beside the first), `--dev` (never declare).
 
 ### Third-party packages
 
-A dependency also declares what it needs from npm and PyPI. The installer
-merges those declarations into your `package.json` and `requirements.txt` —
-adding what is missing, and never touching a lockfile. (Under `--dev`, into
-`devDependencies` and `requirements-dev.txt` instead.)
+Not suede's concern. A dependency's `release/` folder is a package in its own
+right, with its own `package.json` naming what its code imports, and both sides
+treat it as an **npm workspace**:
 
-A package **you already declare at a different version** stops the install
-rather than being resolved silently: unifying two version ranges is a judgment
-call about your code, not the installer's. The refusal names the way past it:
+```jsonc
+// the dependency's root package.json, on main
+{ "workspaces": ["release"] }
 
-```
-BLOCKED
-
-  python dependency sqlmodel: a dependency asks for sqlmodel>=0.0.14, your
-  requirements.txt declares sqlmodel==0.0.9.
-  Unify the versions yourself - suede will not guess - or re-run with
-  --allow-conflicting-packages to keep your own declarations and install the
-  rest anyway.
+// your root package.json, as a consumer
+{ "workspaces": ["sweater-vest-suede", "dockview-svelte-suede", "mixin-suede"] }
 ```
 
-With `--allow-conflicting-packages`, your declaration is kept verbatim, every
-non-conflicting package still merges, and each conflict is reported as a
-warning — the dependency now runs against a version it never saw, which is your
-call to make. `--no-npm` and `--no-python` skip either merge entirely.
+One `npm install` at the root then resolves every dependency's packages. Suede
+never edits `package.json`, `requirements.txt` or a lockfile. (For Python, a
+`release/pyproject.toml` installed editable plays the same role.)
 
 ### The other commands
 
-```bash
-suede check                 # audit the tree: undeclared, missing and dangling entries
-suede list  [--json]        # every dependency, its classification, target and pin
-suede diff                  # release dependencies that no longer match their pin
-suede remove <entry>        # drop an entry; reports what becomes orphaned, deletes nothing
-suede extract               # write release/.suede/.dependencies/ (what the publish flow runs)
-```
-
-Inside a suede dependency these are already vendored on `main` — run them as
-`bash .suede/core/suede <command>`. In a plain consumer repository there is
-nothing to vendor, so reach the same file directly:
+Every installed dependency ships four scripts at `<dependency>/.suede/core/`.
+None takes a target — each acts on the dependency it lives inside:
 
 ```bash
-python3 <(curl -fsSL https://suede.sh/suede) check
+bash <dep>/.suede/core/deps.sh            # what it needs beside it, as commands (--check: exit 1 if unresolved)
+bash <dep>/.suede/core/diff               # how your copy differs from its pin (--sync, --at <commit>)
+bash <dep>/.suede/core/sync               # pull the latest release
+bash <dep>/.suede/core/upstream           # propose your edits back as a PR
 ```
-
-Useful install flags: `--dry-run`, `--plan-json`, `--yes`, `--commit`,
-`--on-conflict coexist|unify-newest|defer`, `--allow-conflicting-packages`,
-`--no-npm`, `--no-python`, `--separator`, `--target`, `--name`, `--quiet`. Exit
-codes: `0` success, `2` usage, `3` precondition, `4` unresolved conflict, `5`
-`check` found a failure.
-
-While it works, the installer narrates what it is fetching on stderr — every
-slow part of an install is a network round trip, and all of them happen before
-there is a plan to show. `--quiet` turns that off; the plan itself always goes
-to stdout, so piping is unaffected.
 
 You then have the dependency's source code [vendored](https://htmx.org/essays/vendoring/) into your repository. You can modify and track changes to it the same as any other code in your repository and only need to amend your typical development workflow when you want to:
 - Sync the dependency (see [upgrading](#upgrading-ie-pulling)).
@@ -350,15 +311,16 @@ After your dependency repository is set up, you can maintain and develop it as y
 
 - **Use the `main` branch for all development.** Treat the `main` branch as the primary development branch where you add features, fix bugs, and iterate on the code. You can freely edit files on main, commit changes, and create sub-branches for feature development as needed.
 - **Keep distributable code in the `./release` folder.** Only the code intended to be consumed by other projects should go in the `./release` directory on `main`. This folder mirrors the content of the `release` branch. Do not put other files (tests, examples, docs, etc.) inside `./release`.
-- **Automatic publishing.** Whenever a change under `release/` lands on `main`, the [subrepo-push-release](./dependency/main/workflows/subrepo-push-release.yml) action runs [`.suede/core/push-release.sh`](./dependency/main/core/push-release.sh), which regenerates the manifest, runs the publish **guard**, and then syncs `./release` out to the `release` branch.
+- **Automatic publishing.** Whenever a change under `release/` lands on `main`, the [subrepo-push-release](./dependency/main/workflows/subrepo-push-release.yml) action runs [`.suede/core/push-release.sh`](./dependency/main/core/push-release.sh), which regenerates the dependency records, runs the publish **guard**, and then syncs `./release` out to the `release` branch.
 > [!NOTE]  
 > The publish also updates `./release/.gitrepo` on `main` to point at the new commit on the `release` branch, so pull from `main` before pushing further changes.
-- **The guard, and why a publish can be refused.** A [release dependency](#dependencies-of-dependencies) ships as a *pointer*, so before that pointer goes out the guard checks it is honest (`suede diff` — nothing has drifted from its pinned commit) and that nothing is resolved implicitly (`suede check`). If either fires, the reason lands in the job summary and **the `release` branch is not touched**, so consumers stay on the last honest version. Run the same checks locally before you push:
+- **The guard, and why a publish can be refused.** A [release dependency](#dependencies-of-dependencies) ships as a *pointer*, so before that pointer goes out the guard checks it is honest (`diff.sh` — nothing has drifted from its pinned commit) and that every declared dependency is actually in place (`deps.sh --check`). If either fires, the reason lands in the job summary and **the `release` branch is not touched**, so consumers stay on the last honest version. Run the same checks locally before you push:
   ```bash
-  bash .suede/core/diff.sh     # any release dependency with local modifications
-  bash .suede/core/suede check # any implicit or dangling resolution
+  bash .suede/core/diff.sh                                # any release dependency with local modifications
+  bash release/.suede/core/deps.sh --check --in release   # any declared dependency that is missing
+  bash .suede/core/list.sh                                # what the tree declares
   ```
-  If `diff` reports divergence you have three honest options: revert the changes, [upstream](#modifying-ie-contributing-back) them, or [vendor](#dependencies-of-dependencies) the dependency with `bash .suede/core/vendor.sh <entry>` so the source actually ships.
+  If `diff.sh` reports divergence you have three honest options: revert the changes, [upstream](#modifying-ie-contributing-back) them, or [vendor](#dependencies-of-dependencies) the dependency (`git mv widget release/widget && git rm my-app.widget`) so the source actually ships.
 - **Avoid direct commits to the `release` branch.** All changes flow from `main` → `release` via the automated workflow. The only time you'd interact with `release` manually is if something went wrong and you need to fix merge conflicts (which should be rare).
 - **Handle contributions as pull requests.** Consumers propose changes with [`upstream`](#modifying-ie-contributing-back), which opens a PR into `main` without ever touching `release`. Review and merge those as you would any other PR; merging republishes through the normal path.
 - **Update the vendored machinery with one command, on `main`.** `.suede/core`, `release/.suede/core`, `.github/workflows` and `release/.github/workflows` are all subrepos of this library. Get fixes by pulling them, never by editing the files in place:
@@ -373,60 +335,55 @@ In summary, do your day-to-day development on `main` (or a sub-branch), keep the
 ### Dependencies of Dependencies
 
 A suede dependency may itself depend on other suede dependencies. Which kind a
-dependency is, is decided entirely by **where it lives and what it is named** —
-no config file, no manifest you maintain by hand:
+dependency is, is decided entirely by **where it lives and what sits beside
+it** — no config file, no manifest you maintain by hand:
 
-| Kind | How it is announced | What ships |
+| Kind | How it is declared | What ships |
 | --- | --- | --- |
-| **Release dependency** | A root entry named `$repo$SEP<dependency>` — a folder, or a symlink to one anywhere outside `release/` | A pointer (`.gitrepo`), not the source |
+| **Release dependency** | A root entry named `<repo><sep><name>` — the symlink the installer creates — resolving to a `.gitrepo` folder outside `release/` | A record (`.gitrepo`): remote, branch, commit. Not the source |
 | **Development dependency** | Any other `.gitrepo` folder outside `release/` | Nothing; the `release` branch never sees it |
 | **Vendored release dependency** | It lives *inside* `release/` | The source itself, verbatim |
 
-`$repo` is your repository's name without the owner; `$SEP` is the separator
-between it and the dependency's name — `.` where imports are path literals
-(TypeScript, Svelte, Go), `__` where a path segment has to be a legal identifier
-(Python, Rust). The prefix match includes the separator, so a sibling folder
-that merely starts with your repo's name is never promoted by accident.
+`<repo>` is your repository's name without the owner; `<sep>` is `.` where
+imports are path literals (TypeScript, Svelte, Go) and `__` where a path
+segment has to be a legal identifier (Python, Rust). **The symlink is the whole
+declaration**: delete `my-app.widget` and `widget` is a development
+dependency; `ln -s widget my-app.widget` and it is a release dependency again.
 
-[DEPENDENCIES-OF-DEPENDENCIES.md](./DEPENDENCIES-OF-DEPENDENCIES.md) is the full
-treatment, including why the separator is part of the name match and what to do
-when a dependency can no longer stay pristine.
-
-**A project records its whole transitive closure as its own release
-dependencies.** If you install `B` and `B` needs `C`, you end up with root
-entries for both, and `B` gets a symlink:
+Code inside `release/` imports a release dependency as a sibling through that
+name — `../my-app.widget/...` — and the record your consumers receive is named
+after it, so they recreate the same sibling beside their copy of you. **The
+name is the contract.** It is also why the folder and its symlink must sit
+beside `release/`: the installer refuses a release install anywhere else.
 
 ```
-app.B/                 real folder — B's release bytes
-app.C/                 real folder — C's release bytes
-B.C          ->        ./app.C     symlink satisfying B's edge
+widget/            real folder — widget's release bytes
+my-app.widget  ->  widget      declares it: extract.sh publishes my-app.widget.gitrepo
+widget.mixin   ->  mixin       widget's own edge, which deps.sh told you to create
+mixin/
+my-app.mixin   ->  mixin       declared too, because the installer declares every install here
 ```
 
-Three things fall out of that, and they are why the bookkeeping is worth it: a
-manifest is a complete recipe (install each pointer once, flat, done);
-recursion becomes a repair path rather than the happy path; and every
-dependency in the closure is named in *your* root, so every one is yours to
-repoint, fork or unify. `suede check` enforces exactly one structural rule —
-that nothing was resolved implicitly — and stays informational about which
-commit you chose.
+Vendoring — when you have changed a dependency and can neither revert nor
+upstream it — is `git mv widget release/widget` and `git rm my-app.widget`;
+whatever `widget` needs beside it moves inside `release/` too.
 
-The `release/.suede/.dependencies/` folder is generated by
-[`suede extract`](./scripts/suede.py) during the publish. Don't edit it by hand.
+[DEPENDENCIES-OF-DEPENDENCIES.md](./DEPENDENCIES-OF-DEPENDENCIES.md) is the
+full treatment: the rule, what a dependency publishes, how a consumer's
+`deps.sh` resolves it, and exactly what the publish guard checks.
 
 ### Migrating an Existing Repository
 
-[MIGRATION-V1-V2.md](./MIGRATION-V1-V2.md) is the general procedure — it covers
-every shape a repository is currently in (a dependency that predates the
-vendored core, one that has it, or a plain consumer), the order to migrate them
-in, and the steps for each. Copy it into the repository as `MIGRATION.md` and
-work through it.
+[MIGRATION.md](./MIGRATION.md) moves a repository created under an earlier
+suede — v1 or v2, dependency or consumer — onto this layout, in the order
+that avoids doing anything twice.
 
 ## [suede.sh](https://suede.sh)
 
 [suede.sh](https://suede.sh) is a Cloudflare Worker that provides cached, convenient access to the scripts in this repository. It serves as a proxy to the GitHub raw content URLs, with two key benefits:
 
 1. **Simplified URLs:** Instead of typing the full GitHub raw content URL, you can use shorter URLs like `https://suede.sh/install/release`
-2. **Optional file extensions:** The extension can be omitted from requests (e.g. `https://suede.sh/install/release` instead of `https://suede.sh/install/release.sh`), and `https://suede.sh/suede` serves the installer itself
+2. **Optional file extensions:** The extension can be omitted from requests (e.g. `https://suede.sh/install/release` instead of `https://suede.sh/install/release.sh`); `https://suede.sh/deps` serves `deps.sh` for a dependency published before it existed
 3. **Caching:** Responses are cached via Cloudflare's CDN for faster access
 
 > [!NOTE]  
@@ -464,24 +421,18 @@ The source code for the suede.sh worker is available at [github.com/pmalacho-mit
 
 ## Prequisites
 
-### Python 3.9 or newer
+### Bash and git
 
-The installer is a single dependency-free Python file. macOS ships a suitable
-interpreter with the Command Line Tools (`xcode-select --install`); most Linux
-distributions have one already. Nothing is installed from PyPI — there are no
-runtime dependencies, which is what lets you read
-[`scripts/suede.py`](./scripts/suede.py) and patch it if you ever need to.
+That is all the installer needs. It is written for the bash macOS ships
+(3.2), and `git` does all the network access, so private repositories, SSH
+keys and credential helpers work with no extra setup.
 
-`git` is required too, and does all the network access, so private
-repositories, SSH keys and credential helpers work with no extra setup.
-
-An installed dependency records the **SSH** URL of its remote, so `git subrepo
-push` from inside it has a route back upstream — HTTPS password authentication
-no longer offers one. What you *publish* records the HTTPS URL instead, so
-consumers and CI runners can resolve your dependencies without a key of yours.
-Fetching tries SSH first and falls back to HTTPS, and suede treats the two
-spellings as one repository, so a tree installed either way plans and checks
-identically.
+An installed dependency records the **SSH** URL of its remote, so `upstream`
+from inside it has a route back — HTTPS password authentication no longer
+offers one. What you *publish* records the HTTPS URL instead, so consumers and
+CI runners can resolve your dependencies without a key of yours. Fetching
+tries SSH first and falls back to HTTPS, and both fail fast rather than
+prompting.
 
 ### Install [git-subrepo](https://github.com/ingydotnet/git-subrepo) 
 

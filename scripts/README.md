@@ -6,51 +6,46 @@ on-disk path, so `scripts/install/release.sh` is served at both
 `https://suede.sh/install/release` and
 `https://raw.githubusercontent.com/pmalacho-mit/suede/refs/heads/main/scripts/install/release.sh`.
 
-## `suede.py`
+Everything here is bash. There is no interpreter to find and nothing to
+download beyond the script itself.
 
-The installer. A single dependency-free Python 3.9 file: everything install,
-`check`, `list`, `remove` and `extract` do lives here, and every other script
-below is either a thin shell around it or a v1 script kept for compatibility.
+## `install/`
 
-```bash
-python3 suede.py install --repo OWNER/REPO [--dev|--vendor] [--dry-run|--yes|--commit]
-python3 suede.py check [--plan-json]
-python3 suede.py list  [--json]
-python3 suede.py remove <entry>
-python3 suede.py extract
-```
+### `install/release.sh`
 
-Consumers normally reach it through the bootstrap rather than downloading it
-themselves:
+The installer. One bash script, written for the bash macOS ships (3.2).
 
 ```bash
 bash <(curl -fsSL https://suede.sh/install/release) --repo OWNER/REPO
 ```
 
-It is one readable file on purpose — if you hit a problem on an unusual system,
-download it, open it, and patch it. See
-[DEPENDENCIES-OF-DEPENDENCIES.md](../DEPENDENCIES-OF-DEPENDENCIES.md) for what a
-dependency is and [INSTALL.md](../INSTALL.md) for how one gets installed.
+It installs the dependency's `release` branch into `./<name>` in the directory
+you run it from, writes a `.gitrepo` there, declares the install if this
+repository is a suede dependency (a `<repo><sep><name>` symlink beside the
+folder), stages everything without committing, and runs the dependency's own
+`deps.sh` so you see what it needs beside it. [INSTALL.md](../INSTALL.md) is
+the full description, including every flag:
 
-## Removed in v2
+```
+--repo <OWNER/REPO | url>   required; OWNER/REPO means github.com
+--at <commit>               install this commit instead of the branch tip
+--branch <name>             install from this branch (default: release)
+--sep <text>                separator for the declaring symlink (default: .)
+--name <folder>             install under this name instead of the repo's
+--prefix <text>             prepend to the folder name
+--suffix <text>             append to the folder name
+--dev                       never create the declaring symlink
+```
 
-These were absorbed into `suede.py`. Their `https://suede.sh/...` URLs now
-return a readable 404 rather than a script.
+`SUEDE_DEPS_URL` (default `https://suede.sh/deps`) is where it fetches `deps.sh`
+for a dependency published before that script existed.
 
-| Removed | What replaced it |
-| --- | --- |
-| `install/gitrepo.sh` | `suede.py install --gitrepo <path\|->` |
-| `utils/degit.sh` | `git clone --depth 1` + a hand-written `.gitrepo`, which the installer does for you |
-| `utils/git-raw.sh` | Nothing needs it: all network access goes through `git` |
-| `extract/subrepo-config.sh` | `git config -f <file> --get subrepo.<key>` |
-| `extract/dependencies.sh` | `suede.py extract` for classification; the install announce block for next steps |
-| `populate/dependencies.sh` | `suede.py extract` |
-| `actions/push-release.sh` | `dependency/main/core/push-release.sh`, which also runs the publish guard |
+## The scripts that ship inside a dependency
 
-`utils/git-raw.sh` and `extract/subrepo-config.sh` were the two places GitHub
-was hard-coded. `suede.py` has no such restriction — `git clone` and
-`git ls-remote` take a remote verbatim — so GitLab, Codeberg and self-hosted
-git work.
+[`dependency/release/core/`](../dependency/release/core/) — `deps.sh`, `diff`,
+`sync`, `upstream`. They are vendored into every dependency's `release` branch,
+so a consumer finds them at `<dependency>/.suede/core/`. `https://suede.sh/deps`
+serves `deps.sh` from there for the installer's fallback.
 
 ## `actions/`
 
@@ -72,12 +67,8 @@ ORIGIN_URL=<repo> CORE_URL=<suede> bash scripts/actions/init.sh
 
 It never checks out `release`. The consumer-facing core is vendored *inside*
 the release folder so it reaches that branch the way all release content does —
-through `main` — which is what makes `git subrepo pull release/.suede/core` the
-whole of updating it later.
-
-It replaced three scripts (`init-release-core.sh`, `init-main-core.sh`,
-`init-release-subrepo.sh`); the first is gone entirely, since nothing needs to
-be cloned onto the `release` branch any more.
+through `main` — which is what makes `bash .suede/core/sync.sh` the whole of
+updating it later.
 
 ### `actions/push-main.sh`
 
@@ -114,23 +105,6 @@ Dependency](../README.md#creating-a-dependency). Needs an authenticated `gh`.
 ./scripts/create/dependency.sh <name> [public|private] [--org <org>] [--cleanup]
 ```
 
-## `install/`
-
-### `install/release.sh`
-
-The bootstrap: finds a Python 3.9+, downloads [`suede.py`](./suede.py), and
-hands it the arguments. Every flag belongs to the installer — run
-`python3 suede.py install --help` for the full list.
-
-```bash
-bash <(curl -fsSL https://suede.sh/install/release) --repo OWNER/REPO [--dev|--vendor]
-```
-
-`--dev` installs a development dependency (unprefixed, unrecorded) and
-`--vendor` a vendored one (source and all into `release/<name>`). The v1 flags
-`--branch` and `--destination` are still accepted and translated: `--branch` is
-ignored with a notice, and `--destination` becomes `--name` plus `--target`.
-
 ## `populate/`
 
 ### `populate/readme-after-init.sh`
@@ -141,18 +115,13 @@ Writes installation instructions to README.md by parsing the git remote origin U
 ./populate/readme-after-init.sh
 ```
 
-> [!NOTE]  
+> [!NOTE]
 > Used in [initialize](../dependency/main/workflows/initialize.yml) Github Action
 
-## `upgrade/`
-
-### `upgrade/v1.md`
-
-Step-by-step manual instructions for migrating a repository created with an earlier version of the suede workflow onto the current subrepo layout, where `.suede/core` and `.github/workflows` are vendored from dedicated suede library branches. Rewires both `release` and `main` and drops obsolete generated files (the old per-branch workflow on each side, plus `initialize.yml` on main).
-
-See [upgrade/v1.md](upgrade/v1.md) — and [`MIGRATION-V1-V2.md`](../MIGRATION-V1-V2.md) instead if you are also moving to v2, which folds these steps in.
-
 ## Subrepo helpers
+
+Tools for *this* repository's own subrepos (the `dependency/*` folders and the
+worker under `sites/`), used by the `propagate-changes` workflow.
 
 ### `find.sh`
 
@@ -188,11 +157,18 @@ Delegates to `pull.sh`, then runs `git subrepo push` on each discovered subrepo.
 
 ### `upstream.sh`
 
-Proposes a vendored dependency's local changes upstream as a reviewable PR, without touching the consumed `release` branch.
+The hosted half of a dependency's `upstream`: proposes a vendored dependency's
+local changes upstream as a reviewable PR, without touching the consumed
+`release` branch.
 
 ```bash
 bash <(curl https://suede.sh/upstream) <path-to-dependency> [-r|--remote NAME]
 ```
+
+## Migrating
+
+[MIGRATION.md](../MIGRATION.md) moves a repository created under an earlier
+suede — v1 or v2 — onto this layout.
 
 ## `curl` Flags Reference
 

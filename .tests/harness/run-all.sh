@@ -117,15 +117,12 @@ run_one() {
 }
 
 # --- preflight --------------------------------------------------------------
-# The suite needs three things present. Checking once, up front, turns "git:
+# The suite needs two things present. Checking once, up front, turns "git:
 # 'subrepo' is not a git command" repeated across half the run into one line
 # that names the fix.
 missing_tools() {
   command -v git      >/dev/null 2>&1 || printf 'git\n'
-  command -v python3  >/dev/null 2>&1 || printf 'python3\n'
   git subrepo --version >/dev/null 2>&1 || printf 'git-subrepo (0.4.9)\n'
-  python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' \
-    >/dev/null 2>&1 || printf 'python3 >= 3.9\n'
 }
 
 MISSING="$(missing_tools)"

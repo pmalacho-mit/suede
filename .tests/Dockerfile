@@ -2,18 +2,14 @@
 #   Build (from repo root):  docker build -f .tests/Dockerfile -t suede-tests .
 #   Run:                      docker run --rm suede-tests
 #
-# Pinned to Python 3.9 on purpose: that is the floor the installer supports
-# (macOS Command Line Tools ship 3.9.6), and a suite that passes on the floor
-# passes above it. The version matrix in CI covers the other interpreters; this
-# image is about everything else being identical every time.
-# BASE_IMAGE exists so an environment with its own registry mirror or TLS
-# interception can substitute an equivalent base without editing this file.
-ARG PYTHON_VERSION=3.9
-ARG BASE_IMAGE=python:${PYTHON_VERSION}-slim-bookworm
+# Everything here is bash, so the base is a plain Debian. BASE_IMAGE exists so
+# an environment with its own registry mirror or TLS interception can
+# substitute an equivalent base without editing this file.
+ARG BASE_IMAGE=debian:bookworm-slim
 FROM ${BASE_IMAGE}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git ca-certificates curl && rm -rf /var/lib/apt/lists/*
+      git ca-certificates curl jq && rm -rf /var/lib/apt/lists/*
 
 # git-subrepo: required by the local-chain fixture, upstream.sh and the release
 # sync. Pinned to the version the actions install, so local == CI == production.

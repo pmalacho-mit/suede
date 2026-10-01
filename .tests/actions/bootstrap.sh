@@ -64,7 +64,7 @@ say "minting a token"
 TOKEN="$(curl -fsS -X POST -H "Content-Type: application/json" \
   -u "$ADMIN:$PASSWORD" \
   -d '{"name":"suede-tier-c","scopes":["write:repository","write:user","write:admin","write:organization"]}' \
-  "$GITEA/api/v1/users/$ADMIN/tokens" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha1"])')"
+  "$GITEA/api/v1/users/$ADMIN/tokens" | jq -r .sha1)"
 [[ -n "$TOKEN" ]] || die "could not mint a token"
 
 say "creating $ORG and its repositories"
@@ -75,7 +75,7 @@ for repo in dep-lib consumer; do
 done
 
 say "registering the runner"
-REGISTRATION="$(api GET /admin/runners/registration-token | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
+REGISTRATION="$(api GET /admin/runners/registration-token | jq -r .token)"
 RUNNER_TOKEN="$REGISTRATION" compose up -d runner
 
 say "waiting for the runner to appear"

@@ -64,12 +64,7 @@ wait_for_run() {
   for attempt in $(seq 1 60); do
     local status
     status="$(api GET "/repos/$ORG/$repo/actions/tasks?limit=1" 2>/dev/null \
-      | python3 -c 'import json,sys
-try:
-    tasks = json.load(sys.stdin).get("workflow_runs") or []
-    print(tasks[0]["status"] if tasks else "none")
-except Exception:
-    print("none")')"
+      | jq -r '(.workflow_runs // [])[0].status // "none"' 2>/dev/null || echo none)"
     [[ "$status" == "success" || "$status" == "failure" ]] && { printf '%s\n' "$status"; return 0; }
     sleep 3
   done

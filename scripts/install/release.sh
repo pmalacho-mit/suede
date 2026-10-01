@@ -1,98 +1,234 @@
 #!/usr/bin/env bash
 #
-# Bootstrap for the suede installer.
+# Install a suede dependency into the current directory.
 #
 #   bash <(curl -fsSL https://suede.sh/install/release) --repo OWNER/REPO
-#   bash <(curl -fsSL https://suede.sh/install/release) --repo OWNER/REPO --dev
-#   bash <(curl -fsSL https://suede.sh/install/release) --repo OWNER/REPO --vendor
 #
-# The default installs a release dependency: prefixed, flat at the root, and
-# recorded in your manifest. --dev installs a development dependency (no
-# prefix, nothing recorded, its own dependencies not doubled as yours), and
-# --vendor installs a vendored one (source and all into release/<name>, with
-# its dependencies vendored beside it).
+# What happens, in order:
 #
-# Finds a Python 3.9+, downloads scripts/suede.py, and hands it the arguments.
-# Everything the installer does lives in that one readable file; this script
-# exists only because the documented one-liner is baked into every dependency
-# README the initialize workflow has ever generated.
+#   1. The dependency's release branch is resolved and its tree is fetched -
+#      no history - into ./<name>, where <name> is the repository's name.
+#   2. A .gitrepo is written there, so `sync` and `upstream` work later.
+#   3. If this repository is itself a suede dependency (it has release/.gitrepo)
+#      and you are running at its root, a symlink <repo><sep><name> -> <name>
+#      is created beside the folder. That symlink is what DECLARES the install
+#      a release dependency: `extract` publishes exactly the entries named this
+#      way. Delete it and the dependency is a development dependency; rename it
+#      to change the separator. Inside release/ nothing is linked, because the
+#      source itself ships (a vendored dependency). In a repository that is not
+#      a dependency, nothing is linked either, since there is nothing to publish.
+#   4. Everything is staged, not committed.
+#   5. The dependency's own deps.sh runs, so you see what it needs beside it.
 #
-# Run `suede.py install --help` for the full option list.
+# Options:
+#   --repo <OWNER/REPO | url>  required. OWNER/REPO means github.com.
+#   --at <commit>              install this commit instead of the branch tip
+#   --branch <name>            install from this branch (default: release)
+#   --sep <text>               separator for the declaring symlink (default: .)
+#                              Use __ where a path segment has to be an
+#                              identifier (Python, Rust).
+#   --name <folder>            install under this name instead of the repo's
+#   --prefix <text>            prepend to the folder name
+#   --suffix <text>            append to the folder name
+#   --dev                      never create the declaring symlink
+#   -h, --help
 #
-# Overrides (used by the test suite):
-#   SUEDE_PY   where to fetch suede.py from; a path or file:// URL works
+# Remotes: SSH is tried first, so a key is enough for a private repository;
+# HTTPS second, so a machine with no key still installs anything public. The
+# .gitrepo records the SSH spelling, because that is the one `upstream` can
+# push through. Both attempts are quick to fail (BatchMode, 5s connect).
+#
+# Needs: git. Nothing else - not git-subrepo, not python, and not curl beyond
+# the one that fetched this script.
+#
+# Env:
+#   SUEDE_DEPS_URL   where to fetch deps.sh for a dependency that ships without
+#                    one (default https://suede.sh/deps)
 
 set -euo pipefail
 
-readonly SUEDE_PY="${SUEDE_PY:-https://suede.sh/suede}"
-readonly MINIMUM_PYTHON="3.9"
+usage() { grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \?//'; exit 0; }
+die()  { printf 'install: %s\n' "$*" >&2; exit 1; }
+say()  { printf 'install: %s\n' "$*"; }
 
-die() { printf 'install/release: %s\n' "$*" >&2; exit 1; }
+RELEASE_DIR="release"
+GITREPO_HEADER='; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;'
 
-# The first interpreter new enough to run the installer. `python3` is tried
-# first so an activated virtualenv wins; the numbered names cover systems where
-# `python3` is older than what is also installed alongside it.
-find_python() {
-  local candidate
-  for candidate in python3 python3.13 python3.12 python3.11 python3.10 python3.9 python; do
-    command -v "$candidate" >/dev/null 2>&1 || continue
-    "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' \
-      >/dev/null 2>&1 || continue
-    printf '%s\n' "$candidate"
-    return 0
-  done
-  return 1
-}
-
-fetch() {
+REPO=""; AT=""; BRANCH="release"; SEP="."; NAME=""; PREFIX=""; SUFFIX=""; DEV=0
+while [[ $# -gt 0 ]]; do
   case "$1" in
-    file://*) cp "${1#file://}" "$2" ;;
-    /*)       cp "$1" "$2" ;;
-    *)        curl -fsSL "$1" -o "$2" ;;   # -f: a 404 body must never reach python
+    -h|--help)   usage ;;
+    -r|--repo)   REPO="${2-}";   shift 2 ;;
+    --at)        AT="${2-}";     shift 2 ;;
+    --branch)    BRANCH="${2-}"; shift 2 ;;
+    --sep)       SEP="${2-}";    shift 2 ;;
+    --name)      NAME="${2-}";   shift 2 ;;
+    --prefix)    PREFIX="${2-}"; shift 2 ;;
+    --suffix)    SUFFIX="${2-}"; shift 2 ;;
+    --dev)       DEV=1;          shift ;;
+    *)           die "unknown argument: $1 (see --help)" ;;
   esac
-}
+done
+[[ -n "$REPO" ]]   || die "--repo is required"
+[[ -n "$BRANCH" ]] || die "--branch needs a name"
+[[ -n "$SEP" ]]    || die "--sep needs a value"
 
-# v1 flags that still appear in generated READMEs. `--branch` named the branch
-# holding release/.gitrepo, a lookup v2 does not perform: it resolves the
-# release branch on the remote directly.
-translate() {
-  ARGUMENTS=()
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      -b|--branch)
-        printf 'install/release: ignoring "%s %s" - v2 resolves the release branch directly\n' \
-          "$1" "${2-}" >&2
-        shift 2
-        ;;
-      -d|--destination)
-        [[ -n "${2-}" ]] || die "missing argument to $1"
-        ARGUMENTS+=(--name "$(basename "${2%/}")")
-        [[ "$(dirname "${2%/}")" == "." ]] || ARGUMENTS+=(--target "$(dirname "${2%/}")")
-        shift 2
-        ;;
-      *)
-        ARGUMENTS+=("$1")
-        shift
-        ;;
-    esac
-  done
-}
+command -v git >/dev/null 2>&1 || die "git not found"
 
-command -v curl >/dev/null 2>&1 || die "curl not found"
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not inside a git repository"
+ROOT="$(cd "$ROOT" && pwd -P)"
+HERE="$(pwd -P)"
 
-PYTHON="$(find_python)" || die \
-  "no python3 >= $MINIMUM_PYTHON found. macOS ships one with the Command Line Tools
-  (xcode-select --install); on Linux install the python3 package for your distribution."
+# --- remotes ----------------------------------------------------------------
+# The two spellings of one repository. host/path are empty for anything that
+# is not a hosted owner/name repository (a local path, file://), which then has
+# exactly one spelling: itself.
+HOST=""; PATH_PART=""
+case "$REPO" in
+  http://*|https://*)
+    rest="${REPO#*://}"; HOST="${rest%%/*}"; PATH_PART="${rest#*/}" ;;
+  ssh://*)
+    rest="${REPO#ssh://}"; rest="${rest#*@}"; HOST="${rest%%/*}"; PATH_PART="${rest#*/}" ;;
+  *@*:*)
+    rest="${REPO#*@}"; HOST="${rest%%:*}"; PATH_PART="${rest#*:}" ;;
+  */*)
+    # OWNER/REPO shorthand: no scheme, no colon, not a path on disk.
+    if [[ "$REPO" != /* && "$REPO" != .* && ! -e "$REPO" && "${REPO#*/}" != */* ]]; then
+      HOST="github.com"; PATH_PART="$REPO"
+    fi ;;
+esac
+PATH_PART="${PATH_PART%/}"; PATH_PART="${PATH_PART%.git}"
 
+if [[ -n "$HOST" && -n "$PATH_PART" ]]; then
+  SSH_URL="git@$HOST:$PATH_PART.git"
+  HTTPS_URL="https://$HOST/$PATH_PART.git"
+  CANDIDATES=("$SSH_URL" "$HTTPS_URL")
+  RECORDED_REMOTE="$SSH_URL"
+else
+  CANDIDATES=("$REPO")
+  RECORDED_REMOTE="$REPO"
+fi
+
+# Our own git calls fail fast and never prompt; the user's later `git subrepo`
+# calls are separate processes and keep their own configuration.
+export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes -o ConnectTimeout=5}"
+export GIT_TERMINAL_PROMPT=0
+
+FETCH_URL=""; TIP=""
+for candidate in "${CANDIDATES[@]}"; do
+  if TIP="$(git ls-remote --exit-code "$candidate" "refs/heads/$BRANCH" 2>/dev/null | cut -f1)"; then
+    FETCH_URL="$candidate"; break
+  fi
+  [[ ${#CANDIDATES[@]} -gt 1 && "$candidate" == "${CANDIDATES[0]}" ]] \
+    && say "ssh to $HOST did not answer; trying https"
+done
+[[ -n "$FETCH_URL" ]] || die "could not find branch '$BRANCH' at ${CANDIDATES[*]}"
+COMMIT="${AT:-$TIP}"
+
+# --- naming -----------------------------------------------------------------
+default_name="${PATH_PART:-${REPO%/}}"; default_name="${default_name%.git}"; default_name="${default_name##*[:/]}"
+NAME="${PREFIX}${NAME:-$default_name}${SUFFIX}"
+[[ "$NAME" != */* && "$NAME" != . && "$NAME" != .. ]] || die "'$NAME' is not a valid folder name"
+DEST="$HERE/$NAME"
+if [[ -e "$DEST" || -L "$DEST" ]]; then
+  die "./$NAME already exists. To install beside it, pick another name: --name <folder>, --prefix <text> or --suffix <text>"
+fi
+
+# --- where are we -----------------------------------------------------------
+if git -C "$ROOT" remote get-url origin >/dev/null 2>&1; then
+  REPO_NAME="$(git -C "$ROOT" remote get-url origin)"
+  REPO_NAME="${REPO_NAME%/}"; REPO_NAME="${REPO_NAME%.git}"; REPO_NAME="${REPO_NAME##*[:/]}"
+else
+  REPO_NAME="$(basename "$ROOT")"
+fi
+
+IS_DEPENDENCY_REPO=0; [[ -f "$ROOT/$RELEASE_DIR/.gitrepo" ]] && IS_DEPENDENCY_REPO=1
+INSIDE_RELEASE=0
+[[ "$IS_DEPENDENCY_REPO" == 1 && ( "$HERE" == "$ROOT/$RELEASE_DIR" || "$HERE" == "$ROOT/$RELEASE_DIR/"* ) ]] && INSIDE_RELEASE=1
+
+LINK=""
+if [[ "$INSIDE_RELEASE" == 1 ]]; then
+  MODE="vendored"
+elif [[ "$IS_DEPENDENCY_REPO" == 0 ]]; then
+  MODE="plain"
+elif [[ "$DEV" == 1 ]]; then
+  MODE="development"
+elif [[ "$HERE" != "$ROOT" ]]; then
+  die "a release dependency has to sit beside $RELEASE_DIR/: code in $RELEASE_DIR/ reaches it as ../$REPO_NAME$SEP<name>, and that path only holds at the repository root.
+  Run this from $ROOT, or pass --dev to install here without declaring it."
+else
+  MODE="release"
+  LINK="$HERE/$REPO_NAME$SEP$NAME"
+fi
+
+# --- fetch ------------------------------------------------------------------
 WORKSPACE="$(mktemp -d)"
 trap 'rm -rf "$WORKSPACE"' EXIT
 
-fetch "$SUEDE_PY" "$WORKSPACE/suede.py" || die "could not download the installer from $SUEDE_PY"
+say "$REPO, $BRANCH @ ${COMMIT:0:7}  ->  ./$NAME"
+git init --quiet "$WORKSPACE/tree"
+git -C "$WORKSPACE/tree" remote add origin "$FETCH_URL"
+# A bare SHA is refused by some servers; the branch always works.
+git -C "$WORKSPACE/tree" fetch --quiet --depth 1 origin "$COMMIT" 2>/dev/null \
+  || git -C "$WORKSPACE/tree" fetch --quiet origin "refs/heads/$BRANCH" \
+  || die "could not fetch from $FETCH_URL"
+git -C "$WORKSPACE/tree" checkout --quiet --detach "$COMMIT" 2>/dev/null \
+  || die "$FETCH_URL has no commit $COMMIT on $BRANCH"
+COMMIT="$(git -C "$WORKSPACE/tree" rev-parse HEAD)"
+rm -rf "$WORKSPACE/tree/.git" "$WORKSPACE/tree/.gitrepo"
 
-translate "$@"
+mkdir "$DEST"
+cp -R "$WORKSPACE/tree/." "$DEST/"
 
-# Not `exec`: the installer's exit code is the contract (see suede.py's Exit
-# table), and the trap above still has a workspace to remove.
-STATUS=0
-"$PYTHON" "$WORKSPACE/suede.py" install ${ARGUMENTS[@]+"${ARGUMENTS[@]}"} || STATUS=$?
-exit "$STATUS"
+# The .gitrepo git-subrepo would have written, minus the merge it would have
+# made: `parent` is this repository's HEAD, which is what `git subrepo pull`
+# later uses as the base.
+PARENT="$(git -C "$ROOT" rev-parse --verify HEAD 2>/dev/null || true)"
+printf '%s\n' "$GITREPO_HEADER" > "$DEST/.gitrepo"
+git config -f "$DEST/.gitrepo" subrepo.remote "$RECORDED_REMOTE"
+git config -f "$DEST/.gitrepo" subrepo.branch "$BRANCH"
+git config -f "$DEST/.gitrepo" subrepo.commit "$COMMIT"
+git config -f "$DEST/.gitrepo" subrepo.parent "$PARENT"
+git config -f "$DEST/.gitrepo" subrepo.method "merge"
+git config -f "$DEST/.gitrepo" subrepo.cmdver "0.4.9"
+
+git -C "$ROOT" add -- "$DEST"
+
+# --- declare ----------------------------------------------------------------
+case "$MODE" in
+  release)
+    if [[ -e "$LINK" || -L "$LINK" ]]; then
+      say "$(basename "$LINK") already exists; leaving it as it is"
+    else
+      ln -s "$NAME" "$LINK"
+      git -C "$ROOT" add -- "$LINK"
+      say "declared as a release dependency of $REPO_NAME:"
+      say "  $(basename "$LINK") -> $NAME"
+      say "  (delete that symlink to make it a development dependency; rename it to change the separator)"
+    fi ;;
+  development)
+    say "not declared (--dev): $REPO_NAME's consumers will not hear about it" ;;
+  vendored)
+    say "inside $RELEASE_DIR/ of $REPO_NAME: installed as vendored source, nothing to declare" ;;
+  plain)
+    say "$REPO_NAME is not a suede dependency (no $RELEASE_DIR/.gitrepo), so nothing is declared" ;;
+esac
+say "staged, not committed"
+
+# --- what does it need ------------------------------------------------------
+echo
+if [[ -f "$DEST/.suede/core/deps.sh" ]]; then
+  bash "$DEST/.suede/core/deps.sh" || true
+elif ls "$DEST/.suede/.dependencies"/*.gitrepo >/dev/null 2>&1; then
+  if command -v curl >/dev/null 2>&1; then
+    bash <(curl -fsSL "${SUEDE_DEPS_URL:-https://suede.sh/deps}") --in "$DEST" || true
+  else
+    say "$NAME has dependencies of its own under .suede/.dependencies but ships no deps.sh; see https://suede.sh/deps"
+  fi
+else
+  say "$NAME needs nothing beside it"
+fi

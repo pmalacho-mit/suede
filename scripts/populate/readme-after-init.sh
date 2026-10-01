@@ -94,6 +94,9 @@ To see the installable source code, please checkout the [release branch]($RELEAS
 bash <(curl -fsSL https://suede.sh/install/release) --repo $_repo_id
 \`\`\`
 
+Run it where you want the dependency. It installs \`./$REPO_NAME\`, stages it, and prints
+what else (if anything) has to be installed beside it.
+
 <details>
 <summary>
 See alternative to using <a href="https://github.com/pmalacho-mit/suede#suedesh">suede.sh</a> script proxy

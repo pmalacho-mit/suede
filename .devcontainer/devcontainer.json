@@ -6,11 +6,8 @@
     "vscode": {
       "extensions": [
         "anthropic.claude-code",
-        "detachhead.basedpyright",
         "esbenp.prettier-vscode",
-        "ms-azuretools.vscode-containers",
-        "ms-python.python",
-        "ms-python.black-formatter"
+        "ms-azuretools.vscode-containers"
       ],
       "settings": {
         "[javascript]": {
@@ -19,10 +16,6 @@
         },
         "[markdown]": {
           "editor.defaultFormatter": null
-        },
-        "[python]": {
-          "editor.defaultFormatter": "ms-python.black-formatter",
-          "editor.formatOnSave": true
         },
         "[typescript]": {
           "editor.defaultFormatter": "esbenp.prettier-vscode",
@@ -37,9 +30,6 @@
     "ghcr.io/devcontainers/features/docker-in-docker:4": {},
     "ghcr.io/devcontainers/features/node:latest": {
       "version": "24"
-    },
-    "ghcr.io/devcontainers/features/python:latest": {
-      "version": "3.9"
     },
     "ghcr.io/guiyomh/features/vim:0": {},
     "ghcr.io/pmalacho-mit/devcontainer-features/git-subrepo:latest": {}

@@ -22,6 +22,6 @@ Now that you have a git repository that will behave as a [suede dependency](http
 - [ ] _OPTIONAL:_ Install a devcontainer
   - Initialization deliberately does not set one up — a dependency's development environment is its own choice, not something the library imposes. If you want one, install [devcontainers-suede](https://github.com/pmalacho-mit/devcontainers-suede) yourself:
     ```bash
-    bash <(curl -fsSL https://suede.sh/install/release) --repo pmalacho-mit/devcontainers-suede --destination .suede/devcontainers-suede
+    (cd .suede && bash <(curl -fsSL https://suede.sh/install/release) --repo pmalacho-mit/devcontainers-suede --dev)
     bash .suede/devcontainers-suede/install.sh <profile>.json
     ```
