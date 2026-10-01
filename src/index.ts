@@ -2,13 +2,17 @@ const REPO = "https://raw.githubusercontent.com/pmalacho-mit/suede";
 const SCRIPTS = "/scripts";
 const DEFAULT_REF = "refs/heads/main";
 
-/** Paths that map to a specific file instead of getting `.sh` appended. */
+/**
+ * Paths served from somewhere other than scripts/. `deps.sh` ships inside
+ * every dependency, but one published before it existed has none, so the
+ * installer fetches it from here.
+ */
 const ALIASES: Record<string, string> = {
-  "/suede": "/suede.py",
+  "/deps": "/dependency/release/core/deps.sh",
 };
 
 /** Extensions served verbatim. Anything else gets `.sh` appended. */
-const PASSTHROUGH = [".sh", ".py"];
+const PASSTHROUGH = [".sh"];
 
 const cache = {
   cacheTtl: 60,
@@ -39,8 +43,9 @@ function resolvePath(pathname: string): string | null {
     return null;
   }
   if (decoded.includes("..")) return null;
-  const aliased = ALIASES[decoded] ?? decoded;
-  return PASSTHROUGH.some((e) => aliased.endsWith(e)) ? aliased : aliased + ".sh";
+  if (ALIASES[decoded]) return ALIASES[decoded];
+  const path = SCRIPTS + decoded;
+  return PASSTHROUGH.some((e) => path.endsWith(e)) ? path : path + ".sh";
 }
 
 function text(body: string, status: number): Response {
@@ -68,13 +73,12 @@ const index = `<!DOCTYPE html>
 		<p>This service provides cached access to scripts from:</p>
 		<pre><code>${REPO}/${DEFAULT_REF}${SCRIPTS}</code></pre>
 
-		<p>Requests may omit the <code>.sh</code> extension. Files ending in
-		<code>.sh</code> or <code>.py</code> are served verbatim.</p>
+		<p>Requests may omit the <code>.sh</code> extension.</p>
 
 		<h2>Examples</h2>
-		<pre><code>curl -fsSL https://suede.sh/suede            # -> scripts/suede.py
-curl -fsSL https://suede.sh/install/release  # the install bootstrap
-curl -fsSL https://suede.sh/suede?ref=v2.0.0 # pinned to a tag</code></pre>
+		<pre><code>curl -fsSL https://suede.sh/install/release  # the installer
+curl -fsSL https://suede.sh/deps             # -> dependency/release/core/deps.sh
+curl -fsSL https://suede.sh/install/release?ref=v3.0.0 # pinned to a tag</code></pre>
 
 		<h2>Pinning</h2>
 		<p>Add <code>?ref=</code> to pin a tag, branch or commit. Without it,
@@ -83,7 +87,7 @@ curl -fsSL https://suede.sh/suede?ref=v2.0.0 # pinned to a tag</code></pre>
 		<h2>Verifying</h2>
 		<p>This worker is a proxy. To bypass it entirely, fetch the same file
 		straight from GitHub — the content is identical:</p>
-		<pre><code>curl -fsSL ${REPO}/${DEFAULT_REF}${SCRIPTS}/suede.py</code></pre>
+		<pre><code>curl -fsSL ${REPO}/${DEFAULT_REF}${SCRIPTS}/install/release.sh</code></pre>
 
 		<hr>
 		<p>Browse available scripts at
@@ -115,7 +119,7 @@ export default {
     const path = resolvePath(url.pathname);
     if (path === null) return text("suede.sh: invalid path\n", 400);
 
-    const upstream = `${REPO}/${ref}${SCRIPTS}${path}`;
+    const upstream = `${REPO}/${ref}${path}`;
 
     // Deliberately do NOT forward client headers upstream: doing so leaks any
     // Authorization or Cookie the caller happened to send to a third party.
