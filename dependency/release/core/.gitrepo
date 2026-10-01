@@ -6,7 +6,7 @@
 [subrepo]
 	remote = https://github.com/pmalacho-mit/suede.git
 	branch = dependency/release/core
-	commit = 5ee3b8a2ffb6f1832b3867624600229f7d5ae9fc
-	parent = 23b4ef4784fb9b407cc1313f1f583c3be0c3efe5
+	commit = 8cc995f9ec21b090530bcc79e3ff57506ceffb3e
+	parent = 1c0d8c7376b0a804b468e4c625262dfda9518f52
 	method = merge
 	cmdver = 0.4.9
