@@ -144,6 +144,10 @@ bash <dependency>/.suede/core/upstream
 ```
 
 First commit the changes you want to send — the working tree must be clean.
+You can run it through any path that reaches the dependency, including its
+declaring symlink (`bash suede.nests.sweater-vest/.suede/core/upstream`): like
+`sync`, it resolves to the real folder first, because `git subrepo push` on a
+symlink path fails.
 
 1. Splits the dependency's local commits out via `git subrepo` and pushes them to
    a deterministic branch on the library's remote:

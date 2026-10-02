@@ -62,9 +62,14 @@ ensure_git_subrepo() {
 
 ensure_git_subrepo || die "git-subrepo not installed (see suede README)"
 
-DIRABS="$(cd "$DIR" 2>/dev/null && pwd)" || die "no such directory: $DIR"
+# Physical paths (`pwd -P`): a dependency is usually reached through a symlink
+# (the declaration `suede.nests.sweater-vest -> suede.nests`, or an edge), and
+# `git subrepo push` on a symlink path finds no history for it and fails with
+# "not a valid object name". The real folder is the subrepo.
+DIRABS="$(cd "$DIR" 2>/dev/null && pwd -P)" || die "no such directory: $DIR"
 TOP="$(git -C "$DIRABS" rev-parse --show-toplevel 2>/dev/null)" \
   || die "'$DIR' is not inside a git repository"
+TOP="$(cd "$TOP" && pwd -P)"   # so the prefix strip below compares like with like
 cd "$TOP"
 RELDIR="${DIRABS#"$TOP"/}"
 [ "$RELDIR" != "$DIRABS" ] || die "the dependency must live inside the repo, not at its root"
