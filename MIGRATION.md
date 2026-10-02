@@ -10,19 +10,28 @@ work through it.
 
 What changes on disk, in one table:
 
-| v2 | v3 |
+| v2, or an early v3 | v3 |
 | --- | --- |
-| release dependency = real folder `app.widget/` | real folder `widget/` plus symlink `app.widget -> widget` |
-| edge symlink `widget.mixin -> ./app.mixin` | edge symlink `widget.mixin -> mixin` |
+| release dependency = real folder `app.widget/` (v2) or symlink `app.widget -> widget` (early v3) | real folder `widget/` plus symlink `widget.app -> widget` |
+| edge symlink `widget.mixin -> ./app.mixin` | edge symlink `mixin.widget -> mixin` |
 | `.suede/.dependencies/separator` at the root | gone; `--sep` on the install command, or rename the symlink |
 | `release/.suede/.dependencies/{package.json,requirements.txt}` | gone; `release/` carries its own `package.json` as a workspace |
 | `python3 <(curl …/suede) check|list|extract|diff` | `bash .suede/core/{list,extract,diff}.sh`, `bash <dep>/.suede/core/deps.sh` |
 | `.suede/core/vendor.sh` | `git mv <folder> release/<name>` and `git rm` the symlink |
 
-The **records** (`release/.suede/.dependencies/<entry>.gitrepo`) keep the same
-format and names, so a v3 consumer can already install a v2-published
-dependency; what it lacks until republished is `deps.sh`, which the installer
-fetches from `https://suede.sh/deps` instead.
+Every symlink now reads **what it is, then who needs it**: `widget.app` is
+widget, needed by app. With `suede.`-named repositories your own prefix is
+dropped, so `suede.svelte-testing-utility` declares
+`suede.typescript-testing-utility.svelte-testing-utility`, and the Python
+`suede__wsfs` declares `suede__sqlmodel_utils__wsfs`.
+
+The **records** (`release/.suede/.dependencies/<entry>.gitrepo`) keep their
+format but are named after the declaring symlink, so their names flip when a
+dependency republishes, and so do the sibling paths its `release/` code
+imports. That is why order matters below. A v3 consumer can still install a
+not-yet-migrated dependency: `deps.sh` uses whatever names its records carry,
+and the installer fetches `deps.sh` from `https://suede.sh/deps` for one that
+ships none.
 
 ---
 
@@ -53,7 +62,7 @@ Python is no longer needed by anything.
 ### A1. Which shape?
 
 ```bash
-ls -d .suede/core release/.suede/core 2>/dev/null   # both present: v2 (go to A3)
+ls -d .suede/core release/.suede/core 2>/dev/null   # both present: v2 or early v3 (go to A3)
 ls -d release/.dependencies 2>/dev/null             # present: v1 (start at A2)
 ```
 
@@ -99,37 +108,83 @@ what it prints.
 
 ### A4. Convert the layout
 
-For each release dependency — a real folder named `<repo>.<name>` or
-`<repo>__<name>` — rename it to `<name>` and leave a symlink behind. The
-`release/` imports do not change: they already go through the symlink's name.
+This works from either starting point: v2's real folders `<repo>.<name>/`, or
+the early-v3 symlinks `<repo>.<name> -> <name>`. It does three things and
+leaves the fourth to `deps.sh`:
+
+1. Each declaration becomes the folder `<name>/` plus `<name><sep><repo>`,
+   keeping the separator it had and dropping your `suede.` prefix when the
+   dependency has one.
+2. Every other symlink pointing at an installed dependency — the edges — is
+   removed. Their names come from each dependency's published records, which
+   are about to change, so they are recreated rather than renamed.
+3. Your `release/` imports are rewritten from the old declaration names to the
+   new ones.
+4. You run each dependency's `deps.sh` and paste the `ln -s` lines it prints.
+
+Run it from the root with a clean tree:
 
 ```bash
 repo="$(basename "$(git remote get-url origin)" .git)"
+case "$repo" in suede.?*) short="${repo#suede.}" ;; suede__?*) short="${repo#suede__}" ;; *) short="$repo" ;; esac
+map="$(mktemp)"                                   # old name <TAB> new name
+
+# 1. Declarations
 for entry in "$repo".* "$repo"__*; do
-  [[ -d "$entry" && ! -L "$entry" && -f "$entry/.gitrepo" ]] || continue
-  name="${entry#"$repo".}"; name="${name#"$repo"__}"
-  git mv "$entry" "$name" && ln -s "$name" "$entry" && git add "$entry"
+  [[ -e "$entry" || -L "$entry" ]] || continue
+  if [[ "$entry" == "$repo"__* ]]; then sep="__"; else sep="."; fi
+  if [[ -L "$entry" ]]; then                       # early v3: a symlink
+    folder="$(readlink "$entry")"; folder="${folder#./}"
+    rm "$entry"
+  elif [[ -f "$entry/.gitrepo" ]]; then            # v2: the real folder
+    folder="${entry#"$repo$sep"}"
+    mv "$entry" "$folder"
+  else
+    continue
+  fi
+  case "$folder" in suede.?*|suede__?*) who="$short" ;; *) who="$repo" ;; esac
+  ln -s "$folder" "$folder$sep$who"
+  printf '%s\t%s\n' "$entry" "$folder$sep$who" >> "$map"
 done
+
+# 2. Edges: symlinks to an install, or to a v2 declaration folder renamed above.
+#    Any other symlink of yours is left alone.
+for link in *; do
+  [[ -L "$link" ]] || continue
+  cut -f2 "$map" | grep -qxF -- "$link" && continue          # declared in step 1
+  target="$(readlink "$link")"; target="${target#./}"
+  if [[ -f "$link/.gitrepo" ]] || cut -f1 "$map" | grep -qxF -- "$target"; then rm "$link"; fi
+done
+
+# 3. Imports in release/ - longest names first, so one is never a prefix of another
+sort -t$'\t' -k1,1 -r "$map" | while IFS=$'\t' read -r old new; do
+  grep -rlF --exclude-dir=.suede -- "$old" release | while IFS= read -r file; do
+    sed -i.bak "s#${old//./\\.}#$new#g" "$file" && rm "$file.bak"
+  done
+done
+cat "$map"                                         # what was renamed
 ```
 
-Then repoint every edge symlink at the real folder. v2 wrote them as
-`B.C -> ./app.C`; `app.C` is now itself a symlink, and a symlink to a symlink is
-exactly the chain v3 avoids.
+Review `git diff release/` — every changed line should be an import moving
+from `<repo>.<name>` to `<name>.<repo>`. Then recreate the edges:
 
 ```bash
-for link in *.*; do
-  [[ -L "$link" ]] || continue
-  target="$(readlink "$link")"; target="${target#./}"
-  [[ -L "$target" ]] || continue                     # already points at a real folder
-  real="$(readlink "$target")"
-  ln -sfn "$real" "$link" && git add "$link"
+for d in */; do
+  d="${d%/}"
+  [[ "$d" != release && ! -L "$d" && -f "$d/.suede/core/deps.sh" ]] && bash "$d/.suede/core/deps.sh"
 done
 ```
 
+Run the `ln -s` lines it prints (and any install it asks for), and re-run until
+each says `everything is in place`. A dependency that has republished under v3
+asks for `mixin.widget`; one that has not still asks for its old names, and
+gets them — the next time it republishes, re-run this loop.
+
 A **v2 `--dev` or `--vendor` install named after its edge**
-(`sweater-vest-suede.dockview-svelte-suede/` as a real folder) needs no change:
-it is a development dependency under an odd name, or a vendored one, and both
-still read that way. Rename it if you prefer the dependency's own name.
+(`sweater-vest-suede.dockview-svelte-suede/` as a real folder) is a
+development dependency under an odd name, or a vendored one, and both still
+read that way. Rename it to the dependency's own name if you prefer; nothing
+keys on it.
 
 Remove what v3 does not use:
 
@@ -216,21 +271,17 @@ The installer prints the whole recipe — every transitive install and every
 ### B2. In place (you have local edits to keep)
 
 Sync each top-level dependency to its republished release so you have its
-`deps.sh`, then convert the layout exactly as in [A4](#a4-convert-the-layout):
+`deps.sh`, then run [A4](#a4-convert-the-layout) as written — it handles an
+application the same way:
 
 ```bash
-bash app.widget/.suede/core/sync       # per dependency; needs a clean tree
+bash app.widget/.suede/core/sync       # per dependency, before A4; needs a clean tree
 ```
 
-In an **application** (no `release/.gitrepo`), the `app.<name>` symlinks the
-loop in A4 leaves behind declare nothing; delete them if you prefer a tidy root.
-The edge symlinks (`widget.mixin -> mixin`) are what matter.
-
-Then, per dependency:
-
-```bash
-bash widget/.suede/core/deps.sh        # expect: everything is in place
-```
+In an **application** (no `release/.gitrepo`) the `<name>.<repo>` symlinks A4
+creates declare nothing, and step 3 finds no `release/` to rewrite; delete those
+symlinks if you prefer a tidy root. The edges `deps.sh` recreates are what
+matter.
 
 ### B3. Workspaces
 

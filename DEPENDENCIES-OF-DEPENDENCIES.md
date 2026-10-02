@@ -13,20 +13,35 @@ lives and what sits beside it:**
 
 | Kind | How it is declared | What ships to consumers |
 | --- | --- | --- |
-| **Release** | A root entry named `<repo><sep><name>` — by convention a symlink the installer created — that resolves to a folder holding a `.gitrepo` outside `release/` | A record (`<entry>.gitrepo`): remote, branch, commit. Not the source |
+| **Release** | A symlink at the root named `<name><sep><repo>` — the installer creates it — that resolves to a folder holding a `.gitrepo` outside `release/` | A record (`<entry>.gitrepo`): remote, branch, commit. Not the source |
 | **Development** | Any other `.gitrepo` folder outside `release/` | Nothing. The `release` branch never hears of it |
 | **Vendored release** | A `.gitrepo` folder *inside* `release/` | The source itself, verbatim |
 
-`<repo>` is this repository's name without the owner; `<sep>` is `.` or `__`.
-The match includes the separator — in a repository named `suede`, a folder
-`suede-extras/` is not a declaration — and the entry must *resolve*: a dangling
-symlink declares nothing and `extract` says so.
+`<name>` is the installed folder; `<repo>` is this repository's name without
+the owner; `<sep>` is `.` or `__`. The name reads **what it is, then who needs it**. Suede repositories are
+named `suede.<name>` (or `suede__<name>` where a period cannot appear in an
+import, as in Python), and when the dependency carries that prefix your
+repository's copy of it is dropped:
+
+| Your repository | Installs | Folder | Declaring symlink |
+| --- | --- | --- | --- |
+| `suede.svelte-testing-utility` | `suede.typescript-testing-utility` | `suede.typescript-testing-utility/` | `suede.typescript-testing-utility.svelte-testing-utility` |
+| `suede__wsfs` | `suede__sqlmodel_utils` | `suede__sqlmodel_utils/` | `suede__sqlmodel_utils__wsfs` |
+| `my-app` | `widget` | `widget/` | `widget.my-app` |
+
+A declaration is therefore just **this repository's own edge**: every edge at
+the root reads `<dependency><sep><dependent>`, and the ones ending in your
+repository's name (with or without its `suede.` prefix) are yours. The
+separator is part of the match, only symlinks count — a real folder never
+declares, whatever it is called — and the symlink must *resolve*: a dangling
+one declares nothing and `extract.sh` says so. Nothing else cares how the name
+was chosen; `extract.sh` publishes whatever the symlink is called.
 
 So **promotion and demotion are a symlink**:
 
 ```bash
-ln -s widget my-app.widget      # widget is now a release dependency
-git rm my-app.widget            # and now it is a development dependency
+ln -s widget widget.my-app      # widget is now a release dependency
+git rm widget.my-app            # and now it is a development dependency
 ```
 
 No files move, nothing is re-fetched. What does change is what your consumers
@@ -40,14 +55,14 @@ Code inside `release/` imports a release dependency as a **sibling of
 
 ```ts
 // release/index.ts, in a repository named my-app
-import { helper } from "../my-app.widget/utility.ts";
+import { helper } from "../widget.my-app/utility.ts";
 ```
 
 Downstream, the contents of `release/` become a folder `my-app/` wherever the
-consumer installed it, and the consumer creates `my-app.widget` **beside it**.
-`../my-app.widget` therefore resolves identically on both sides, and that is
+consumer installed it, and the consumer creates `widget.my-app` **beside it**.
+`../widget.my-app` therefore resolves identically on both sides, and that is
 why the record a dependency publishes is named after the entry
-(`my-app.widget.gitrepo`), not after the dependency.
+(`widget.my-app.gitrepo`), not after the dependency.
 
 Two things follow. A release dependency's folder and its symlink must share a
 parent with `release/` — the installer refuses a release install anywhere else.
@@ -60,10 +75,10 @@ changing the separator breaks every consumer's sibling path.
 
 ```
 release/.suede/.dependencies/
-├── my-app.widget.gitrepo      remote = https://github.com/owner/widget
+├── widget.my-app.gitrepo      remote = https://github.com/owner/widget
 │                              branch = release
 │                              commit = 86abeeb…
-└── my-app.gadget.gitrepo
+└── gadget.my-app.gitrepo
 ```
 
 That is all it writes, and it removes anything else it finds there. Third-party
@@ -88,20 +103,20 @@ Three properties of that resolution are worth knowing as an author:
 
 **Each dependency is installed once and linked from every edge.** Two of your
 dependencies wanting `mixin` at the same commit get one `mixin/` folder and two
-symlinks, `widget.mixin` and `gadget.mixin`. If they want it at *different*
+symlinks, `mixin.widget` and `mixin.gadget`. If they want it at *different*
 commits, the consumer is shown the difference and chooses: link both to one copy
 and own the difference, or install the second commit as `mixin-9bb0e41/` and
 link to that. Both copies then ship as release dependencies of the consumer.
 
 **The consumer's closure declares itself.** Every install the recipe makes in a
-dependency repository is declared (`<repo><sep><name>`) by the installer, so the
+dependency repository is declared (`<name><sep><repo>`) by the installer, so the
 transitive dependencies end up in the consumer's own records with no separate
 rule. Deleting one of those symlinks is allowed — the consumer's consumers will
 then resolve that dependency from *your* record instead of theirs.
 
 **A pin is a request, not a lock.** A sibling that resolves to the right
 repository at another commit satisfies the edge. `deps.sh` says so plainly —
-"NOT the commit `widget.mixin` asks for" — and prints the `diff --at <commit>`
+"NOT the commit `mixin.widget` asks for" — and prints the `diff --at <commit>`
 that shows what the dependency was built against versus what is on disk, so the
 consumer owns the resolution knowingly rather than by accident.
 
@@ -119,7 +134,7 @@ or, for one already installed at the root:
 
 ```bash
 git mv widget release/widget
-git rm my-app.widget
+git rm widget.my-app
 ```
 
 Afterwards `release/` code imports it as `./widget/...`, and your consumers get
@@ -127,7 +142,7 @@ the bytes, `.gitrepo` and all — they can still `sync` and `upstream` it
 independently, which is a feature and a sharp edge.
 
 Vendored code ships whole, so **its siblings have to ship with it**. A vendored
-dependency's `widget.mixin` must resolve to something inside `release/`; a link
+dependency's `mixin.widget` must resolve to something inside `release/`; a link
 out to the root would reach consumers dangling. `deps.sh` places a vendored
 dependency's installs inside `release/`, refuses to offer a copy from outside
 it, and the publish guard fails on an escaping link.

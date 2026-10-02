@@ -10,8 +10,10 @@
 #      no history - into ./<name>, where <name> is the repository's name.
 #   2. A .gitrepo is written there, so `sync` and `upstream` work later.
 #   3. If this repository is itself a suede dependency (it has release/.gitrepo)
-#      and you are running at its root, a symlink <repo><sep><name> -> <name>
-#      is created beside the folder. That symlink is what DECLARES the install
+#      and you are running at its root, a symlink <name><sep><repo> -> <name>
+#      is created beside the folder - "what it is, then who needs it". When
+#      both names start with `suede.` or `suede__`, this repository's prefix is
+#      dropped: suede.app installing suede.widget declares suede.widget.app. That symlink is what DECLARES the install
 #      a release dependency: `extract` publishes exactly the entries named this
 #      way. Delete it and the dependency is a development dependency; rename it
 #      to change the separator. Inside release/ nothing is linked, because the
@@ -24,9 +26,10 @@
 #   --repo <OWNER/REPO | url>  required. OWNER/REPO means github.com.
 #   --at <commit>              install this commit instead of the branch tip
 #   --branch <name>            install from this branch (default: release)
-#   --sep <text>               separator for the declaring symlink (default: .)
-#                              Use __ where a path segment has to be an
-#                              identifier (Python, Rust).
+#   --sep <text>               separator in the declaring symlink: default __
+#                              in a repository named suede__<name>, else .
+#                              (__ is for languages where a path segment has
+#                              to be an identifier: Python, Rust)
 #   --name <folder>            install under this name instead of the repo's
 #   --prefix <text>            prepend to the folder name
 #   --suffix <text>            append to the folder name
@@ -58,7 +61,7 @@ GITREPO_HEADER='; DO NOT EDIT (unless you know what you are doing)
 ; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
 ;'
 
-REPO=""; AT=""; BRANCH="release"; SEP="."; NAME=""; PREFIX=""; SUFFIX=""; DEV=0
+REPO=""; AT=""; BRANCH="release"; SEP=""; NAME=""; PREFIX=""; SUFFIX=""; DEV=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)   usage ;;
@@ -75,7 +78,6 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$REPO" ]]   || die "--repo is required"
 [[ -n "$BRANCH" ]] || die "--branch needs a name"
-[[ -n "$SEP" ]]    || die "--sep needs a value"
 
 command -v git >/dev/null 2>&1 || die "git not found"
 
@@ -146,9 +148,33 @@ else
   REPO_NAME="$(basename "$ROOT")"
 fi
 
+# A repository named suede__<name> is one where a period cannot appear in an
+# import (Python), so its separator is `__`; every other repository uses `.`.
+# --sep overrides either way.
+if [[ -z "$SEP" ]]; then
+  if [[ "$REPO_NAME" == suede__?* ]]; then SEP="__"; else SEP="."; fi
+fi
+
 IS_DEPENDENCY_REPO=0; [[ -f "$ROOT/$RELEASE_DIR/.gitrepo" ]] && IS_DEPENDENCY_REPO=1
 INSIDE_RELEASE=0
 [[ "$IS_DEPENDENCY_REPO" == 1 && ( "$HERE" == "$ROOT/$RELEASE_DIR" || "$HERE" == "$ROOT/$RELEASE_DIR/"* ) ]] && INSIDE_RELEASE=1
+
+# The declaring symlink reads "what it is, then who needs it":
+# <dependency><sep><this repo>. Suede repositories are named `suede.<name>` (or
+# `suede__<name>` where a period cannot appear in an import), and when the
+# dependency carries that prefix this repository's copy of it says nothing, so
+# it is dropped: suede.svelte-testing-utility installing
+# suede.typescript-testing-utility declares
+# suede.typescript-testing-utility.svelte-testing-utility.
+dependent_name() {
+  local prefix
+  if [[ "$default_name" == suede.?* || "$default_name" == suede__?* ]]; then
+    for prefix in "suede." "suede__"; do
+      [[ "$REPO_NAME" == "$prefix"?* ]] && { printf '%s' "${REPO_NAME#"$prefix"}"; return; }
+    done
+  fi
+  printf '%s' "$REPO_NAME"
+}
 
 LINK=""
 if [[ "$INSIDE_RELEASE" == 1 ]]; then
@@ -158,11 +184,11 @@ elif [[ "$IS_DEPENDENCY_REPO" == 0 ]]; then
 elif [[ "$DEV" == 1 ]]; then
   MODE="development"
 elif [[ "$HERE" != "$ROOT" ]]; then
-  die "a release dependency has to sit beside $RELEASE_DIR/: code in $RELEASE_DIR/ reaches it as ../$REPO_NAME$SEP<name>, and that path only holds at the repository root.
+  die "a release dependency has to sit beside $RELEASE_DIR/: code in $RELEASE_DIR/ reaches it as ../$NAME$SEP$(dependent_name), and that path only holds at the repository root.
   Run this from $ROOT, or pass --dev to install here without declaring it."
 else
   MODE="release"
-  LINK="$HERE/$REPO_NAME$SEP$NAME"
+  LINK="$HERE/$NAME$SEP$(dependent_name)"
 fi
 
 # --- fetch ------------------------------------------------------------------

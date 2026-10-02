@@ -21,7 +21,7 @@ bash <(curl -fsSL https://suede.sh/install/release) --repo OWNER/REPO
 
 It installs the dependency's `release` branch into `./<name>` in the directory
 you run it from, writes a `.gitrepo` there, declares the install if this
-repository is a suede dependency (a `<repo><sep><name>` symlink beside the
+repository is a suede dependency (a `<name><sep><repo>` symlink beside the
 folder), stages everything without committing, and runs the dependency's own
 `deps.sh` so you see what it needs beside it. [INSTALL.md](../INSTALL.md) is
 the full description, including every flag:
@@ -30,7 +30,8 @@ the full description, including every flag:
 --repo <OWNER/REPO | url>   required; OWNER/REPO means github.com
 --at <commit>               install this commit instead of the branch tip
 --branch <name>             install from this branch (default: release)
---sep <text>                separator for the declaring symlink (default: .)
+--sep <text>                separator in the declaring symlink (default: __ in a
+                            repository named suede__<name>, else .)
 --name <folder>             install under this name instead of the repo's
 --prefix <text>             prepend to the folder name
 --suffix <text>             append to the folder name

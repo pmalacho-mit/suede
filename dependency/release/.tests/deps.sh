@@ -22,11 +22,11 @@ WORK=""; MIXIN=""; MIXIN_V2=""; DOCKVIEW=""; OUTPUT=""; STATUS=0
 setup() {
   WORK="$(mktemp -d)"
   MIXIN="$(graph_make_dep "$WORK" mixin)"
-  DOCKVIEW="$(graph_make_dep "$WORK" dockview "dockview.mixin=$(graph_remote "$WORK" mixin)@$MIXIN")"
+  DOCKVIEW="$(graph_make_dep "$WORK" dockview "mixin.dockview=$(graph_remote "$WORK" mixin)@$MIXIN")"
   graph_make_dep "$WORK" sweater \
-    "sweater.dockview=$(graph_remote "$WORK" dockview)@$DOCKVIEW" \
-    "sweater.mixin=$(graph_remote "$WORK" mixin)@$MIXIN" >/dev/null
-  graph_make_dep "$WORK" other "other.mixin=$(graph_remote "$WORK" mixin)@$MIXIN" >/dev/null
+    "dockview.sweater=$(graph_remote "$WORK" dockview)@$DOCKVIEW" \
+    "mixin.sweater=$(graph_remote "$WORK" mixin)@$MIXIN" >/dev/null
+  graph_make_dep "$WORK" other "mixin.other=$(graph_remote "$WORK" mixin)@$MIXIN" >/dev/null
   graph_make_project "$WORK" app --dependency
   ( cd "$WORK/app" && bash "$INSTALL" --repo "$(graph_remote "$WORK" sweater)" >/dev/null 2>&1 )
   # A newer mixin release than anything above pins, for the "different commit"
@@ -47,13 +47,13 @@ recipe() { grep -E '^ *(bash <\(curl|ln -s|\(cd )' <<<"$OUTPUT" | sed 's/^ *//';
 the_recipe_is_complete_up_front() {
   run_deps sweater
   graph_assert_contains "$OUTPUT" 'deps: sweater needs 2 sibling' "the header counts the direct records" || return 1
-  graph_assert_contains "$OUTPUT" '\[1\] sweater.dockview' "[1] is the first record" || return 1
+  graph_assert_contains "$OUTPUT" '\[1\] dockview.sweater' "[1] is the first record" || return 1
   graph_assert_contains "$OUTPUT" 'not installed anywhere' "and it is not installed" || return 1
   graph_assert_contains "$OUTPUT" "--repo $(graph_remote "$WORK" dockview) --at $DOCKVIEW" "the install pins the recorded commit" || return 1
-  graph_assert_contains "$OUTPUT" 'ln -s dockview sweater.dockview' "followed by the edge link" || return 1
-  graph_assert_contains "$OUTPUT" '\[1.1\] dockview.mixin' "dockview's own record was fetched and numbered under it" || return 1
-  graph_assert_contains "$OUTPUT" 'ln -s mixin dockview.mixin' "with its edge link" || return 1
-  graph_assert_contains "$OUTPUT" '\[2\] sweater.mixin' "[2] is the second record" || return 1
+  graph_assert_contains "$OUTPUT" 'ln -s dockview dockview.sweater' "followed by the edge link" || return 1
+  graph_assert_contains "$OUTPUT" '\[1.1\] mixin.dockview' "dockview's own record was fetched and numbered under it" || return 1
+  graph_assert_contains "$OUTPUT" 'ln -s mixin mixin.dockview' "with its edge link" || return 1
+  graph_assert_contains "$OUTPUT" '\[2\] mixin.sweater' "[2] is the second record" || return 1
   graph_assert_contains "$OUTPUT" 'same install as \[1.1\]' "which the recipe already installs" || return 1
   graph_assert_contains "$OUTPUT" '0 satisfied, 3 to resolve' "and the totals add up"
 }
@@ -66,13 +66,13 @@ running_the_recipe_satisfies_everything() {
   [[ "$STATUS" == 0 ]] || { log_failure "exit $STATUS: $OUTPUT"; return 1; }
   graph_assert_contains "$OUTPUT" 'satisfied by dockview @ [0-9a-f]{7}, matches the pin' "dockview is satisfied" || return 1
   graph_assert_contains "$OUTPUT" 'everything is in place \(3 satisfied\)' "and so is everything else" || return 1
-  graph_assert_link "$WORK/app/app.mixin" mixin "the transitive install was declared as app's too"
+  graph_assert_link "$WORK/app/mixin.app" mixin "the transitive install was declared as app's too"
 }
 
 check_exits_zero_when_in_place_and_one_when_not() {
   run_deps sweater --check
   [[ "$STATUS" == 0 ]] && log_pass "--check exits 0 with everything in place" || { log_failure "exit $STATUS"; return 1; }
-  rm "$WORK/app/sweater.mixin"
+  rm "$WORK/app/mixin.sweater"
   run_deps sweater --check
   [[ "$STATUS" == 1 ]] && log_pass "--check exits 1 with an edge missing" || { log_failure "exit $STATUS"; return 1; }
   graph_assert_lacks "$OUTPUT" 'curl' "and prints no commands" || return 1
@@ -82,9 +82,9 @@ check_exits_zero_when_in_place_and_one_when_not() {
 a_missing_edge_reuses_a_clean_install() {
   run_deps sweater
   graph_assert_contains "$OUTPUT" 'found mixin at the same commit with no local changes' "mixin is already here, unchanged" || return 1
-  graph_assert_contains "$OUTPUT" 'ln -s mixin sweater.mixin' "so one link finishes it" || return 1
+  graph_assert_contains "$OUTPUT" 'ln -s mixin mixin.sweater' "so one link finishes it" || return 1
   graph_assert_lacks "$OUTPUT" 'curl.*mixin' "and nothing is re-installed"
-  ( cd "$WORK/app" && ln -s mixin sweater.mixin )
+  ( cd "$WORK/app" && ln -s mixin mixin.sweater )
 }
 
 local_changes_turn_reuse_into_a_decision() {
@@ -93,9 +93,9 @@ local_changes_turn_reuse_into_a_decision() {
   run_deps other
   graph_assert_contains "$OUTPUT" 'found mixin at the same commit, but with local changes' "the drift is named" || return 1
   graph_assert_contains "$OUTPUT" "bash mixin/.suede/core/diff --at $MIXIN" "with the diff that shows it" || return 1
-  graph_assert_contains "$OUTPUT" 'ln -s mixin other.mixin' "option one: link to what you have" || return 1
+  graph_assert_contains "$OUTPUT" 'ln -s mixin mixin.other' "option one: link to what you have" || return 1
   graph_assert_contains "$OUTPUT" "--at $MIXIN --name mixin-${MIXIN:0:7}" "option two: install the exact commit under another name" || return 1
-  graph_assert_contains "$OUTPUT" "ln -s mixin-${MIXIN:0:7} other.mixin" "and link to that"
+  graph_assert_contains "$OUTPUT" "ln -s mixin-${MIXIN:0:7} mixin.other" "and link to that"
   ( cd "$WORK/app" && git checkout -- mixin/index.js 2>/dev/null || git -C "$WORK/app" restore --staged --worktree mixin/index.js 2>/dev/null || true )
 }
 
@@ -108,21 +108,21 @@ a_different_commit_is_a_decision_too() {
 }
 
 a_satisfied_edge_at_another_commit_is_owned_not_failed() {
-  ( cd "$WORK/app" && ln -s mixin other.mixin )
+  ( cd "$WORK/app" && ln -s mixin mixin.other )
   git -C "$WORK/app" config -f mixin/.gitrepo subrepo.commit "$MIXIN_V2"
   run_deps other --check
   [[ "$STATUS" == 0 ]] && log_pass "--check passes: the edge resolves" || { log_failure "exit $STATUS: $OUTPUT"; return 1; }
-  graph_assert_contains "$OUTPUT" "NOT the ${MIXIN:0:7} that other.mixin asks for" "and the commit difference is spelled out" || return 1
+  graph_assert_contains "$OUTPUT" "NOT the ${MIXIN:0:7} that mixin.other asks for" "and the commit difference is spelled out" || return 1
   graph_assert_contains "$OUTPUT" "bash mixin/.suede/core/diff --at $MIXIN" "with the diff that shows it"
   git -C "$WORK/app" config -f mixin/.gitrepo subrepo.commit "$MIXIN"
 }
 
 a_dangling_symlink_is_called_out() {
-  rm "$WORK/app/other.mixin"; ( cd "$WORK/app" && ln -s nowhere other.mixin )
+  rm "$WORK/app/mixin.other"; ( cd "$WORK/app" && ln -s nowhere mixin.other )
   run_deps other
-  graph_assert_contains "$OUTPUT" 'other.mixin is a dangling symlink -> nowhere' "dangling is named" || return 1
-  graph_assert_contains "$OUTPUT" 'rm other.mixin' "and removed first"
-  rm "$WORK/app/other.mixin"
+  graph_assert_contains "$OUTPUT" 'mixin.other is a dangling symlink -> nowhere' "dangling is named" || return 1
+  graph_assert_contains "$OUTPUT" 'rm mixin.other' "and removed first"
+  rm "$WORK/app/mixin.other"
 }
 
 a_vendored_dependent_keeps_its_siblings_inside_release() {
@@ -130,7 +130,7 @@ a_vendored_dependent_keeps_its_siblings_inside_release() {
   run_deps release/vother
   graph_assert_lacks "$OUTPUT" 'ln -s \.\./mixin' "the mixin outside release/ is not offered" || return 1
   graph_assert_contains "$OUTPUT" '\(cd release && bash <\(curl' "the install is placed inside release/" || return 1
-  graph_assert_contains "$OUTPUT" 'ln -s mixin release/other.mixin' "and so is the link"
+  graph_assert_contains "$OUTPUT" 'ln -s mixin release/mixin.other' "and so is the link"
 }
 
 in_runs_against_another_dependency() {
@@ -146,13 +146,13 @@ the_look_ahead_falls_back_to_https() {
   # A record naming the SSH spelling of a dependency only reachable over HTTPS:
   # deps.sh still reads that dependency's own records.
   graph_make_project "$WORK" app2 --dependency
-  graph_make_dep "$WORK" top "top.dockview=git@example.test:owner/dockview.git@$DOCKVIEW" >/dev/null
+  graph_make_dep "$WORK" top "dockview.top=git@example.test:owner/dockview.git@$DOCKVIEW" >/dev/null
   ( cd "$WORK/app2" && bash "$INSTALL" --repo "$(graph_remote "$WORK" top)" >/dev/null 2>&1 )
   graph_https_only "$(graph_remote "$WORK" dockview)" owner/dockview
   STATUS=0
   OUTPUT="$( cd "$WORK/app2" && bash top/.suede/core/deps.sh 2>&1 )" || STATUS=$?
   graph_forget_https
-  graph_assert_contains "$OUTPUT" '\[1.1\] dockview.mixin' "dockview's records were fetched over HTTPS"
+  graph_assert_contains "$OUTPUT" '\[1.1\] mixin.dockview' "dockview's records were fetched over HTTPS"
 }
 
 run_test_suite --setup setup --cleanup cleanup \

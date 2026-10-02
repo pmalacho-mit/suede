@@ -2,7 +2,7 @@
 # The installer, against real local repositories.
 #
 # What is worth pinning: the tree and .gitrepo it writes, and - the whole of
-# what makes an install mean something - when it declares (the <repo><sep><name>
+# what makes an install mean something - when it declares (the <name><sep><repo>
 # symlink) and when it does not. Runs on bash 3.2, because consumers do.
 set -euo pipefail
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,7 +18,7 @@ setup() {
   WORK="$(mktemp -d)"
   WIDGET="$(graph_make_dep "$WORK" widget)"
   WIDGET_V2="$(graph_advance_dep "$WORK" widget 'export const widget = 2;')"
-  graph_make_dep "$WORK" gadget "gadget.widget=$(graph_remote "$WORK" widget)@$WIDGET" >/dev/null
+  graph_make_dep "$WORK" gadget "widget.gadget=$(graph_remote "$WORK" widget)@$WIDGET" >/dev/null
   graph_make_project "$WORK" lib --dependency
   graph_make_project "$WORK" app
 }
@@ -48,8 +48,8 @@ installs_the_release_tree_and_a_gitrepo() {
     && log_pass "nothing was committed" || return 1
   # Each test runs in its own subshell, so what the install printed is checked
   # here, where it was run.
-  graph_assert_link "$WORK/lib/lib.widget" widget "lib.widget -> widget declares it a release dependency" || return 1
-  git -C "$WORK/lib" diff --cached --name-only | grep -q '^lib.widget$' \
+  graph_assert_link "$WORK/lib/widget.lib" widget "widget.lib -> widget declares it a release dependency" || return 1
+  git -C "$WORK/lib" diff --cached --name-only | grep -q '^widget.lib$' \
     && log_pass "the symlink is staged too" || { log_failure "symlink not staged"; return 1; }
   graph_assert_contains "$OUTPUT" 'declared as a release dependency of lib' "and the output says so" || return 1
   graph_assert_contains "$OUTPUT" 'deps: widget needs 0 sibling' "deps.sh ran and found nothing to do"
@@ -57,8 +57,8 @@ installs_the_release_tree_and_a_gitrepo() {
 
 runs_deps_after_installing() {
   install_in "$WORK/lib" --repo "$(graph_remote "$WORK" gadget)"
-  graph_assert_contains "$OUTPUT" '\[1\] gadget.widget' "a dependency with edges gets its recipe printed" || return 1
-  graph_assert_contains "$OUTPUT" 'ln -s widget gadget.widget' "which reuses the widget already installed"
+  graph_assert_contains "$OUTPUT" '\[1\] widget.gadget' "a dependency with edges gets its recipe printed" || return 1
+  graph_assert_contains "$OUTPUT" 'ln -s widget widget.gadget' "which reuses the widget already installed"
 }
 
 refuses_a_taken_name_and_offers_the_naming_flags() {
@@ -68,7 +68,7 @@ refuses_a_taken_name_and_offers_the_naming_flags() {
   install_in "$WORK/lib" --repo "$(graph_remote "$WORK" widget)" --at "$WIDGET" --suffix "-$WIDGET"
   [[ "$STATUS" == 0 ]] || { log_failure "--suffix install failed: $OUTPUT"; return 1; }
   [[ -d "$WORK/lib/widget-$WIDGET" ]] && log_pass "--suffix names the folder" || return 1
-  graph_assert_link "$WORK/lib/lib.widget-$WIDGET" "widget-$WIDGET" "and the declaration follows the name"
+  graph_assert_link "$WORK/lib/widget-$WIDGET.lib" "widget-$WIDGET" "and the declaration follows the name"
 }
 
 at_installs_a_specific_commit() {
@@ -79,13 +79,13 @@ at_installs_a_specific_commit() {
 
 sep_changes_the_declaring_name() {
   install_in "$WORK/lib" --repo "$(graph_remote "$WORK" widget)" --name w3 --sep __
-  graph_assert_link "$WORK/lib/lib__w3" w3 "--sep __ gives lib__w3"
+  graph_assert_link "$WORK/lib/w3__lib" w3 "--sep __ gives w3__lib"
 }
 
 dev_installs_without_declaring() {
   install_in "$WORK/lib" --repo "$(graph_remote "$WORK" widget)" --name w4 --dev
   [[ -d "$WORK/lib/w4" ]] && log_pass "--dev installs" || return 1
-  graph_assert_absent "$WORK/lib/lib.w4" "and creates no symlink"
+  graph_assert_absent "$WORK/lib/w4.lib" "and creates no symlink"
   graph_assert_contains "$OUTPUT" 'not declared \(--dev\)' "saying so"
 }
 
@@ -93,7 +93,7 @@ inside_release_installs_vendored() {
   install_in "$WORK/lib/release" --repo "$(graph_remote "$WORK" widget)"
   [[ "$STATUS" == 0 ]] || { log_failure "vendored install failed: $OUTPUT"; return 1; }
   [[ -d "$WORK/lib/release/widget" ]] && log_pass "inside release/ the folder lands there" || return 1
-  graph_assert_absent "$WORK/lib/release/lib.widget" "and nothing is linked"
+  graph_assert_absent "$WORK/lib/release/widget.lib" "and nothing is linked"
   graph_assert_contains "$OUTPUT" 'vendored source' "the output calls it vendored"
 }
 
@@ -109,7 +109,7 @@ outside_the_root_a_release_install_is_refused() {
 a_plain_consumer_declares_nothing() {
   install_in "$WORK/app" --repo "$(graph_remote "$WORK" widget)"
   [[ "$STATUS" == 0 && -d "$WORK/app/widget" ]] || { log_failure "install failed: $OUTPUT"; return 1; }
-  graph_assert_absent "$WORK/app/app.widget" "no release/.gitrepo, no declaring symlink"
+  graph_assert_absent "$WORK/app/widget.app" "no release/.gitrepo, no declaring symlink"
   graph_assert_contains "$OUTPUT" 'not a suede dependency' "and the output explains why"
 }
 
@@ -117,8 +117,35 @@ the_repo_name_comes_from_origin() {
   # The folder is not called what origin calls it: origin wins.
   mv "$WORK/lib" "$WORK/renamed-checkout"
   install_in "$WORK/renamed-checkout" --repo "$(graph_remote "$WORK" widget)" --name w5
-  graph_assert_link "$WORK/renamed-checkout/lib.w5" w5 "the prefix is origin's name, not the folder's"
+  graph_assert_link "$WORK/renamed-checkout/w5.lib" w5 "the repo's name is origin's, not the folder's"
   mv "$WORK/renamed-checkout" "$WORK/lib"
+}
+
+a_suede_prefix_is_not_repeated_in_the_symlink() {
+  graph_make_dep "$WORK" suede.widget >/dev/null
+  graph_make_dep "$WORK" suede__pywidget >/dev/null
+  graph_make_project "$WORK" suede.app --dependency
+  install_in "$WORK/suede.app" --repo "$(graph_remote "$WORK" suede.widget)"
+  [[ -d "$WORK/suede.app/suede.widget" ]] && log_pass "the folder keeps its full name" || { log_failure "$OUTPUT"; return 1; }
+  graph_assert_link "$WORK/suede.app/suede.widget.app" suede.widget "suede.app + suede.widget declares suede.widget.app: what it is, then who needs it" || return 1
+  graph_assert_absent "$WORK/suede.app/suede.widget.suede.app" "not suede.widget.suede.app" || return 1
+  install_in "$WORK/suede.app" --repo "$(graph_remote "$WORK" suede__pywidget)" --sep __
+  graph_assert_link "$WORK/suede.app/suede__pywidget__app" suede__pywidget "a suede__ dependency drops suede.app's prefix too"
+}
+
+a_suede__repository_defaults_to_the___separator() {
+  # The Python convention: suede__wsfs needs suede__sqlmodel_utils.
+  graph_make_dep "$WORK" suede__sqlmodel_utils >/dev/null
+  graph_make_project "$WORK" suede__wsfs --dependency
+  install_in "$WORK/suede__wsfs" --repo "$(graph_remote "$WORK" suede__sqlmodel_utils)"
+  graph_assert_link "$WORK/suede__wsfs/suede__sqlmodel_utils__wsfs" suede__sqlmodel_utils \
+    "suede__wsfs + suede__sqlmodel_utils declares suede__sqlmodel_utils__wsfs, with no --sep"
+}
+
+an_unprefixed_repository_keeps_the_dependency_prefix() {
+  graph_make_dep "$WORK" suede.gizmo >/dev/null
+  install_in "$WORK/lib" --repo "$(graph_remote "$WORK" suede.gizmo)"
+  graph_assert_link "$WORK/lib/suede.gizmo.lib" suede.gizmo "lib + suede.gizmo still declares suede.gizmo.lib"
 }
 
 a_missing_branch_fails_clearly() {
@@ -138,4 +165,7 @@ run_test_suite --setup setup --cleanup cleanup \
   outside_the_root_a_release_install_is_refused \
   a_plain_consumer_declares_nothing \
   the_repo_name_comes_from_origin \
+  a_suede_prefix_is_not_repeated_in_the_symlink \
+  a_suede__repository_defaults_to_the___separator \
+  an_unprefixed_repository_keeps_the_dependency_prefix \
   a_missing_branch_fails_clearly

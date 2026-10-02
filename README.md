@@ -60,7 +60,7 @@ The `main` branch serves as the primary development branch where all work happen
   - Parent commit information for tracking history
 - **`./release/.suede/.dependencies/` folder:** The **published records** — one `<entry>.gitrepo` per [release dependency](#dependencies-of-dependencies), naming the remote, branch and commit a consumer should put beside your dependency. It is **generated** by `extract.sh` and refreshed on every publish; never edit it by hand.
 - **`./release/package.json`:** Optional, and yours. `release/` is a package in its own right; it names the third-party packages its code imports, and you treat it as a [workspace](#third-party-packages).
-- **Installed dependencies and their symlinks:** `widget/` holds a dependency you installed; `my-app.widget -> widget` beside it declares it a *release* dependency. See [Dependencies of Dependencies](#dependencies-of-dependencies).
+- **Installed dependencies and their symlinks:** `widget/` holds a dependency you installed; `widget.my-app -> widget` beside it declares it a *release* dependency. See [Dependencies of Dependencies](#dependencies-of-dependencies).
 - **`./.suede/core/` folder:** The maintainer's tools and the scripts CI runs, vendored as a subrepo of this library. Update them with `bash .suede/core/sync.sh` rather than by editing them.
 - **`./release/.suede/core/` folder:** The consumer-facing tools ([`deps.sh`](./dependency/release/core/deps.sh), [`diff`](./dependency/release/core/diff), [`sync`](./dependency/release/core/sync), [`upstream`](./dependency/release/core/upstream)), vendored *inside* `release/` so they ship with it. They live on `main` like everything else you develop, and reach the `release` branch through it — `sync.sh` updates them too, never by checking `release` out.
 
@@ -118,7 +118,11 @@ extra setup. It does five things and stops:
 2. Writes a `.gitrepo` there, so [`sync`](#upgrading-ie-pulling) and
    [`upstream`](#modifying-ie-contributing-back) work later.
 3. If **your** repository is itself a suede dependency and you are at its root,
-   creates a symlink `<your-repo>.<name> -> <name>` beside the folder. That
+   creates a symlink `<name>.<your-repo> -> <name>` beside the folder: what it
+   is, then who needs it. (In `suede.svelte-testing-utility`, installing
+   `suede.typescript-testing-utility` gives
+   `suede.typescript-testing-utility.svelte-testing-utility`: your repository's
+   `suede.` prefix is dropped when the dependency has one too.) That
    symlink **declares** the install a release dependency of yours — see
    [Dependencies of Dependencies](#dependencies-of-dependencies). In a plain
    application there is nothing to declare and no symlink is made.
@@ -129,24 +133,24 @@ extra setup. It does five things and stops:
 ```
 install: pmalacho-mit/sweater-vest-suede, release @ 86abeeb  ->  ./sweater-vest-suede
 install: declared as a release dependency of my-app:
-           my-app.sweater-vest-suede -> sweater-vest-suede
+           sweater-vest-suede.my-app -> sweater-vest-suede
 install: staged, not committed
 
 deps: sweater-vest-suede needs 2 sibling(s) at the repository root
 
-[1] sweater-vest-suede.dockview-svelte-suede
+[1] dockview-svelte-suede.sweater-vest-suede
     https://github.com/pmalacho-mit/dockview-svelte-suede @ 4f10c2a
     not installed anywhere in this repository
     bash <(curl -fsSL https://suede.sh/install/release) --repo https://github.com/pmalacho-mit/dockview-svelte-suede --at 4f10c2a…
-    ln -s dockview-svelte-suede sweater-vest-suede.dockview-svelte-suede
+    ln -s dockview-svelte-suede dockview-svelte-suede.sweater-vest-suede
 
-    [1.1] dockview-svelte-suede.mixin-suede
+    [1.1] mixin-suede.dockview-svelte-suede
         …
 
-[2] sweater-vest-suede.mixin-suede
+[2] mixin-suede.sweater-vest-suede
     https://github.com/pmalacho-mit/mixin-suede @ 9bb0e41
     same install as [1.1]
-    ln -s mixin-suede sweater-vest-suede.mixin-suede
+    ln -s mixin-suede mixin-suede.sweater-vest-suede
 
 deps: 0 satisfied, 3 to resolve.
 ```
@@ -160,7 +164,7 @@ you have differs, `deps.sh` shows you the `diff` and offers both ways out
 choose. [INSTALL.md](./INSTALL.md) has every case.
 
 Useful flags: `--at <commit>`, `--branch`, `--sep` (the separator in the
-declaring symlink; `__` for Python and Rust), `--name`, `--prefix`, `--suffix`
+declaring symlink; defaults to `__` in a `suede__<name>` repository, for Python), `--name`, `--prefix`, `--suffix`
 (for a second copy beside the first), `--dev` (never declare).
 
 ### Third-party packages
@@ -211,7 +215,7 @@ Then run the `sync` script that shipped inside the dependency. It takes no targe
 bash <path-to-dependency>/.suede/core/sync
 ```
 
-> For example: `bash ./my-app.some-suede/.suede/core/sync`
+> For example: `bash ./some-suede.my-app/.suede/core/sync`
 
 This fetches and merges the newest commits from the dependency's `release` branch into your subrepo folder and applies them as a single commit.
 
@@ -320,7 +324,7 @@ After your dependency repository is set up, you can maintain and develop it as y
   bash release/.suede/core/deps.sh --check --in release   # any declared dependency that is missing
   bash .suede/core/list.sh                                # what the tree declares
   ```
-  If `diff.sh` reports divergence you have three honest options: revert the changes, [upstream](#modifying-ie-contributing-back) them, or [vendor](#dependencies-of-dependencies) the dependency (`git mv widget release/widget && git rm my-app.widget`) so the source actually ships.
+  If `diff.sh` reports divergence you have three honest options: revert the changes, [upstream](#modifying-ie-contributing-back) them, or [vendor](#dependencies-of-dependencies) the dependency (`git mv widget release/widget && git rm widget.my-app`) so the source actually ships.
 - **Avoid direct commits to the `release` branch.** All changes flow from `main` → `release` via the automated workflow. The only time you'd interact with `release` manually is if something went wrong and you need to fix merge conflicts (which should be rare).
 - **Handle contributions as pull requests.** Consumers propose changes with [`upstream`](#modifying-ie-contributing-back), which opens a PR into `main` without ever touching `release`. Review and merge those as you would any other PR; merging republishes through the normal path.
 - **Update the vendored machinery with one command, on `main`.** `.suede/core`, `release/.suede/core`, `.github/workflows` and `release/.github/workflows` are all subrepos of this library. Get fixes by pulling them, never by editing the files in place:
@@ -340,32 +344,33 @@ it** — no config file, no manifest you maintain by hand:
 
 | Kind | How it is declared | What ships |
 | --- | --- | --- |
-| **Release dependency** | A root entry named `<repo><sep><name>` — the symlink the installer creates — resolving to a `.gitrepo` folder outside `release/` | A record (`.gitrepo`): remote, branch, commit. Not the source |
+| **Release dependency** | A symlink at the root named `<name><sep><repo>` — what it is, then who needs it — resolving to a `.gitrepo` folder outside `release/` | A record (`.gitrepo`): remote, branch, commit. Not the source |
 | **Development dependency** | Any other `.gitrepo` folder outside `release/` | Nothing; the `release` branch never sees it |
 | **Vendored release dependency** | It lives *inside* `release/` | The source itself, verbatim |
 
-`<repo>` is your repository's name without the owner; `<sep>` is `.` where
-imports are path literals (TypeScript, Svelte, Go) and `__` where a path
-segment has to be a legal identifier (Python, Rust). **The symlink is the whole
-declaration**: delete `my-app.widget` and `widget` is a development
-dependency; `ln -s widget my-app.widget` and it is a release dependency again.
+`<repo>` is your repository's name without the owner, minus its `suede.` prefix
+when the dependency has one too; `<sep>` is `.` where imports are path literals
+(TypeScript, Svelte, Go) and `__` where a path segment has to be a legal
+identifier (Python, Rust). **The symlink is the whole
+declaration**: delete `widget.my-app` and `widget` is a development
+dependency; `ln -s widget widget.my-app` and it is a release dependency again.
 
 Code inside `release/` imports a release dependency as a sibling through that
-name — `../my-app.widget/...` — and the record your consumers receive is named
+name — `../widget.my-app/...` — and the record your consumers receive is named
 after it, so they recreate the same sibling beside their copy of you. **The
 name is the contract.** It is also why the folder and its symlink must sit
 beside `release/`: the installer refuses a release install anywhere else.
 
 ```
 widget/            real folder — widget's release bytes
-my-app.widget  ->  widget      declares it: extract.sh publishes my-app.widget.gitrepo
-widget.mixin   ->  mixin       widget's own edge, which deps.sh told you to create
+widget.my-app  ->  widget      declares it: extract.sh publishes widget.my-app.gitrepo
+mixin.widget   ->  mixin       widget's own edge, which deps.sh told you to create
 mixin/
-my-app.mixin   ->  mixin       declared too, because the installer declares every install here
+mixin.my-app   ->  mixin       declared too, because the installer declares every install here
 ```
 
 Vendoring — when you have changed a dependency and can neither revert nor
-upstream it — is `git mv widget release/widget` and `git rm my-app.widget`;
+upstream it — is `git mv widget release/widget` and `git rm widget.my-app`;
 whatever `widget` needs beside it moves inside `release/` too.
 
 [DEPENDENCIES-OF-DEPENDENCIES.md](./DEPENDENCIES-OF-DEPENDENCIES.md) is the

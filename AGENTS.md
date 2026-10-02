@@ -49,7 +49,7 @@ main branch                                  release branch  (generated — do n
 ├── .suede/core/               (subrepo)     ├── .suede/core/             (subrepo: deps.sh, diff, sync, upstream)
 ├── src/  tests/  docs/        (dev only)    ├── .suede/.dependencies/    (records: <entry>.gitrepo)
 ├── widget/                    (installed)   ├── .gitrepo
-├── my-app.widget -> widget    (declares it) └── index.ts
+├── widget.my-app -> widget    (declares it) └── index.ts
 └── release/                                 ▲
     ├── .gitrepo                             └── exactly the contents of main's release/,
     ├── .suede/core/           (subrepo)         lifted to the branch root
@@ -83,17 +83,23 @@ where it lives and what sits beside it.**
 
 | Kind | How it is declared | What ships to consumers |
 | --- | --- | --- |
-| **Release** | A root entry named `<repo><sep><name>` — a symlink the installer created — resolving to a `.gitrepo` folder outside `release/` | A record (`<entry>.gitrepo`: remote, branch, commit), not the source |
+| **Release** | A symlink at the root named `<name><sep><repo>` — what it is, then who needs it — resolving to a `.gitrepo` folder outside `release/` | A record (`<entry>.gitrepo`: remote, branch, commit), not the source |
 | **Development** | Any other `.gitrepo` folder outside `release/` | Nothing |
 | **Vendored release** | A `.gitrepo` folder **inside** `release/` | The source itself |
 
-`<repo>` is this repository's name without the owner; `<sep>` is `.` or `__`
-(`__` where a path segment must be an identifier: Python, Rust). The match
-includes the separator: in a repo named `suede`, `suede-extras/` declares
-nothing.
+`<name>` is the installed folder, `<repo>` this repository's name without the
+owner, `<sep>` `.` or `__` (`__` where a path segment must be an identifier:
+Python, Rust; the installer defaults to it in a `suede__<name>` repository).
+Suede repositories are named `suede.<name>` / `suede__<name>`, and when the
+dependency carries the prefix the installer drops this repository's copy:
+`suede.svelte-testing-utility` declares `suede.typescript-testing-utility` as
+`suede.typescript-testing-utility.svelte-testing-utility`, and `suede__wsfs`
+declares `suede__sqlmodel_utils` as `suede__sqlmodel_utils__wsfs`. The folder
+keeps its full name. A declaration is just this repository's own edge, so only
+symlinks count; a real folder never declares.
 
-**The symlink is the whole declaration.** Delete `my-app.widget` and `widget`
-is a development dependency; `ln -s widget my-app.widget` and it is a release
+**The symlink is the whole declaration.** Delete `widget.my-app` and `widget`
+is a development dependency; `ln -s widget widget.my-app` and it is a release
 dependency again. No files move. Rename it to change the separator.
 
 Code inside `release/` refers to a release dependency as a **sibling**, through
@@ -101,11 +107,11 @@ the symlink's name:
 
 ```ts
 // release/index.ts, in a repo named my-app
-import { helper } from "../my-app.widget/utility.ts";
+import { helper } from "../widget.my-app/utility.ts";
 ```
 
 That path is invariant across the publish boundary: downstream, `release/`'s
-contents become a folder `my-app/`, and the consumer creates `my-app.widget`
+contents become a folder `my-app/`, and the consumer creates `widget.my-app`
 beside it. **The name is the contract.** Do not "simplify" these paths, and do
 not rename a root entry without updating every import of it. The installed
 folder and its symlink always share a parent, and a release install anywhere
@@ -115,7 +121,7 @@ Because a release dependency ships as a pointer, **the pointer must be honest**:
 its files must match the commit its `.gitrepo` names. CI refuses to publish
 otherwise. If you modified a release dependency in place you have three honest
 options: revert, upstream the change, or vendor it (`git mv widget
-release/widget && git rm my-app.widget`, then repoint imports to `./widget`).
+release/widget && git rm widget.my-app`, then repoint imports to `./widget`).
 Vendored code ships whole, so what it needs beside it moves inside `release/`
 too.
 
@@ -216,7 +222,7 @@ plus `deps.sh --check`), and syncs `release/` to the `release` branch. If the
 guard fires, `release` is untouched and the reason is in the job summary.
 Nothing under `release/.suede/.dependencies/` is edited by hand.
 
-**Promote or demote.** `ln -s widget my-app.widget` / `git rm my-app.widget`,
+**Promote or demote.** `ln -s widget widget.my-app` / `git rm widget.my-app`,
 then update `release/` imports and run `extract.sh`.
 
 **Remove a dependency.** `git rm -r <name>` and its symlink; `deps.sh` on

@@ -36,19 +36,32 @@ Run it **in the directory where you want the dependency**.
 
 | You run it… | What happens | The dependency is |
 | --- | --- | --- |
-| at the root of a repository that has `release/.gitrepo` (a suede dependency) | the folder, plus a symlink `<repo><sep><name> -> <name>` beside it | a **release dependency**: `extract` publishes it, consumers get it |
+| at the root of a repository that has `release/.gitrepo` (a suede dependency) | the folder, plus a symlink `<name><sep><repo> -> <name>` beside it | a **release dependency**: `extract` publishes it, consumers get it |
 | the same, with `--dev` | the folder only | a **development dependency**: nothing is published |
 | inside that repository's `release/` | the folder only | a **vendored release dependency**: its source ships |
 | anywhere in a repository with no `release/.gitrepo` | the folder only | a dependency of an application; there is nothing to publish |
 
-`<repo>` is your repository's name (what `origin` calls it, else the folder)
-and `<sep>` is `.` unless you pass `--sep` — use `__` where a path segment has
-to be a legal identifier, as in Python or Rust. Forgot it? Rename the symlink.
+`<repo>` is your repository's name (what `origin` calls it, else the folder).
+`<sep>` is `__` in a repository named `suede__<name>` and `.` everywhere else;
+`--sep` overrides it. Got it wrong? Rename the symlink.
 Changed your mind about declaring? Delete the symlink. **The symlink is the
 whole declaration**, so both are ordinary `git mv` and `git rm`.
 
+The name reads **what it is, then who needs it**. Suede repositories are
+named `suede.<name>` (or `suede__<name>` where a period cannot appear in an
+import, as in Python), and when the dependency carries that prefix your
+repository's copy of it is dropped:
+
+| Your repository | Installs | Folder | Declaring symlink |
+| --- | --- | --- | --- |
+| `suede.svelte-testing-utility` | `suede.typescript-testing-utility` | `suede.typescript-testing-utility/` | `suede.typescript-testing-utility.svelte-testing-utility` |
+| `suede__wsfs` | `suede__sqlmodel_utils` | `suede__sqlmodel_utils/` | `suede__sqlmodel_utils__wsfs` |
+| `my-app` | `widget` | `widget/` | `widget.my-app` |
+
+The folder always keeps the dependency's full name.
+
 A release install anywhere other than the repository root is refused: code in
-`release/` reaches a release dependency as `../<repo><sep><name>/...`, and that
+`release/` reaches a release dependency as `../<name><sep><repo>/...`, and that
 path only holds when the symlink sits beside `release/`. The installed folder
 and its symlink always share a parent — the symlink is never placed somewhere
 else for you, because symlinks followed across directories behave differently
@@ -63,28 +76,28 @@ A dependency publishes its own dependencies as records in
 ```
 deps: sweater needs 2 sibling(s) at the repository root
 
-[1] sweater.dockview
+[1] dockview.sweater
     https://github.com/pmalacho-mit/dockview-svelte-suede @ 4f10c2a
     not installed anywhere in this repository
     bash <(curl -fsSL https://suede.sh/install/release) --repo https://github.com/pmalacho-mit/dockview-svelte-suede --at 4f10c2a...
-    ln -s dockview-svelte-suede sweater.dockview
+    ln -s dockview-svelte-suede dockview.sweater
 
-    [1.1] dockview.mixin
+    [1.1] mixin.dockview
         https://github.com/pmalacho-mit/mixin-suede @ 9bb0e41
         not installed anywhere in this repository
         bash <(curl -fsSL https://suede.sh/install/release) --repo https://github.com/pmalacho-mit/mixin-suede --at 9bb0e41...
-        ln -s mixin-suede dockview.mixin
+        ln -s mixin-suede mixin.dockview
 
-[2] sweater.mixin
+[2] mixin.sweater
     https://github.com/pmalacho-mit/mixin-suede @ 9bb0e41
     same install as [1.1]
-    ln -s mixin-suede sweater.mixin
+    ln -s mixin-suede mixin.sweater
 
 deps: 0 satisfied, 3 to resolve.
 ```
 
 Paste the commands, run from the root, re-run `deps.sh` to confirm. Each
-install in the recipe is itself declared (the `<repo><sep><name>` symlink) when
+install in the recipe is itself declared (the `<name><sep><repo>` symlink) when
 you are in a dependency repository, so the transitive closure ends up declared
 at your root without a rule saying it must.
 
@@ -138,7 +151,8 @@ installer never edits `package.json`, `requirements.txt` or a lockfile.
 --repo <OWNER/REPO | url>   required
 --at <commit>               install this commit instead of the branch tip
 --branch <name>             install from this branch (default: release)
---sep <text>                separator for the declaring symlink (default: .)
+--sep <text>                separator in the declaring symlink (default: __ in a
+                            repository named suede__<name>, else .)
 --name <folder>             install under this name instead of the repo's
 --prefix <text>             prepend to the folder name
 --suffix <text>             append to the folder name
@@ -151,7 +165,7 @@ status` shows.
 
 ## 7. Removing a dependency
 
-`git rm -r <name>` and `git rm <repo><sep><name>`, then `deps.sh` on anything
+`git rm -r <name>` and `git rm <name><sep><repo>`, then `deps.sh` on anything
 that pointed at it will tell you which edge symlinks now dangle. There is no
 command for this because there is nothing for a command to know that `git
 status` does not.
