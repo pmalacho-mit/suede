@@ -131,9 +131,29 @@ finds_git_subrepo_through_GIT_SUBREPO_ROOT() {
   assert_pulled "four" "with git-subrepo off PATH, GIT_SUBREPO_ROOT/.rc brought it back"
 }
 
+pulls_over_https_when_the_recorded_ssh_remote_does_not_answer() {
+  ( cd "$WORK/consumer"
+    git config -f deps/foo/.gitrepo subrepo.remote "git@example.test:owner/foo.git"
+    git commit --quiet -am "record foo over ssh" )
+  publish "five"
+  local output status=0
+  output="$( cd "$WORK/consumer"
+    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$WORK/bare.insteadOf" \
+           GIT_CONFIG_VALUE_0="https://example.test/owner/foo.git"
+    bash deps/foo/.suede/core/sync 2>&1 )" || status=$?
+  [[ "$status" == 0 ]] || { log_failure "sync failed: $output"; return 1; }
+  assert_pulled "five" "the pull went through over HTTPS" || return 1
+  grep -q 'pulling over https://example.test/owner/foo.git' <<<"$output" \
+    && log_pass "and sync said which spelling it used" || { log_failure "no notice: $output"; return 1; }
+  [[ "$(git -C "$WORK/consumer" config -f deps/foo/.gitrepo subrepo.remote)" == "git@example.test:owner/foo.git" ]] \
+    && log_pass "the .gitrepo still records the SSH remote, for upstream" \
+    || { log_failure "remote became $(git -C "$WORK/consumer" config -f deps/foo/.gitrepo subrepo.remote)"; return 1; }
+}
+
 run_test_suite --setup setup --cleanup cleanup \
   pulls_the_dependency_it_lives_in_from_any_directory \
   works_through_a_symlink_to_the_dependency \
   passes_its_arguments_on_to_git_subrepo \
   refuses_where_there_is_no_dependency \
-  finds_git_subrepo_through_GIT_SUBREPO_ROOT
+  finds_git_subrepo_through_GIT_SUBREPO_ROOT \
+  pulls_over_https_when_the_recorded_ssh_remote_does_not_answer

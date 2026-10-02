@@ -85,6 +85,18 @@ graph_make_project() { # <work> <name> [--dependency]
     git commit --quiet -m "init $name" )
 }
 
+# Make <bare> reachable ONLY as https://example.test/<path>.git, the way a
+# public GitHub repository looks to a CI runner with no SSH key: the SSH
+# spelling git@example.test:<path>.git cannot resolve, and the HTTPS one is
+# rewritten (insteadOf) to the local bare repo. Exported, so every git below
+# sees it; undo with graph_forget_https.
+graph_https_only() { # <bare> <path, e.g. owner/widget>
+  export GIT_CONFIG_COUNT=1
+  export GIT_CONFIG_KEY_0="url.$1.insteadOf"
+  export GIT_CONFIG_VALUE_0="https://example.test/$2.git"
+}
+graph_forget_https() { unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0; }
+
 # ---- assertions ------------------------------------------------------------
 graph_assert_contains() { # <haystack> <ere> <label>
   if grep -qE -- "$2" <<<"$1"; then log_pass "$3"; return 0; fi

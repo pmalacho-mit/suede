@@ -152,6 +152,27 @@ in_points_the_script_at_another_dependency() {
   assert_shows 'local/lib/added\.js' "--in reached deps/foo from a copy of the script that lives elsewhere"
 }
 
+an_ssh_remote_falls_back_to_https() {
+  # Recorded over SSH, reachable only over HTTPS: a CI runner with no key.
+  git -C "$WORK/consumer" config -f deps/foo/.gitrepo subrepo.remote "git@example.test:owner/foo.git"
+  export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="url.$WORK/bare.insteadOf" \
+         GIT_CONFIG_VALUE_0="https://example.test/owner/foo.git"
+  run_diff --stat
+  unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+  git -C "$WORK/consumer" config -f deps/foo/.gitrepo subrepo.remote "$WORK/bare"
+  [[ "$STATUS" != 2 ]] && log_pass "diff reached the remote over HTTPS (exit $STATUS)" \
+    || { log_failure "diff could not run: $OUTPUT"; return 1; }
+}
+
+a_remote_nobody_answers_names_every_spelling_tried() {
+  git -C "$WORK/consumer" config -f deps/foo/.gitrepo subrepo.remote "git@example.test:owner/nowhere.git"
+  run_diff
+  git -C "$WORK/consumer" config -f deps/foo/.gitrepo subrepo.remote "$WORK/bare"
+  assert_status 2 "an unreachable remote is a failure to run, exit 2" || return 1
+  assert_shows 'tried: git@example.test:owner/nowhere.git, https://example.test/owner/nowhere.git' \
+    "and both spellings are named"
+}
+
 outside_a_dependency_it_refuses_distinguishably() {
   local elsewhere="$WORK/consumer/not-a-dependency/.suede/core"
   mkdir -p "$elsewhere" && cp "$DIFF" "$elsewhere/diff"
@@ -174,4 +195,6 @@ run_test_suite --setup setup --cleanup cleanup \
   at_compares_against_a_commit_other_than_the_pin \
   at_and_sync_do_not_mix \
   in_points_the_script_at_another_dependency \
+  an_ssh_remote_falls_back_to_https \
+  a_remote_nobody_answers_names_every_spelling_tried \
   outside_a_dependency_it_refuses_distinguishably

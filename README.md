@@ -432,7 +432,9 @@ from inside it has a route back — HTTPS password authentication no longer
 offers one. What you *publish* records the HTTPS URL instead, so consumers and
 CI runners can resolve your dependencies without a key of yours. Fetching
 tries SSH first and falls back to HTTPS, and both fail fast rather than
-prompting.
+prompting. The scripts inside an installed dependency (`diff`, `deps.sh`,
+`sync`) do the same, so a keyless machine — a CI runner included — can compare
+and pull an SSH-recorded dependency.
 
 ### Install [git-subrepo](https://github.com/ingydotnet/git-subrepo) 
 

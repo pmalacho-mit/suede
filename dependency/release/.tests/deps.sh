@@ -142,6 +142,19 @@ in_runs_against_another_dependency() {
   graph_assert_contains "$OUTPUT" 'deps: release needs' "--in release reads this repository's own records"
 }
 
+the_look_ahead_falls_back_to_https() {
+  # A record naming the SSH spelling of a dependency only reachable over HTTPS:
+  # deps.sh still reads that dependency's own records.
+  graph_make_project "$WORK" app2 --dependency
+  graph_make_dep "$WORK" top "top.dockview=git@example.test:owner/dockview.git@$DOCKVIEW" >/dev/null
+  ( cd "$WORK/app2" && bash "$INSTALL" --repo "$(graph_remote "$WORK" top)" >/dev/null 2>&1 )
+  graph_https_only "$(graph_remote "$WORK" dockview)" owner/dockview
+  STATUS=0
+  OUTPUT="$( cd "$WORK/app2" && bash top/.suede/core/deps.sh 2>&1 )" || STATUS=$?
+  graph_forget_https
+  graph_assert_contains "$OUTPUT" '\[1.1\] dockview.mixin' "dockview's records were fetched over HTTPS"
+}
+
 run_test_suite --setup setup --cleanup cleanup \
   the_recipe_is_complete_up_front \
   running_the_recipe_satisfies_everything \
@@ -152,4 +165,5 @@ run_test_suite --setup setup --cleanup cleanup \
   a_satisfied_edge_at_another_commit_is_owned_not_failed \
   a_dangling_symlink_is_called_out \
   a_vendored_dependent_keeps_its_siblings_inside_release \
-  in_runs_against_another_dependency
+  in_runs_against_another_dependency \
+  the_look_ahead_falls_back_to_https

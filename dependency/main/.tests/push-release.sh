@@ -82,9 +82,27 @@ a_stale_release_core_is_named_rather_than_worked_around() {
   cp "$ROOT_DIR/dependency/release/core/deps.sh" "$WORK/library/release/.suede/core/deps.sh"
 }
 
+an_ssh_remote_is_compared_over_https_when_ssh_is_unavailable() {
+  # The CI failure this guards against: the installer records the SSH spelling,
+  # a runner has no key, and the guard must still be able to compare.
+  graph_https_only "$(graph_remote "$WORK" widget)" owner/widget
+  git -C "$WORK/library" config -f widget/.gitrepo subrepo.remote "git@example.test:owner/widget.git"
+  git -C "$WORK/library" commit --quiet -am "record widget over ssh"
+  guard || true
+  graph_forget_https
+  # Only the comparison is under test. gadget's record names widget by its
+  # local path, so deps.sh rightly calls the re-recorded widget a different
+  # repository; on GitHub both spellings normalise to one.
+  if grep -qE 'could not compare|diverged from its pin' "$OUT"; then
+    log_failure "the guard could not compare widget over https"; cat "$OUT" >&2; return 1
+  fi
+  log_pass "an SSH-recorded release dependency is compared over HTTPS"
+}
+
 run_test_suite --setup setup --cleanup cleanup \
   an_honest_tree_passes_the_guard \
   the_records_are_refreshed_and_committed \
   a_diverged_release_dependency_refuses_to_publish \
   a_missing_sibling_refuses_to_publish \
-  a_stale_release_core_is_named_rather_than_worked_around
+  a_stale_release_core_is_named_rather_than_worked_around \
+  an_ssh_remote_is_compared_over_https_when_ssh_is_unavailable

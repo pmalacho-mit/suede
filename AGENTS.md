@@ -171,7 +171,9 @@ bash <dep>/.suede/core/upstream           # propose local edits back as a PR
 ```
 
 None takes a target (`diff --in <dir>` and `deps.sh --in <dir>` are the one
-exception, for tooling). `diff` exits `0` no difference, `1` difference, `2`
+exception, for tooling). An installed `.gitrepo` records the SSH remote for
+`upstream`; `diff`, `deps.sh` and `sync` fall back to HTTPS when SSH does not
+answer, so do not rewrite a `.gitrepo` remote to make CI work. `diff` exits `0` no difference, `1` difference, `2`
 could not run. `sync` and `upstream` need git-subrepo; the others need only
 `git`.
 

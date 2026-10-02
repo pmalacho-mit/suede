@@ -108,6 +108,13 @@ authenticated write. What you *publish* (`extract`) records the HTTPS spelling,
 because a consumer or a CI runner resolving your records holds no key of yours.
 A local path or a non-hosted URL has one spelling and is recorded as given.
 
+The scripts that ship inside every dependency follow the same rule, the other
+way round: `diff`, `deps.sh` and `sync` try the **recorded** remote first and
+its other spelling second. That is what lets the publish guard compare an
+SSH-recorded dependency on a CI runner, which has no key. `upstream` is the
+exception, because pushing needs the SSH spelling and an HTTPS fallback could
+not authenticate anyway.
+
 ## 5. Third-party packages
 
 Not the installer's business. A dependency's `release/` folder is a package in
