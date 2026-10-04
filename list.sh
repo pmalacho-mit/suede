@@ -6,13 +6,16 @@
 #
 #   KIND         ENTRY                      PATH                       PIN
 #   release      widget.my-app              widget                     86abeeb
+#   transitive   mixin.widget               mixin                      30142f6
 #   development  -                          fixtures/harness           4f10c2a
 #   vendored     -                          release/mixin              9bb0e41
 #
 # The kind is read off the tree, the same way extract reads it: an install
 # inside release/ is vendored; one that a root symlink named <name><sep><repo>
-# resolves to is a release dependency; anything else is development. suede's
-# own vendored machinery (.suede/core, .github/workflows) is left out.
+# resolves to is a release dependency; one reached only through a release
+# dependency's edges is transitive (ENTRY names the edge) - it ships through
+# that dependency's record; anything else is development. suede's own vendored
+# machinery (.suede/core, .github/workflows) is left out.
 
 set -euo pipefail
 LIB_PREFIX="list"
@@ -23,30 +26,11 @@ usage() { grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \?//'; exit 0; }
 
 lib_enter_root
 
-DECLARED="$(release_dependencies 2>/dev/null || true)"
-entry_for() { # <real path>
-  local entry real
-  while IFS=$'\t' read -r entry real; do
-    [[ "$real" == "$1" ]] && { printf '%s' "$entry"; return; }
-  done <<<"$DECLARED"
-  printf '%s' "-"
-}
-
 rows=""
-while IFS= read -r file; do
-  dir="${file%/.gitrepo}"; dir="${dir#./}"
-  case "$dir" in
-    "$RELEASE_DIR") continue ;;                       # release/ itself
-    .suede/core|*/.suede/core|.github/workflows|*/.github/workflows) continue ;;
-  esac
-  if [[ "$dir" == "$RELEASE_DIR"/* ]]; then
-    kind="vendored"; entry="-"
-  else
-    entry="$(entry_for "$dir")"
-    if [[ "$entry" == "-" ]]; then kind="development"; else kind="release"; fi
-  fi
-  rows+="$(printf '%-12s %-26s %-26s %s' "$kind" "$entry" "$dir" "$(short "$(field "$file" commit)")")"$'\n'
-done < <(find . -name .gitrepo -not -path '*/.git/*' -not -path '*/node_modules/*' -not -path '*/.worktrees/*' | sort)
+while IFS=$'\t' read -r kind entry dir; do
+  [[ -n "$dir" ]] || continue
+  rows+="$(printf '%-12s %-26s %-26s %s' "$kind" "$entry" "$dir" "$(short "$(field "$dir/.gitrepo" commit)")")"$'\n'
+done < <(installed_dependencies 2>/dev/null)
 
 if [[ -z "$rows" ]]; then
   echo "no suede dependencies found"

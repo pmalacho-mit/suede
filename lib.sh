@@ -105,6 +105,105 @@ release_dependencies() {
   done | sort
 }
 
+# Everything this repository ships a pointer to, directly or not, as
+# "<kind>\t<entry>\t<real path>" lines: kind `release` for each declaration,
+# and `transitive` for every install reached through their edges, all the way
+# down, with the edge that reached it. Inside release/ is vendored and left
+# out; a missing edge is deps.sh's to report, so it is skipped here.
+shipped_dependencies() {
+  local seen="" queue="" entry real record sibling target
+  while IFS=$'\t' read -r entry real; do
+    [[ -n "$entry" ]] || continue
+    grep -qxF -- "$real" <<<"$seen" && continue
+    seen+="$real"$'\n'; queue+="$real"$'\n'
+    printf 'release\t%s\t%s\n' "$entry" "$real"
+  done < <(release_dependencies)
+  while [[ -n "$queue" ]]; do
+    real="${queue%%$'\n'*}"; queue="${queue#*$'\n'}"
+    for record in "$real"/.suede/.dependencies/*.gitrepo; do
+      [[ -e "$record" ]] || continue
+      entry="$(basename "$record" .gitrepo)"
+      sibling="$(dirname "$real")/$entry"; sibling="${sibling#./}"
+      target="$(real_path_of "$sibling")"
+      [[ -n "$target" && -f "$target/.gitrepo" ]] || continue
+      case "$target" in "$RELEASE_DIR"|"$RELEASE_DIR"/*) continue ;; esac
+      grep -qxF -- "$target" <<<"$seen" && continue
+      seen+="$target"$'\n'; queue+="$target"$'\n'
+      printf 'transitive\t%s\t%s\n' "$sibling" "$target"
+    done
+  done
+}
+
+# Every installed dependency, as "<kind>\t<entry>\t<real path>" lines sorted by
+# path: what shipped_dependencies finds (release, transitive), every other
+# subrepo outside release/ as `development`, and those inside it as `vendored`.
+# A subrepo nested inside another one is that dependency's business and is left
+# out, and so is suede's own machinery (.suede/core, .github/workflows).
+installed_dependencies() {
+  local shipped kept="" file dir parent nested
+  shipped="$(shipped_dependencies)"
+  {
+    [[ -n "$shipped" ]] && printf '%s\n' "$shipped"
+    while IFS= read -r file; do
+      dir="${file%/.gitrepo}"; dir="${dir#./}"
+      case "$dir" in
+        "$RELEASE_DIR") continue ;;
+        .suede/core|*/.suede/core|.github/workflows|*/.github/workflows) continue ;;
+      esac
+      nested=0
+      while IFS= read -r parent; do
+        [[ -n "$parent" && "$dir" == "$parent"/* ]] && { nested=1; break; }
+      done <<<"$kept"
+      [[ "$nested" == 1 ]] && continue
+      kept+="$dir"$'\n'
+      awk -F'\t' -v d="$dir" '$3 == d { found = 1 } END { exit !found }' <<<"$shipped" && continue
+      if [[ "$dir" == "$RELEASE_DIR"/* ]]; then
+        printf 'vendored\t-\t%s\n' "$dir"
+      else
+        printf 'development\t-\t%s\n' "$dir"
+      fi
+    done < <(find . -name .gitrepo -not -path '*/.git/*' -not -path '*/node_modules/*' \
+               -not -path '*/.worktrees/*' | LC_ALL=C sort)
+  } | LC_ALL=C sort -t$'\t' -k3,3
+}
+
+# The ways to reach one repository, the recorded one first, then the other
+# spelling (SSH <-> HTTPS); only HTTPS when HTTPS_ONLY=1. The same rule as the
+# scripts in release/.suede/core.
+spellings() { # <url>
+  local url="$1" rest host path
+  case "$url" in
+    https://*|http://*) rest="${url#*://}"; rest="${rest#*@}"; host="${rest%%/*}"; path="${rest#*/}" ;;
+    ssh://*)            rest="${url#ssh://}"; rest="${rest#*@}"; host="${rest%%/*}"; path="${rest#*/}" ;;
+    *@*:*)              rest="${url#*@}"; host="${rest%%:*}"; path="${rest#*:}" ;;
+    *)                  printf '%s\n' "$url"; return 0 ;;
+  esac
+  if [[ -z "$host" || -z "$path" || "$host" == *:* ]]; then printf '%s\n' "$url"; return 0; fi
+  path="${path%/}"; path="${path%.git}"
+  case "$url" in
+    https://*|http://*)
+      printf '%s\n' "$url"
+      [[ "${HTTPS_ONLY:-0}" == 1 ]] || printf 'git@%s:%s.git\n' "$host" "$path" ;;
+    *)
+      [[ "${HTTPS_ONLY:-0}" == 1 ]] || printf '%s\n' "$url"
+      printf 'https://%s/%s.git\n' "$host" "$path" ;;
+  esac
+}
+
+# The commit at the tip of an install's branch on its remote, or nothing if no
+# spelling answers. One ls-remote, no fetch.
+remote_tip() { # <install path>
+  local remote branch url tip
+  remote="$(field "$1/.gitrepo" remote)"; branch="$(field "$1/.gitrepo" branch)"
+  [[ -n "$remote" ]] || return 1
+  while IFS= read -r url; do
+    tip="$(GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes -o ConnectTimeout=5}" GIT_TERMINAL_PROMPT=0 \
+      git ls-remote --exit-code "$url" "refs/heads/${branch:-release}" 2>/dev/null | cut -f1)" \
+      && [[ -n "$tip" ]] && { printf '%s\n' "$tip"; return 0; }
+  done < <(spellings "$remote")
+  return 1
+}
+
 # The consumer-facing script of that name, from the copy this repository
 # vendors into release/. It has to be current: deps.sh is newer than some
 # published cores.
