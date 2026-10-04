@@ -10,6 +10,7 @@ ROOT_DIR="$(cd "$TESTS_DIR/../../.." && pwd)"
 HARNESS="$(cd "$ROOT_DIR/.tests/harness" && pwd)"
 source "$HARNESS/runner.sh"; source "$HARNESS/color-logging.sh"
 source "$HARNESS/with-local-suede-chain.sh"
+source "$HARNESS/ssh-spy.sh"
 
 SYNC="$ROOT_DIR/dependency/release/core/sync"
 WORK=""
@@ -150,10 +151,28 @@ pulls_over_https_when_the_recorded_ssh_remote_does_not_answer() {
     || { log_failure "remote became $(git -C "$WORK/consumer" config -f deps/foo/.gitrepo subrepo.remote)"; return 1; }
 }
 
+https_skips_ssh_and_is_not_passed_to_git_subrepo() {
+  # deps/foo is recorded over SSH by the previous test.
+  publish "six"
+  local output status=0
+  https_only_remote "$WORK/bare" owner/foo
+  ssh_spy_start
+  output="$( cd "$WORK/consumer" && bash deps/foo/.suede/core/sync --https 2>&1 )" || status=$?
+  assert_no_ssh "--https makes no SSH attempt" || { ssh_spy_stop; forget_https_only_remote; return 1; }
+  ssh_spy_stop; forget_https_only_remote
+  [[ "$status" == 0 ]] || { log_failure "sync failed (was --https forwarded to git subrepo?): $output"; return 1; }
+  assert_pulled "six" "and pulled over HTTPS" || return 1
+  grep -q -- '--https: pulling over https://example.test/owner/foo.git' <<<"$output" \
+    && log_pass "saying so, without claiming SSH failed" || { log_failure "notice: $output"; return 1; }
+  [[ "$(git -C "$WORK/consumer" config -f deps/foo/.gitrepo subrepo.remote)" == "git@example.test:owner/foo.git" ]] \
+    && log_pass "the .gitrepo still records the SSH remote" || return 1
+}
+
 run_test_suite --setup setup --cleanup cleanup \
   pulls_the_dependency_it_lives_in_from_any_directory \
   works_through_a_symlink_to_the_dependency \
   passes_its_arguments_on_to_git_subrepo \
   refuses_where_there_is_no_dependency \
   finds_git_subrepo_through_GIT_SUBREPO_ROOT \
-  pulls_over_https_when_the_recorded_ssh_remote_does_not_answer
+  pulls_over_https_when_the_recorded_ssh_remote_does_not_answer \
+  https_skips_ssh_and_is_not_passed_to_git_subrepo

@@ -8,6 +8,10 @@
 #     bash <dependency>/.suede/core/deps.sh            # the recipe
 #     bash <dependency>/.suede/core/deps.sh --check    # exit 1 if anything is unresolved
 #     bash <dependency>/.suede/core/deps.sh --in <dir> # act on the dependency at <dir>
+#     bash <dependency>/.suede/core/deps.sh --https    # skip SSH: no key here
+#
+# --https reaches remotes over HTTPS only, and is passed on to every install
+# command the recipe prints, so the whole recipe makes no SSH attempt.
 #
 # A dependency publishes its own dependencies as `.suede/.dependencies/
 # <sibling>.gitrepo` records. Each one names a folder it expects to find
@@ -30,8 +34,11 @@
 # and nothing is done for you - this script only reads.
 #
 # --check skips the network (no recursion into uninstalled dependencies, no
-# local-change comparison) and exits 1 when any record is not satisfied. That
-# is what the publish guard runs.
+# local-change comparison) and exits 1 when any record is not satisfied - and,
+# unlike the recipe, a sibling at a different commit than its record asks for
+# is not satisfied: a release ships its records, so what it was built against
+# has to be exactly what they name, all the way down. That is what the publish
+# guard runs.
 #
 # Needs `git`. The reuse check runs the `diff` script beside this one.
 #
@@ -49,12 +56,14 @@ INSTALL_URL="${SUEDE_INSTALL_URL:-https://suede.sh/install/release}"
 RELEASE_DIR="release"
 
 CHECK=0
+HTTPS_ONLY=0
 IN=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) usage ;;
     --check)   CHECK=1; shift ;;
     --in)      [[ -n "${2-}" ]] || die "--in needs a directory"; IN="$2"; shift 2 ;;
+    --https)   HTTPS_ONLY=1; shift ;;
     *)         die "unknown argument: $1" ;;
   esac
 done
@@ -75,6 +84,9 @@ else
   [[ -f "$DEP_DIR/.gitrepo" ]] \
     || die "no .gitrepo at $DEP_DIR - is this inside an installed suede dependency?"
 fi
+# Fetched and run as `bash <(curl ...)`, there is no diff beside this script;
+# the dependency's own copy will do.
+[[ -f "$DIFF" ]] || DIFF="$DEP_DIR/.suede/core/diff"
 
 ROOT="$(git -C "$DEP_DIR" rev-parse --show-toplevel 2>/dev/null)" \
   || die "$DEP_DIR is not inside a git repository"
@@ -185,21 +197,26 @@ visited() { grep -qxF -- "$1" <<<"$VISITED"; }
 # push through; a machine with no key - a CI runner, a fresh container - reaches
 # the same public repository over HTTPS. So fetch from what is recorded, and
 # fall back to the other spelling. A local path, or an address carrying a port,
-# has one spelling: itself.
+# has one spelling: itself. With --https (HTTPS_ONLY=1) only the HTTPS spelling
+# is tried: you know there is no SSH key here, so do not spend a timeout
+# finding out.
 spellings() { # <url>
   local url="$1" rest host path
-  printf '%s\n' "$url"
   case "$url" in
     https://*|http://*) rest="${url#*://}"; rest="${rest#*@}"; host="${rest%%/*}"; path="${rest#*/}" ;;
     ssh://*)            rest="${url#ssh://}"; rest="${rest#*@}"; host="${rest%%/*}"; path="${rest#*/}" ;;
     *@*:*)              rest="${url#*@}"; host="${rest%%:*}"; path="${rest#*:}" ;;
-    *)                  return 0 ;;
+    *)                  printf '%s\n' "$url"; return 0 ;;
   esac
-  [[ -n "$host" && -n "$path" && "$host" != *:* ]] || return 0
+  if [[ -z "$host" || -z "$path" || "$host" == *:* ]]; then printf '%s\n' "$url"; return 0; fi
   path="${path%/}"; path="${path%.git}"
   case "$url" in
-    https://*|http://*) printf 'git@%s:%s.git\n' "$host" "$path" ;;
-    *)                  printf 'https://%s/%s.git\n' "$host" "$path" ;;
+    https://*|http://*)
+      printf '%s\n' "$url"
+      [[ "${HTTPS_ONLY:-0}" == 1 ]] || printf 'git@%s:%s.git\n' "$host" "$path" ;;
+    *)
+      [[ "${HTTPS_ONLY:-0}" == 1 ]] || printf '%s\n' "$url"
+      printf 'https://%s/%s.git\n' "$host" "$path" ;;
   esac
 }
 
@@ -235,7 +252,9 @@ fetch_manifest() { # <remote> <commit> <branch> <destination>
 # Does an install at the asked-for commit also match it byte for byte? Exit 0
 # yes, 1 no (local changes), 2 could not tell.
 unchanged_at() { # <dir> <commit>
-  bash "$DIFF" --in "$1" --at "$2" --quiet >/dev/null 2>&1
+  local https=()
+  [[ "$HTTPS_ONLY" == 1 ]] && https=(--https)
+  bash "$DIFF" --in "$1" --at "$2" --quiet ${https[@]+"${https[@]}"} >/dev/null 2>&1
 }
 
 # --- output -----------------------------------------------------------------
@@ -257,8 +276,13 @@ link_command() { # <link absolute> <target absolute>
 # An install runs in the dependent's directory so the new folder lands beside
 # it; from the root that is a subshell with a cd, or nothing when the
 # dependent is at the root already.
+#
+# --transitive on every one: what a recipe installs is there for a dependency's
+# edge, not because this repository's own code imports it. The ln -s printed
+# beside it is the link that matters; the installer adds no declaration.
 install_command() { # <parent absolute> <remote> <commit> [extra flags]
-  local parent="$1" remote="$2" commit="$3" extra="${4-}" where
+  local parent="$1" remote="$2" commit="$3" extra="${4-} --transitive" where
+  [[ "$HTTPS_ONLY" == 1 ]] && extra="$extra --https"
   where="$(from_root "$parent")"
   if [[ "$where" == "." ]]; then
     printf 'bash <(curl -fsSL %s) --repo %s --at %s%s' "$INSTALL_URL" "$remote" "$commit" "$extra"
@@ -355,15 +379,27 @@ one_record() { # <label> <entry> <sibling abs> <remote> <commit> <branch>
       say ""
       return
     fi
-    SATISFIED=$((SATISFIED + 1))
     if [[ "$have_commit" == "$commit" ]]; then
+      SATISFIED=$((SATISFIED + 1))
       say "    satisfied by $(from_root "$real") @ $(short "$have_commit"), matches the pin"
+    elif [[ "$CHECK" == 1 ]]; then
+      # What a release ships is its records. Resolved here to another commit,
+      # this tree was built against something its consumers will never install.
+      UNRESOLVED=$((UNRESOLVED + 1))
+      say "    resolves to $(from_root "$real") @ $(short "$have_commit"), but the record asks for $(short "$commit")"
+      say "    a release cannot ship that: its consumers will install $(short "$commit"), not what was built against"
     else
+      SATISFIED=$((SATISFIED + 1))
       MISMATCHED=$((MISMATCHED + 1))
       say "    satisfied by $(from_root "$real") @ $(short "$have_commit") - NOT the $(short "$commit") that $entry asks for"
-      say "    that is allowed (you chose this resolution), but make sure you know what differs"
-      say "    between the commit $entry was built against and what you have:"
+      say "    fine while you work, but push-release will refuse to publish it. See what differs between"
+      say "    the commit $entry was built against and what you have:"
       cmd "bash $(from_root "$real")/.suede/core/diff --at $commit"
+      say "    then either sync the dependent to a release built against $(short "$have_commit"), or install"
+      say "    exactly what it asks for beside yours and point the edge there:"
+      cmd "$(install_command "$parent" "$remote" "$commit" " --name $name-$(short "$commit")")"
+      cmd "rm $(from_root "$sibling")"
+      cmd "$(link_command "$sibling" "$parent/$name-$(short "$commit")")"
     fi
     say ""
     if ! visited "$real"; then
@@ -478,7 +514,8 @@ walk "$DEP_DIR/.suede/.dependencies" "$DEP_DIR" ""
 
 mismatch_note() {
   [[ "$MISMATCHED" -gt 0 ]] || return 0
-  say "deps: $MISMATCHED of them at a different commit than asked for - run the diff command(s) above before relying on that"
+  say "deps: $MISMATCHED of them at a different commit than asked for - fine while you work, but push-release"
+  say "deps: refuses to publish until they match; the commands above show the difference and the fix"
 }
 
 if [[ "$UNRESOLVED" == 0 ]]; then

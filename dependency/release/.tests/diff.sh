@@ -11,6 +11,7 @@ ROOT_DIR="$(cd "$TESTS_DIR/../../.." && pwd)"
 HARNESS="$(cd "$ROOT_DIR/.tests/harness" && pwd)"
 source "$HARNESS/runner.sh"; source "$HARNESS/color-logging.sh"
 source "$HARNESS/with-local-suede-chain.sh"
+source "$HARNESS/ssh-spy.sh"
 
 DIFF="$ROOT_DIR/dependency/release/core/diff"
 WORK=""
@@ -164,6 +165,20 @@ an_ssh_remote_falls_back_to_https() {
     || { log_failure "diff could not run: $OUTPUT"; return 1; }
 }
 
+https_skips_the_ssh_attempt() {
+  git -C "$WORK/consumer" config -f deps/foo/.gitrepo subrepo.remote "git@example.test:owner/foo.git"
+  https_only_remote "$WORK/bare" owner/foo
+  ssh_spy_start
+  run_diff --https --stat
+  assert_no_ssh "--https makes no SSH attempt" || { ssh_spy_stop; forget_https_only_remote; return 1; }
+  : > "$SSH_SPY_DIR/calls"
+  run_diff --stat
+  assert_ssh_tried "without it, SSH is tried first" || { ssh_spy_stop; forget_https_only_remote; return 1; }
+  ssh_spy_stop; forget_https_only_remote
+  git -C "$WORK/consumer" config -f deps/foo/.gitrepo subrepo.remote "$WORK/bare"
+  [[ "$STATUS" != 2 ]] && log_pass "both reached the remote" || { log_failure "$OUTPUT"; return 1; }
+}
+
 a_remote_nobody_answers_names_every_spelling_tried() {
   git -C "$WORK/consumer" config -f deps/foo/.gitrepo subrepo.remote "git@example.test:owner/nowhere.git"
   run_diff
@@ -196,5 +211,6 @@ run_test_suite --setup setup --cleanup cleanup \
   at_and_sync_do_not_mix \
   in_points_the_script_at_another_dependency \
   an_ssh_remote_falls_back_to_https \
+  https_skips_the_ssh_attempt \
   a_remote_nobody_answers_names_every_spelling_tried \
   outside_a_dependency_it_refuses_distinguishably

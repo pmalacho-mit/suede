@@ -108,17 +108,24 @@ commits, the consumer is shown the difference and chooses: link both to one copy
 and own the difference, or install the second commit as `mixin-9bb0e41/` and
 link to that. Both copies then ship as release dependencies of the consumer.
 
-**The consumer's closure declares itself.** Every install the recipe makes in a
-dependency repository is declared (`<name><sep><repo>`) by the installer, so the
-transitive dependencies end up in the consumer's own records with no separate
-rule. Deleting one of those symlinks is allowed — the consumer's consumers will
-then resolve that dependency from *your* record instead of theirs.
+**Declarations say only what is true.** The recipe installs with
+`--transitive`, so a dependency that is there for another dependency's edge gets
+the edge (`mixin.widget`) and no declaration. Your declarations stay the list of
+what *your* code imports, and your consumers' roots stay free of duplicates:
+each package's edges are exactly what that package needs. A transitive install
+still ships — your consumers install it from the record of the dependency that
+needs it — and it is still checked at publish (below). If your own code starts
+importing it, declare it: `ln -s mixin mixin.my-app`.
 
-**A pin is a request, not a lock.** A sibling that resolves to the right
-repository at another commit satisfies the edge. `deps.sh` says so plainly —
-"NOT the commit `mixin.widget` asks for" — and prints the `diff --at <commit>`
-that shows what the dependency was built against versus what is on disk, so the
-consumer owns the resolution knowingly rather than by accident.
+**A pin is a request while you work, and a requirement when you publish.** A
+sibling that resolves to the right repository at another commit satisfies the
+edge in the everyday recipe, so an application can run against whatever it
+chooses. `deps.sh` says so plainly — "NOT the commit `mixin.widget` asks for" —
+prints the `diff --at <commit>` that shows what the dependency was built
+against versus what is on disk, and the two ways to line it up. A repository
+that *publishes* cannot keep the mismatch: its consumers install what the
+records name, so the publish guard refuses until every edge, all the way down,
+resolves to exactly that commit.
 
 ## Vendored dependencies
 
@@ -154,12 +161,13 @@ runs two checks and refuses to publish if either fires:
 
 | Check | Fails when | Why it matters |
 | --- | --- | --- |
-| `diff.sh` | a release dependency's files differ from its pinned commit | the record would point at code you did not build against |
-| `deps.sh --check --in release` | an entry a record names is missing, dangling, points at a different repository, or escapes `release/` from a vendored dependent — anywhere in the tree of siblings | consumers would install a tree that does not resolve |
+| `diff.sh --shipped-only` | a release dependency's files — or those of any install its edges reach, all the way down, declared or not — differ from the pinned commit | the record would point at code you did not build against; an undeclared transitive edit ships to no one |
+| `deps.sh --check --in release` | an entry a record names is missing, dangling, points at a different repository, resolves to a *different commit* than the record names, or escapes `release/` from a vendored dependent — anywhere in the tree of siblings | consumers would install a tree that does not resolve, or not the tree you built against |
 
-A sibling at a *different commit* than asked for is not a failure in either
-check. Neither is a development dependency's state: it ships nothing, and may
-be satisfied by anything on disk.
+Between them the published tree is exactly the tested one: `diff.sh` makes
+each dependency's files match its commit, and `deps.sh --check` makes each
+commit match what the record above it names. A development dependency's state
+is not checked: it ships nothing, and may be satisfied by anything on disk.
 
 Two deliberate non-checks. Nothing verifies that your `release/` code actually
 imports what you declare, or declares what it imports; that is what your

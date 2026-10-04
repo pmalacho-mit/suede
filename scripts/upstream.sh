@@ -113,6 +113,15 @@ fi
 echo "Proposing '$RELDIR' upstream -> branch '$BRANCH' ..."
 
 # ---- push the split to the branch -------------------------------------------
+# NOTE: no --https here, unlike install, diff, deps.sh and sync. Those only
+# read, so a keyless machine can fall back to HTTPS for anything public; this
+# writes, and the only credential it assumes is the SSH key behind the remote
+# the .gitrepo records (or -r). Pushing from a keyless environment - a CI
+# runner holding a GitHub token, say - is not supported yet. Enabling it would
+# mean pushing to the HTTPS spelling with the token supplied (an insteadOf rule
+# carrying it, or passing that URL as -r), and checking that git subrepo push
+# picks the credential up in both the `ls-remote` pre-flight above and the
+# push below.
 # No --update: the tracked (pull) branch in .gitrepo stays = release. subrepo
 # still makes a local 'finalize' commit + bumps .gitrepo's commit field; we undo
 # both below so the tracking pointer keeps referencing `release`.

@@ -19,7 +19,7 @@ Run it **in the directory where you want the dependency**.
 1. **Resolve.** `OWNER/REPO` means `github.com`; any git URL or local path is
    taken as given. The `release` branch's tip is looked up (`--branch` and
    `--at <commit>` override), trying the SSH spelling first and HTTPS second —
-   see [Remotes](#4-remotes).
+   or HTTPS only with `--https`; see [Remotes](#4-remotes).
 2. **Fetch.** The commit's tree — no history — lands in `./<name>`, where
    `<name>` is the repository's name. `--name`, `--prefix` and `--suffix`
    change it. If `./<name>` already exists the installer refuses and names those
@@ -38,6 +38,7 @@ Run it **in the directory where you want the dependency**.
 | --- | --- | --- |
 | at the root of a repository that has `release/.gitrepo` (a suede dependency) | the folder, plus a symlink `<name><sep><repo> -> <name>` beside it | a **release dependency**: `extract` publishes it, consumers get it |
 | the same, with `--dev` | the folder only | a **development dependency**: nothing is published |
+| the same, with `--transitive` (what `deps.sh` prints) | the folder only | a **transitive dependency**: another dependency's record ships it, and the publish guard checks it |
 | inside that repository's `release/` | the folder only | a **vendored release dependency**: its source ships |
 | anywhere in a repository with no `release/.gitrepo` | the folder only | a dependency of an application; there is nothing to publish |
 
@@ -96,10 +97,14 @@ deps: sweater needs 2 sibling(s) at the repository root
 deps: 0 satisfied, 3 to resolve.
 ```
 
-Paste the commands, run from the root, re-run `deps.sh` to confirm. Each
-install in the recipe is itself declared (the `<name><sep><repo>` symlink) when
-you are in a dependency repository, so the transitive closure ends up declared
-at your root without a rule saying it must.
+Paste the commands, run from the root, re-run `deps.sh` to confirm. Every
+install the recipe prints carries `--transitive`, so it adds **no declaration**:
+`mixin-suede` is there because dockview and sweater need it, and the two edge
+symlinks say exactly that. Your own declarations stay a list of what your code
+imports. A transitive install still ships — through the record of the
+dependency that needs it — and the publish guard still checks it, so nothing
+escapes by being undeclared. If your own code does import one, declare it with
+the `ln -s` the installer prints.
 
 When something is **already on disk** the recipe changes shape. Same repository,
 same commit, no local changes: one `ln -s`. Anything else — a different commit,
@@ -127,6 +132,15 @@ its other spelling second. That is what lets the publish guard compare an
 SSH-recorded dependency on a CI runner, which has no key. `upstream` is the
 exception, because pushing needs the SSH spelling and an HTTPS fallback could
 not authenticate anyway.
+
+**`--https` skips the SSH attempt.** Every script that reaches a remote —
+the installer, `diff`, `deps.sh`, `sync`, and the maintainer's `diff.sh` and
+`push-release.sh` — accepts it. Use it when you know there is no SSH key to
+find: a CI runner, a fresh container, a public repository you only read, or a
+workflow whose token authenticates HTTPS. The `.gitrepo` still records the SSH
+remote, so `upstream` keeps working wherever you do have a key. `deps.sh
+--https` puts `--https` on every install it prints, so the whole recipe stays
+SSH-free, and the publish workflow runs `push-release.sh --https`.
 
 ## 5. Third-party packages
 
@@ -156,7 +170,12 @@ installer never edits `package.json`, `requirements.txt` or a lockfile.
 --name <folder>             install under this name instead of the repo's
 --prefix <text>             prepend to the folder name
 --suffix <text>             append to the folder name
---dev                       never create the declaring symlink
+--dev                       never create the declaring symlink: a development
+                            dependency, which ships nothing
+--transitive                never create the declaring symlink: installed for
+                            another dependency's edge (deps.sh adds this to
+                            every install it prints)
+--https                     skip the SSH attempt; fetch over HTTPS only
 ```
 
 Exit `0` on success, `1` on any failure. Nothing is written before the fetch

@@ -126,6 +126,9 @@ run by hand.
 - `with-local-suede-chain.sh` — the older fixture for the init / sync /
   upstream round trip: a seed remote, a consumer, and stand-ins for this
   library's `dependency/*` branches
+- `ssh-spy.sh` — `https_only_remote` (a remote whose SSH spelling reaches
+  nothing and whose HTTPS spelling is rewritten to a local repo) and an `ssh`
+  spy, so a test can prove `--https` made no SSH attempt and the default did
 - `mock-curl.sh` — redirect a hosted URL to a local file for `bash <(curl ...)`
   (bash 4 only)
 - `normalize.sh` — `strip_cr`

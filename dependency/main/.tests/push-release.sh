@@ -12,6 +12,7 @@ ROOT_DIR="$(cd "$TESTS_DIR/../../.." && pwd)"
 HARNESS="$ROOT_DIR/.tests/harness"
 source "$HARNESS/runner.sh"; source "$HARNESS/color-logging.sh"
 source "$HARNESS/with-suede-graph.sh"
+source "$HARNESS/ssh-spy.sh"
 
 readonly PUSH_RELEASE="$CORE_DIR/push-release.sh"
 INSTALL="$ROOT_DIR/scripts/install/release.sh"
@@ -92,6 +93,9 @@ an_ssh_remote_is_compared_over_https_when_ssh_is_unavailable() {
   git -C "$WORK/library" commit --quiet -am "record widget over ssh"
   guard || true
   graph_forget_https
+  # Put widget's real remote back: later tests run the guard without the rewrite.
+  git -C "$WORK/library" config -f widget/.gitrepo subrepo.remote "$(graph_remote "$WORK" widget)"
+  git -C "$WORK/library" commit --quiet -am "record widget at its real remote again"
   # Only the comparison is under test. gadget's record names widget by its
   # local path, so deps.sh rightly calls the re-recorded widget a different
   # repository; on GitHub both spellings normalise to one.
@@ -99,6 +103,49 @@ an_ssh_remote_is_compared_over_https_when_ssh_is_unavailable() {
     log_failure "the guard could not compare widget over https"; cat "$OUT" >&2; return 1
   fi
   log_pass "an SSH-recorded release dependency is compared over HTTPS"
+}
+
+the_guard_passes_https_on() {
+  git -C "$WORK/library" config -f widget/.gitrepo subrepo.remote "git@example.test:owner/widget.git"
+  git -C "$WORK/library" commit --quiet -am "record widget over ssh"
+  https_only_remote "$(graph_remote "$WORK" widget)" owner/widget
+  ssh_spy_start
+  local status=0
+  ( cd "$WORK/library" && DRY_RUN=1 bash "$PUSH_RELEASE" --https ) > "$OUT" 2>&1 || status=$?
+  assert_no_ssh "push-release.sh --https makes no SSH attempt" || { ssh_spy_stop; forget_https_only_remote; return 1; }
+  ssh_spy_stop; forget_https_only_remote
+  if grep -qE 'could not compare|diverged from its pin' "$OUT"; then log_failure "the comparison failed"; cat "$OUT" >&2; return 1; fi
+  log_pass "and still compares every shipped dependency"
+  git -C "$WORK/library" config -f widget/.gitrepo subrepo.remote "$(graph_remote "$WORK" widget)"
+  git -C "$WORK/library" commit --quiet -am "record widget at its real remote again"
+}
+
+a_dependency_resolved_to_another_commit_refuses_to_publish() {
+  # Everything declared is honest, but gadget's edge is pointed at a widget
+  # other than the one gadget's record names: consumers would install that one.
+  local v2
+  v2="$(graph_advance_dep "$WORK" widget 'export const widget = 2;')"
+  ( cd "$WORK/library"
+    bash "$INSTALL" --repo "$(graph_remote "$WORK" widget)" --at "$v2" --name widget-v2 >/dev/null 2>&1
+    rm widget.gadget && ln -s widget-v2 widget.gadget
+    git add -A && git commit --quiet -m "point gadget at widget v2" )
+  if guard; then log_failure "a mismatched transitive commit stops the publish"; cat "$OUT" >&2; return 1; fi
+  log_pass "a mismatched transitive commit stops the publish"
+  assert_reports "not in place" "reported as a dependency out of place" || return 1
+  assert_reports "a release cannot ship that" "with the reason" || return 1
+  if grep -q "diverged from its pin" "$OUT"; then log_failure "diff.sh should have passed"; cat "$OUT" >&2; return 1; fi
+  log_pass "and it is deps.sh that catches it, not diff.sh"
+  ( cd "$WORK/library" && rm widget.gadget && ln -s widget widget.gadget && git add -A && git commit --quiet -m "restore" )
+}
+
+a_development_dependency_never_blocks_a_publish() {
+  local tool
+  tool="$(graph_make_dep "$WORK" tool)"
+  ( cd "$WORK/library" && bash "$INSTALL" --repo "$(graph_remote "$WORK" tool)" --dev >/dev/null 2>&1 \
+      && printf '// local\n' >> tool/index.js && git add -A && git commit --quiet -m "dev tool, edited" )
+  graph_advance_dep "$WORK" widget 'export const widget = 7;' >/dev/null    # widget is now behind too
+  guard || { log_failure "an edited dev dependency or a stale pin blocked the publish"; cat "$OUT" >&2; return 1; }
+  log_pass "an edited development dependency, and a pin behind its branch, do not block a publish"
 }
 
 suede_prefixed_names_are_detected_and_resolve_downstream() {
@@ -133,17 +180,17 @@ suede_prefixed_names_are_detected_and_resolve_downstream() {
   graph_assert_link "$WORK/suede.repoA/suede.repoB.repoA" suede.repoB "suede.repoA declares suede.repoB.repoA" || return 1
   [[ -d "$WORK/suede.repoA/suede.repoC" ]] && log_pass "the recipe installed suede.repoC" || { cat "$WORK/a-install.txt" >&2; return 1; }
   graph_assert_link "$WORK/suede.repoA/suede.repoC.repoB" suede.repoC "and linked suede.repoB's own edge to it" || return 1
-  graph_assert_link "$WORK/suede.repoA/suede.repoC.repoA" suede.repoC "and declared the transitive install as suede.repoC.repoA" || return 1
+  graph_assert_absent "$WORK/suede.repoA/suede.repoC.repoA" "and did not declare the transitive install" || return 1
 
   out="$( cd "$WORK/suede.repoA" && DRY_RUN=1 bash "$PUSH_RELEASE" 2>&1 )" \
     && log_pass "the publish guard passes" || { log_failure "the guard failed"; printf '%s\n' "$out" >&2; return 1; }
   local records="$WORK/suede.repoA/release/.suede/.dependencies"
-  [[ -f "$records/suede.repoB.repoA.gitrepo" && -f "$records/suede.repoC.repoA.gitrepo" ]] \
-    && log_pass "extract detected both shortened declarations" || { ls "$records" >&2; return 1; }
+  [[ -f "$records/suede.repoB.repoA.gitrepo" && ! -e "$records/suede.repoC.repoA.gitrepo" ]] \
+    && log_pass "extract recorded the one declaration, not the transitive install" || { ls "$records" >&2; return 1; }
   [[ "$(git config -f "$records/suede.repoB.repoA.gitrepo" subrepo.commit)" == "$b" ]] \
     && log_pass "and pinned what is installed" || return 1
   out="$( cd "$WORK/suede.repoA" && bash .suede/core/diff.sh 2>&1 )" || { log_failure "diff.sh failed: $out"; return 1; }
-  graph_assert_contains "$out" '2 checked' "and diff.sh compares both against their pins"
+  graph_assert_contains "$out" '2 checked' "and diff.sh still compares both, the transitive one included"
 }
 
 run_test_suite --setup setup --cleanup cleanup \
@@ -153,4 +200,7 @@ run_test_suite --setup setup --cleanup cleanup \
   a_missing_sibling_refuses_to_publish \
   a_stale_release_core_is_named_rather_than_worked_around \
   an_ssh_remote_is_compared_over_https_when_ssh_is_unavailable \
+  the_guard_passes_https_on \
+  a_dependency_resolved_to_another_commit_refuses_to_publish \
+  a_development_dependency_never_blocks_a_publish \
   suede_prefixed_names_are_detected_and_resolve_downstream

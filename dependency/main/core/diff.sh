@@ -1,59 +1,123 @@
 #!/usr/bin/env bash
 #
-# Every release dependency that differs from the commit its .gitrepo names.
-# Non-empty output means "this pointer is dishonest": you would ship a pointer
-# to code that is not what you built against.
+# How every installed dependency stands against its remote.
 #
-#   bash .suede/core/diff.sh
+#   bash .suede/core/diff.sh                  # everything, for you
+#   bash .suede/core/diff.sh --shipped-only   # what the publish guard checks
+#   bash .suede/core/diff.sh --https          # skip SSH: no key here
 #
-# Each one is checked with the `diff` that ships in release/.suede/core, so
-# this and a consumer's view of the same dependency cannot disagree. Vendored
-# dependencies are exempt: one exists precisely *because* it diverges, and it
-# ships as source. Development dependencies ship nothing and are exempt too.
+# By default it checks release, transitive and development dependencies alike,
+# for two things:
 #
-# Exit 0 when every release dependency matches its pin, 1 when one does not,
-# 2 when a comparison could not run.
+#   local changes   your files differ from the commit the .gitrepo pins - what
+#                   `upstream` would propose, or what you would lose on a
+#                   reinstall
+#   behind          the remote's release branch has moved past that commit -
+#                   what `sync` would bring you
+#
+# --shipped-only narrows it to what this repository ships a pointer to (release
+# dependencies, and every install their edges reach) and to local changes only.
+# That is the publish guard: a pointer must name the code you built against,
+# while a development dependency ships nothing and being behind is never a
+# reason to refuse a release.
+#
+# Vendored dependencies are never checked: one exists precisely *because* it
+# diverges, and it ships as source. Each comparison uses the `diff` that ships
+# in release/.suede/core, so this and a consumer's view cannot disagree.
+#
+# --https reaches every remote over HTTPS only, skipping the SSH attempt.
+#
+# Exit 0 when nothing checked has local changes, 1 when something does, 2 when
+# a comparison could not run. Being behind is reported, never an exit code.
 
 set -euo pipefail
 LIB_PREFIX="diff"
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 usage() { grep '^#' "$0" | grep -v '^#!/' | sed 's/^# \?//'; exit 0; }
-[[ "${1-}" == "-h" || "${1-}" == "--help" ]] && usage
+
+SHIPPED_ONLY=0
+HTTPS_ONLY=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)      usage ;;
+    --shipped-only) SHIPPED_ONLY=1; shift ;;
+    --https)        HTTPS_ONLY=1; shift ;;
+    *)              lib_die "unknown argument: $1 (see --help)" ;;
+  esac
+done
+export HTTPS_ONLY
 
 lib_enter_root
 DIFF="$(release_tool diff)"
+DIFF_ARGS=()
+[[ "$HTTPS_ONLY" == 1 ]] && DIFF_ARGS=(--https)
 
-DIVERGED=0; FAILED=0; COUNT=0
-while IFS=$'\t' read -r entry real; do
-  [[ -n "$entry" ]] || continue
+label() { # <kind> <entry> <real>
+  if [[ "$2" == "-" ]]; then printf '%s (%s)' "$3" "$1"; else printf '%s (%s, %s)' "$2" "$3" "$1"; fi
+}
+
+CHANGED=0; FAILED=0; BEHIND=0; COUNT=0; SHIPPED_CHANGED=0
+while IFS=$'\t' read -r kind entry real; do
+  [[ -n "$real" ]] || continue
+  case "$kind" in
+    vendored) continue ;;
+    development) [[ "$SHIPPED_ONLY" == 1 ]] && continue ;;
+  esac
   COUNT=$((COUNT + 1))
+  name="$(label "$kind" "$entry" "$real")"
+  pin="$(field "$real/.gitrepo" commit)"
+
   status=0
-  bash "$DIFF" --in "$real" --quiet >/dev/null 2>&1 || status=$?
+  bash "$DIFF" --in "$real" --quiet ${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"} >/dev/null 2>&1 || status=$?
   case "$status" in
     0) ;;
-    1) DIVERGED=$((DIVERGED + 1))
-       echo "$entry ($real) has local modifications relative to $(short "$(field "$real/.gitrepo" commit)")"
-       bash "$DIFF" --in "$real" --stat 2>/dev/null | sed 's/^/    /' || true ;;
+    1) CHANGED=$((CHANGED + 1))
+       [[ "$kind" != development ]] && SHIPPED_CHANGED=$((SHIPPED_CHANGED + 1))
+       echo "$name has local changes against $(short "$pin")"
+       bash "$DIFF" --in "$real" --stat ${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"} 2>/dev/null | sed 's/^/    /' || true ;;
     *) FAILED=$((FAILED + 1))
-       echo "$entry ($real): could not compare"
-       bash "$DIFF" --in "$real" --quiet 2>&1 >/dev/null | sed 's/^/    /' || true ;;
+       echo "$name: could not compare"
+       bash "$DIFF" --in "$real" --quiet ${DIFF_ARGS[@]+"${DIFF_ARGS[@]}"} 2>&1 >/dev/null | sed 's/^/    /' || true ;;
   esac
-done < <(release_dependencies)
 
-if [[ "$DIVERGED" == 0 && "$FAILED" == 0 ]]; then
-  lib_say "every release dependency matches its pinned commit ($COUNT checked)"
+  [[ "$SHIPPED_ONLY" == 1 ]] && continue
+  if tip="$(remote_tip "$real")"; then
+    if [[ "$tip" != "$pin" ]]; then
+      BEHIND=$((BEHIND + 1))
+      echo "$name is behind: pinned $(short "$pin"), its branch is at $(short "$tip")"
+      echo "    bash $DIFF --in $real --sync    # what a sync would bring"
+    fi
+  else
+    echo "$name: could not reach its remote to see whether it is behind"
+  fi
+done < <(installed_dependencies)
+
+SCOPE="installed"; [[ "$SHIPPED_ONLY" == 1 ]] && SCOPE="shipped"
+if [[ "$CHANGED" == 0 && "$FAILED" == 0 && "$BEHIND" == 0 ]]; then
+  if [[ "$SHIPPED_ONLY" == 1 ]]; then
+    lib_say "every $SCOPE dependency matches its pinned commit ($COUNT checked)"
+  else
+    lib_say "every $SCOPE dependency matches its pinned commit and is at its branch tip ($COUNT checked)"
+  fi
   exit 0
 fi
-if [[ "$DIVERGED" -gt 0 ]]; then
+
+lib_say "$COUNT $SCOPE dependencies checked: $CHANGED with local changes, $FAILED not compared$( [[ "$SHIPPED_ONLY" == 0 ]] && printf ', %s behind' "$BEHIND" )"
+if [[ "$SHIPPED_CHANGED" -gt 0 ]]; then
   cat <<'WHY'
 
-A release dependency ships as a pointer, so the pointer has to be honest.
-Either revert these changes, propose them upstream
+A shipped dependency is published as a pointer, so the pointer has to be
+honest. Either revert these changes, propose them upstream
 (bash <dependency>/.suede/core/upstream), or vendor the dependency so the
 source itself ships: `git mv <folder> release/<name>` and remove its
-declaring symlink.
+declaring symlink. The publish guard refuses until one of those is done.
 WHY
-  exit 1
 fi
-exit 2
+if [[ "$CHANGED" -gt "$SHIPPED_CHANGED" ]]; then
+  echo
+  echo "A development dependency's changes do not block a publish; upstream them when ready."
+fi
+[[ "$CHANGED" -gt 0 ]] && exit 1
+[[ "$FAILED" -gt 0 ]] && exit 2
+exit 0

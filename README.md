@@ -165,7 +165,9 @@ choose. [INSTALL.md](./INSTALL.md) has every case.
 
 Useful flags: `--at <commit>`, `--branch`, `--sep` (the separator in the
 declaring symlink; defaults to `__` in a `suede__<name>` repository, for Python), `--name`, `--prefix`, `--suffix`
-(for a second copy beside the first), `--dev` (never declare).
+(for a second copy beside the first), `--dev` (never declare: a development
+dependency), `--transitive` (never declare: installed for another dependency,
+which is what `deps.sh` prints).
 
 ### Third-party packages
 
@@ -187,7 +189,7 @@ never edits `package.json`, `requirements.txt` or a lockfile. (For Python, a
 
 ### The other commands
 
-Every installed dependency ships four scripts at `<dependency>/.suede/core/`.
+Every installed dependency ships five scripts at `<dependency>/.suede/core/`.
 None takes a target — each acts on the dependency it lives inside:
 
 ```bash
@@ -195,6 +197,7 @@ bash <dep>/.suede/core/deps.sh            # what it needs beside it, as commands
 bash <dep>/.suede/core/diff               # how your copy differs from its pin (--sync, --at <commit>)
 bash <dep>/.suede/core/sync               # pull the latest release
 bash <dep>/.suede/core/upstream           # propose your edits back as a PR
+bash <dep>/.suede/core/clean              # clear what a stopped sync or upstream left behind
 ```
 
 You then have the dependency's source code [vendored](https://htmx.org/essays/vendoring/) into your repository. You can modify and track changes to it the same as any other code in your repository and only need to amend your typical development workflow when you want to:
@@ -318,9 +321,10 @@ After your dependency repository is set up, you can maintain and develop it as y
 - **Automatic publishing.** Whenever a change under `release/` lands on `main`, the [subrepo-push-release](./dependency/main/workflows/subrepo-push-release.yml) action runs [`.suede/core/push-release.sh`](./dependency/main/core/push-release.sh), which regenerates the dependency records, runs the publish **guard**, and then syncs `./release` out to the `release` branch.
 > [!NOTE]  
 > The publish also updates `./release/.gitrepo` on `main` to point at the new commit on the `release` branch, so pull from `main` before pushing further changes.
-- **The guard, and why a publish can be refused.** A [release dependency](#dependencies-of-dependencies) ships as a *pointer*, so before that pointer goes out the guard checks it is honest (`diff.sh` — nothing has drifted from its pinned commit) and that every declared dependency is actually in place (`deps.sh --check`). If either fires, the reason lands in the job summary and **the `release` branch is not touched**, so consumers stay on the last honest version. Run the same checks locally before you push:
+- **The guard, and why a publish can be refused.** A [release dependency](#dependencies-of-dependencies) ships as a *pointer*, so before that pointer goes out the guard checks it is honest (`diff.sh --shipped-only` — nothing that ships has drifted from its pinned commit) and that every declared dependency is actually in place (`deps.sh --check`). If either fires, the reason lands in the job summary and **the `release` branch is not touched**, so consumers stay on the last honest version. Run the same checks locally before you push:
   ```bash
-  bash .suede/core/diff.sh                                # any release dependency with local modifications
+  bash .suede/core/diff.sh --shipped-only                 # what the guard checks: local changes in what ships
+  bash .suede/core/diff.sh                                # everything, development included, and what is behind
   bash release/.suede/core/deps.sh --check --in release   # any declared dependency that is missing
   bash .suede/core/list.sh                                # what the tree declares
   ```
@@ -365,8 +369,9 @@ beside `release/`: the installer refuses a release install anywhere else.
 widget/            real folder — widget's release bytes
 widget.my-app  ->  widget      declares it: extract.sh publishes widget.my-app.gitrepo
 mixin.widget   ->  mixin       widget's own edge, which deps.sh told you to create
-mixin/
-mixin.my-app   ->  mixin       declared too, because the installer declares every install here
+mixin/                         installed with --transitive: no declaration, since
+                               my-app's own code does not import it. It ships through
+                               widget's record, and the publish guard still checks it.
 ```
 
 Vendoring — when you have changed a dependency and can neither revert nor
@@ -440,6 +445,9 @@ tries SSH first and falls back to HTTPS, and both fail fast rather than
 prompting. The scripts inside an installed dependency (`diff`, `deps.sh`,
 `sync`) do the same, so a keyless machine — a CI runner included — can compare
 and pull an SSH-recorded dependency.
+
+When you know there is no key to find, pass `--https` to any of them (and to
+the installer) to skip the SSH attempt and its timeout altogether.
 
 ### Install [git-subrepo](https://github.com/ingydotnet/git-subrepo) 
 

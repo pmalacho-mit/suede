@@ -7,6 +7,10 @@
 #     ./<dependency>/.suede/core/upstream       (if executable)
 #     bash <dependency>/.suede/core/upstream
 #
+# Pushing needs the SSH key behind the recorded remote: unlike diff, deps.sh
+# and sync there is no --https, and pushing with a token is not supported yet
+# (see the note in the hosted script before its push).
+#
 # Thin bootstrapper: the real logic is hosted so it can evolve without
 # re-shipping dependencies. It locates the dependency root two levels up (see
 # below) and hands it to the hosted script. Override the host for forks and

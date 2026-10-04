@@ -35,7 +35,12 @@ the full description, including every flag:
 --name <folder>             install under this name instead of the repo's
 --prefix <text>             prepend to the folder name
 --suffix <text>             append to the folder name
---dev                       never create the declaring symlink
+--dev                       never create the declaring symlink: a development
+                            dependency, which ships nothing
+--transitive                never create the declaring symlink: installed for
+                            another dependency's edge (deps.sh adds this to
+                            every install it prints)
+--https                     skip the SSH attempt; fetch over HTTPS only
 ```
 
 `SUEDE_DEPS_URL` (default `https://suede.sh/deps`) is where it fetches `deps.sh`

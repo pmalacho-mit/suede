@@ -46,7 +46,7 @@ folder out to the `release` branch whenever a change under `release/` lands on
 ```
 main branch                                  release branch  (generated — do not commit to it)
 ├── .github/workflows/         (subrepo)     ├── .github/workflows/       (subrepo)
-├── .suede/core/               (subrepo)     ├── .suede/core/             (subrepo: deps.sh, diff, sync, upstream)
+├── .suede/core/               (subrepo)     ├── .suede/core/             (subrepo: deps.sh, diff, sync, upstream, clean)
 ├── src/  tests/  docs/        (dev only)    ├── .suede/.dependencies/    (records: <entry>.gitrepo)
 ├── widget/                    (installed)   ├── .gitrepo
 ├── widget.my-app -> widget    (declares it) └── index.ts
@@ -143,11 +143,17 @@ reads them against the disk and prints, for each one:
 It recurses so the whole recipe is visible up front, numbered `[1]`, `[1.1]`,
 `[2]`. It never runs anything. The installer runs it after every install.
 
-Each install the recipe makes in a dependency repository is itself declared,
-so the transitive closure ends up declared at your root; no rule demands it.
-A sibling at a *different commit* than asked for satisfies the edge rather
-than failing, but `deps.sh` flags it ("NOT the commit … asks for") and prints
-the `diff --at <commit>` to run. Run it before moving on.
+Every install the recipe prints carries `--transitive`, so it adds no
+declaration: declarations list only what this repository's own code imports,
+and edges say who needs the rest. A transitive install still ships (through the
+needing dependency's record) and is still checked by `diff.sh` at publish. Do
+not "fix" a missing declaration for one; add it only if your own `release/`
+code imports that dependency.
+A sibling at a *different commit* than asked for satisfies the edge in the
+recipe, flagged ("NOT the commit … asks for") with the `diff --at <commit>` to
+run and the fix. The publish guard (`deps.sh --check`) does not accept it: a
+repository that publishes must resolve every edge, all the way down, to exactly
+the commit the record names.
 
 ## 6. Commands
 
@@ -160,7 +166,8 @@ bash <(curl -fsSL https://suede.sh/install/release) --repo OWNER/REPO
 Run it **where you want the folder**. At the root of a dependency repo it also
 declares (`my-app.<name>` symlink); inside `release/` it vendors; in a plain
 application it just installs. Flags: `--at <commit>`, `--branch`, `--sep`,
-`--name`, `--prefix`, `--suffix`, `--dev` (never declare). It refuses to
+`--name`, `--prefix`, `--suffix`, `--dev` (never declare: development),
+`--transitive` (never declare: installed for another dependency's edge). It refuses to
 overwrite an existing folder and names those three naming flags. It stages;
 you commit.
 
@@ -174,21 +181,26 @@ bash <dep>/.suede/core/diff --sync        # your tree -> release tip: what you w
 bash <dep>/.suede/core/diff --at <commit> # against some other commit
 bash <dep>/.suede/core/sync               # git subrepo pull, symlink- and cwd-safe
 bash <dep>/.suede/core/upstream           # propose local edits back as a PR
+bash <dep>/.suede/core/clean              # git subrepo clean, after a sync/upstream that stopped part way
 ```
 
 None takes a target (`diff --in <dir>` and `deps.sh --in <dir>` are the one
 exception, for tooling). An installed `.gitrepo` records the SSH remote for
 `upstream`; `diff`, `deps.sh` and `sync` fall back to HTTPS when SSH does not
-answer, so do not rewrite a `.gitrepo` remote to make CI work. `diff` exits `0` no difference, `1` difference, `2`
+answer, so do not rewrite a `.gitrepo` remote to make CI work. Every script
+that reaches a remote (the installer, `diff`, `deps.sh`, `sync`, `diff.sh`,
+`push-release.sh`) takes `--https` to skip the SSH attempt: pass it in CI and
+in any keyless environment, since it saves a timeout per remote. `diff` exits `0` no difference, `1` difference, `2`
 could not run. `sync` and `upstream` need git-subrepo; the others need only
 `git`.
 
 **On a dependency's `main`** (vendored at `.suede/core`):
 
 ```bash
-bash .suede/core/list.sh                  # every dependency: kind, entry, path, pin
+bash .suede/core/list.sh                  # every dependency: release, transitive, development, vendored
 bash .suede/core/extract.sh               # regenerate release/.suede/.dependencies/
-bash .suede/core/diff.sh                  # release deps that drifted from their pin
+bash .suede/core/diff.sh                  # every dependency: local changes, and whether it is behind
+bash .suede/core/diff.sh --shipped-only   # what the publish guard checks
 bash release/.suede/core/deps.sh --check --in release   # everything declared is in place
 bash .suede/core/sync.sh                  # update every suede subrepo this repo vendors
 DRY_RUN=1 bash .suede/core/push-release.sh   # the publish guard, without publishing
@@ -258,7 +270,7 @@ Never:
 Always:
 
 - Run `bash <dep>/.suede/core/deps.sh` after an install until it reports
-  everything in place, and `bash .suede/core/diff.sh` before expecting a publish
+  everything in place, and `bash .suede/core/diff.sh --shipped-only` before expecting a publish
   to succeed.
 - Commit after installing, before syncing.
 

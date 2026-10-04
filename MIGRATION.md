@@ -180,6 +180,12 @@ each says `everything is in place`. A dependency that has republished under v3
 asks for `mixin.widget`; one that has not still asks for its old names, and
 gets them — the next time it republishes, re-run this loop.
 
+v2 declared every dependency in the tree, so after this you may hold
+declarations for things your own code never imports. They are harmless, but you
+can drop them: `git rm <name>.<repo>` for each one your `release/` code does not
+import. `list.sh` will then show it as `transitive`, and the publish guard still
+checks it.
+
 A **v2 `--dev` or `--vendor` install named after its edge**
 (`sweater-vest-suede.dockview-svelte-suede/` as a real folder) is a
 development dependency under an odd name, or a vendored one, and both still
@@ -221,7 +227,7 @@ and `npm install`. Packages that only tests or examples need stay in the root
 ```bash
 bash .suede/core/extract.sh                        # rewrites the records; removes package.json etc.
 bash .suede/core/list.sh                           # every dependency with its kind
-bash .suede/core/diff.sh                           # exit 0: every pointer is honest
+bash .suede/core/diff.sh --shipped-only           # exit 0: every pointer is honest
 bash release/.suede/core/deps.sh --check --in release   # exit 0: everything declared is in place
 git add -A && git commit -m "suede v3: folder-plus-symlink layout, records only"
 git push origin main

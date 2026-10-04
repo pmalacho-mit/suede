@@ -52,14 +52,22 @@ own, and you see all of them up front — numbered `[1]`, `[1.1]`, `[2]` — rat
 than one install at a time. A pin two dependents share is installed once and
 linked twice ("same install as [1.1]"). Every command is meant to be run from
 your repository root, and **nothing is done for you**: the script only reads.
+The installs it prints carry `--transitive`, so they add no declaration to your
+repository: the `ln -s` beside each one is the edge that matters.
 The installer runs it for you at the end of every install.
+
+A sibling that resolves to the right repository at a *different* commit is
+accepted by the recipe, so you can work against whatever you choose, but the
+readout says so in so many words. It prints the `diff --at <commit>` that shows
+what differs between the commit the dependency was built against and what you
+have, and the fix: sync the dependent, or install the exact commit beside
+yours and point the edge there.
 
 `--check` is the publish guard's mode: no network, no recursion into
 dependencies you have not installed, and exit `1` the moment a record is not
-satisfied. A sibling that resolves to the right repository at a *different*
-commit is satisfied — you chose that resolution — but the readout says so in
-so many words and prints the `diff --at <commit>` that shows what differs
-between the commit the dependency was built against and what you have.
+satisfied. It is strict where the recipe is lenient: a sibling at a different
+commit than its record names fails, because a release ships its records and
+its consumers will install exactly those commits.
 
 A **vendored** dependency (one installed inside `release/`) is held to one more
 rule: its siblings have to be inside `release/` too, because a link out of
@@ -68,7 +76,25 @@ rule: its siblings have to be inside `release/` too, because a link out of
 
 Needs `git`, and the [`diff`](#diff) beside it for the reuse check. Like
 `diff`, it falls back from a record's remote to its other spelling (SSH ↔
-HTTPS) when fetching what it looks ahead at.
+HTTPS) when fetching what it looks ahead at. With `--https` it skips the SSH
+attempt, and puts `--https` on every install command it prints.
+
+## [clean](./clean)
+
+`git subrepo clean` for **this** dependency, runnable from any working
+directory and through any symlink to it.
+
+```bash
+bash <dependency>/.suede/core/clean            # the subrepo/<path> branch and scratch worktree
+bash <dependency>/.suede/core/clean --force    # and the fetched refs too
+```
+
+Reach for it when a `sync` or `upstream` stopped part way: git-subrepo leaves a
+`subrepo/<path>` branch and a worktree under `.git/tmp/subrepo/` behind, and
+either can make the next pull or push refuse to start. It deletes only that
+bookkeeping — never your files, never your commits. Anything you pass goes to
+`git subrepo clean`; afterwards it also removes this dependency's scratch
+directory if git-subrepo missed it, and prunes stale worktrees.
 
 ## [diff](./diff)
 
@@ -77,6 +103,7 @@ What your copy of this dependency differs from — in any of three directions.
 ```bash
 bash <dependency>/.suede/core/diff                # what you would propose
 bash <dependency>/.suede/core/diff --sync         # what you would receive
+bash <dependency>/.suede/core/diff --https        # skip SSH: no key here
 bash <dependency>/.suede/core/diff --at <commit>  # against some other commit
 ```
 
@@ -109,7 +136,8 @@ Needs only `git` and the ability to reach the remote; git-subrepo is not
 required. The recorded remote is tried first and its other spelling second
 (SSH ↔ HTTPS), so a dependency installed with an SSH remote still compares on a
 machine with no key — a CI runner, a fresh container. Only when neither answers
-does it exit `2`, naming both spellings it tried.
+does it exit `2`, naming both spellings it tried. `--https` skips the SSH
+attempt altogether, when you know there is no key to find.
 
 ## [sync](./sync)
 
@@ -129,7 +157,8 @@ symlink path fails outright — and the edge entries between your dependencies
 are symlinks; and when the recorded remote does not answer it pulls over the
 other spelling (SSH ↔ HTTPS) instead, says so, and puts the recorded remote back
 in the `.gitrepo` afterwards, since git-subrepo would otherwise keep the
-fallback. Pass your own `-r`/`--remote` to skip that.
+fallback. Pass your own `-r`/`--remote` to skip that, or `--https` to skip
+the SSH attempt and pull over HTTPS directly.
 
 `git subrepo pull` also requires a clean working tree, while installing does
 not. If you have just installed something, commit before syncing.

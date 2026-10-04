@@ -37,17 +37,25 @@ sync `release/` out to the `release` branch.
 The guard is the part worth knowing about. A release dependency ships as a
 *pointer*, so before that pointer goes out it checks two things:
 
-- [`diff.sh`](#diffsh) — no release dependency has drifted from its pinned
-  commit, so the pointer is honest;
+- [`diff.sh --shipped-only`](#diffsh) — nothing that ships has drifted from
+  its pinned commit, so every pointer is honest. Development dependencies and
+  being behind are left out: neither is a reason to refuse a release;
 - `deps.sh --check --in release` — every dependency this repository declares
-  is actually in place, and so is everything *they* declare, all the way down.
+  is actually in place, and so is everything *they* declare, all the way down,
+  each at exactly the commit its record names. A dependency's edge pointed at
+  another commit fails here even though every pointer is honest: consumers
+  would install the recorded commit, not the one you built against.
 
 If either fires, the reason goes into the job summary and **the `release`
 branch is not touched**, so consumers stay on the last honest version.
 
 ```bash
-DRY_RUN=1 bash .suede/core/push-release.sh   # stop after the guard
+DRY_RUN=1 bash .suede/core/push-release.sh            # stop after the guard
+DRY_RUN=1 bash .suede/core/push-release.sh --https    # without the SSH attempt
 ```
+
+The workflow passes `--https`: a runner has no SSH key, so trying SSH first
+would only cost a timeout per dependency.
 
 `RELEASE_DIR` (default `release`) overrides which folder is published, and
 `SUEDE_RELEASE_CORE` where the consumer-facing `diff` and `deps.sh` are read
@@ -96,33 +104,53 @@ generated. The publish flow runs this; run it yourself to see what would ship.
 ### [list.sh](./list.sh)
 
 Every dependency in the repository and what kind it is — the rule above, read
-off the tree:
+off the tree. `transitive` is an install nothing here declares but a release
+dependency's edge reaches (ENTRY names that edge): it ships through that
+dependency's record, unlike `development`, which ships nothing.
 
 ```
 KIND         ENTRY                      PATH                       PIN
 release      widget.my-app              widget                     86abeeb
+transitive   mixin.widget               mixin                      30142f6
 development  -                          fixtures/harness           4f10c2a
 vendored     -                          release/mixin              9bb0e41
 ```
 
 ### [diff.sh](./diff.sh)
 
-Every release dependency that no longer matches the commit its `.gitrepo` names.
-Non-empty output means your pointer is dishonest — you would ship a pointer to
-code that is not what you built against. The publish guard runs the same check,
-so a clean `diff.sh` here means a publish that will not be refused for that
-reason.
+How every installed dependency stands against its remote.
 
 ```bash
-bash .suede/core/diff.sh
+bash .suede/core/diff.sh                  # everything, for you
+bash .suede/core/diff.sh --shipped-only   # what the publish guard checks
+bash .suede/core/diff.sh --https          # skip SSH: no key here
 ```
 
-Each dependency is compared with the `diff` that ships in `release/.suede/core`,
-so your view and a consumer's cannot disagree. Vendored dependencies are exempt
-(one exists precisely *because* it diverges, and it ships as source) and so are
-development dependencies (they ship nothing).
+By default it checks **release, transitive and development** dependencies for
+two things:
 
-If it reports divergence you have three honest options: revert the changes,
+| | Means | What to run |
+| --- | --- | --- |
+| **local changes** | your files differ from the commit the `.gitrepo` pins | `bash <dep>/.suede/core/diff` to see them |
+| **behind** | the remote's branch has moved past that commit | the `diff --sync` it prints, then `sync` |
+
+It exits `1` if anything has local changes, `2` if a comparison could not run,
+and `0` otherwise. Being behind is reported, never an exit code.
+
+`--shipped-only` narrows it to what this repository ships a pointer to — each
+release dependency and every install their edges reach, declared or not — and
+to local changes only. That is exactly what the publish guard runs, so a clean
+`diff.sh --shipped-only` means a publish that will not be refused for that
+reason. A transitive install counts because consumers install it fresh from the
+record of the dependency that needs it, so a local edit to it would ship to no
+one. A development dependency's changes are reported by the default run and
+never block a publish.
+
+Each dependency is compared with the `diff` that ships in `release/.suede/core`,
+so your view and a consumer's cannot disagree. Vendored dependencies are never
+checked: one exists precisely *because* it diverges, and it ships as source.
+
+If it reports divergence in something that ships you have three honest options: revert the changes,
 [upstream](../../release/core/README.md#upstream) them, or **vendor** the
 dependency so the source itself ships. Vendoring is two git commands and a
 review of your imports:

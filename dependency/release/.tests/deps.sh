@@ -11,6 +11,7 @@ ROOT_DIR="$(cd "$TESTS_DIR/../../.." && pwd)"
 HARNESS="$ROOT_DIR/.tests/harness"
 source "$HARNESS/runner.sh"; source "$HARNESS/color-logging.sh"
 source "$HARNESS/with-suede-graph.sh"
+source "$HARNESS/ssh-spy.sh"
 
 INSTALL="$ROOT_DIR/scripts/install/release.sh"
 export SUEDE_INSTALL_URL="file://$INSTALL"
@@ -51,6 +52,7 @@ the_recipe_is_complete_up_front() {
   graph_assert_contains "$OUTPUT" 'not installed anywhere' "and it is not installed" || return 1
   graph_assert_contains "$OUTPUT" "--repo $(graph_remote "$WORK" dockview) --at $DOCKVIEW" "the install pins the recorded commit" || return 1
   graph_assert_contains "$OUTPUT" 'ln -s dockview dockview.sweater' "followed by the edge link" || return 1
+  graph_assert_contains "$OUTPUT" "--at $DOCKVIEW --transitive" "and the install is marked --transitive" || return 1
   graph_assert_contains "$OUTPUT" '\[1.1\] mixin.dockview' "dockview's own record was fetched and numbered under it" || return 1
   graph_assert_contains "$OUTPUT" 'ln -s mixin mixin.dockview' "with its edge link" || return 1
   graph_assert_contains "$OUTPUT" '\[2\] mixin.sweater' "[2] is the second record" || return 1
@@ -66,7 +68,7 @@ running_the_recipe_satisfies_everything() {
   [[ "$STATUS" == 0 ]] || { log_failure "exit $STATUS: $OUTPUT"; return 1; }
   graph_assert_contains "$OUTPUT" 'satisfied by dockview @ [0-9a-f]{7}, matches the pin' "dockview is satisfied" || return 1
   graph_assert_contains "$OUTPUT" 'everything is in place \(3 satisfied\)' "and so is everything else" || return 1
-  graph_assert_link "$WORK/app/mixin.app" mixin "the transitive install was declared as app's too"
+  graph_assert_absent "$WORK/app/mixin.app" "the transitive install is not declared as app's: only its edges point at it"
 }
 
 check_exits_zero_when_in_place_and_one_when_not() {
@@ -107,13 +109,19 @@ a_different_commit_is_a_decision_too() {
   git -C "$WORK/app" config -f mixin/.gitrepo subrepo.commit "$MIXIN"
 }
 
-a_satisfied_edge_at_another_commit_is_owned_not_failed() {
+a_sibling_at_another_commit_is_allowed_for_work_and_refused_for_release() {
   ( cd "$WORK/app" && ln -s mixin mixin.other )
   git -C "$WORK/app" config -f mixin/.gitrepo subrepo.commit "$MIXIN_V2"
+  run_deps other
+  [[ "$STATUS" == 0 ]] && log_pass "the recipe still accepts it while you work" || { log_failure "exit $STATUS: $OUTPUT"; return 1; }
+  graph_assert_contains "$OUTPUT" "NOT the ${MIXIN:0:7} that mixin.other asks for" "the commit difference is spelled out" || return 1
+  graph_assert_contains "$OUTPUT" "bash mixin/.suede/core/diff --at $MIXIN" "with the diff that shows it" || return 1
+  graph_assert_contains "$OUTPUT" "push-release will refuse to publish it" "and says publishing will not accept it" || return 1
+  graph_assert_contains "$OUTPUT" "--at $MIXIN --name mixin-${MIXIN:0:7}" "offering the exact commit beside yours" || return 1
+  graph_assert_contains "$OUTPUT" "ln -s mixin-${MIXIN:0:7} mixin.other" "and the link to it" || return 1
   run_deps other --check
-  [[ "$STATUS" == 0 ]] && log_pass "--check passes: the edge resolves" || { log_failure "exit $STATUS: $OUTPUT"; return 1; }
-  graph_assert_contains "$OUTPUT" "NOT the ${MIXIN:0:7} that mixin.other asks for" "and the commit difference is spelled out" || return 1
-  graph_assert_contains "$OUTPUT" "bash mixin/.suede/core/diff --at $MIXIN" "with the diff that shows it"
+  [[ "$STATUS" == 1 ]] && log_pass "--check, which the publish guard runs, refuses it" || { log_failure "--check exit $STATUS: $OUTPUT"; return 1; }
+  graph_assert_contains "$OUTPUT" "a release cannot ship that" "saying why"
   git -C "$WORK/app" config -f mixin/.gitrepo subrepo.commit "$MIXIN"
 }
 
@@ -155,6 +163,19 @@ the_look_ahead_falls_back_to_https() {
   graph_assert_contains "$OUTPUT" '\[1.1\] mixin.dockview' "dockview's records were fetched over HTTPS"
 }
 
+https_skips_ssh_and_is_passed_on_to_the_recipe() {
+  # app2 and top come from the previous test: top's record names dockview by
+  # its SSH spelling, and dockview is only reachable over HTTPS.
+  https_only_remote "$(graph_remote "$WORK" dockview)" owner/dockview
+  ssh_spy_start
+  STATUS=0
+  OUTPUT="$( cd "$WORK/app2" && bash top/.suede/core/deps.sh --https 2>&1 )" || STATUS=$?
+  assert_no_ssh "--https makes no SSH attempt during the look-ahead" || { ssh_spy_stop; forget_https_only_remote; return 1; }
+  ssh_spy_stop; forget_https_only_remote
+  graph_assert_contains "$OUTPUT" '\[1.1\] mixin.dockview' "and still reads dockview's records" || return 1
+  graph_assert_contains "$OUTPUT" -- '--transitive --https' "every install it prints carries --https"
+}
+
 run_test_suite --setup setup --cleanup cleanup \
   the_recipe_is_complete_up_front \
   running_the_recipe_satisfies_everything \
@@ -162,8 +183,9 @@ run_test_suite --setup setup --cleanup cleanup \
   a_missing_edge_reuses_a_clean_install \
   local_changes_turn_reuse_into_a_decision \
   a_different_commit_is_a_decision_too \
-  a_satisfied_edge_at_another_commit_is_owned_not_failed \
+  a_sibling_at_another_commit_is_allowed_for_work_and_refused_for_release \
   a_dangling_symlink_is_called_out \
   a_vendored_dependent_keeps_its_siblings_inside_release \
   in_runs_against_another_dependency \
-  the_look_ahead_falls_back_to_https
+  the_look_ahead_falls_back_to_https \
+  https_skips_ssh_and_is_passed_on_to_the_recipe

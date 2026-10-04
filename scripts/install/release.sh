@@ -33,7 +33,17 @@
 #   --name <folder>            install under this name instead of the repo's
 #   --prefix <text>            prepend to the folder name
 #   --suffix <text>            append to the folder name
-#   --dev                      never create the declaring symlink
+#   --dev                      never create the declaring symlink: a development
+#                              dependency (tests, examples), which ships nothing
+#   --transitive               never create the declaring symlink: installed for
+#                              another dependency's edge, so it ships through
+#                              that dependency's record. deps.sh puts this on
+#                              every install it prints.
+#   --https                    skip the SSH attempt and fetch over HTTPS only -
+#                              for a machine you know has no SSH key. The
+#                              .gitrepo still records the SSH remote, for
+#                              `upstream`. Passed on to deps.sh, so the recipe
+#                              it prints carries it too.
 #   -h, --help
 #
 # Remotes: SSH is tried first, so a key is enough for a private repository;
@@ -61,7 +71,7 @@ GITREPO_HEADER='; DO NOT EDIT (unless you know what you are doing)
 ; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
 ;'
 
-REPO=""; AT=""; BRANCH="release"; SEP=""; NAME=""; PREFIX=""; SUFFIX=""; DEV=0
+REPO=""; AT=""; BRANCH="release"; SEP=""; NAME=""; PREFIX=""; SUFFIX=""; DEV=0; TRANSITIVE=0; HTTPS_ONLY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)   usage ;;
@@ -73,10 +83,13 @@ while [[ $# -gt 0 ]]; do
     --prefix)    PREFIX="${2-}"; shift 2 ;;
     --suffix)    SUFFIX="${2-}"; shift 2 ;;
     --dev)       DEV=1;          shift ;;
+    --transitive) TRANSITIVE=1;  shift ;;
+    --https)     HTTPS_ONLY=1;   shift ;;
     *)           die "unknown argument: $1 (see --help)" ;;
   esac
 done
 [[ -n "$REPO" ]]   || die "--repo is required"
+[[ "$DEV" == 1 && "$TRANSITIVE" == 1 ]] && die "--dev and --transitive say two different things; pick one"
 [[ -n "$BRANCH" ]] || die "--branch needs a name"
 
 command -v git >/dev/null 2>&1 || die "git not found"
@@ -109,6 +122,7 @@ if [[ -n "$HOST" && -n "$PATH_PART" ]]; then
   SSH_URL="git@$HOST:$PATH_PART.git"
   HTTPS_URL="https://$HOST/$PATH_PART.git"
   CANDIDATES=("$SSH_URL" "$HTTPS_URL")
+  [[ "$HTTPS_ONLY" == 1 ]] && CANDIDATES=("$HTTPS_URL")
   RECORDED_REMOTE="$SSH_URL"
 else
   CANDIDATES=("$REPO")
@@ -183,9 +197,11 @@ elif [[ "$IS_DEPENDENCY_REPO" == 0 ]]; then
   MODE="plain"
 elif [[ "$DEV" == 1 ]]; then
   MODE="development"
+elif [[ "$TRANSITIVE" == 1 ]]; then
+  MODE="transitive"
 elif [[ "$HERE" != "$ROOT" ]]; then
   die "a release dependency has to sit beside $RELEASE_DIR/: code in $RELEASE_DIR/ reaches it as ../$NAME$SEP$(dependent_name), and that path only holds at the repository root.
-  Run this from $ROOT, or pass --dev to install here without declaring it."
+  Run this from $ROOT, or pass --dev or --transitive to install here without declaring it."
 else
   MODE="release"
   LINK="$HERE/$NAME$SEP$(dependent_name)"
@@ -238,6 +254,14 @@ case "$MODE" in
     fi ;;
   development)
     say "not declared (--dev): $REPO_NAME's consumers will not hear about it" ;;
+  transitive)
+    say "not declared (--transitive): it is here because another dependency needs it, and"
+    say "  the recipe links that dependency's edge to it. It ships through that dependency's"
+    say "  own record, and the publish guard still checks it for local changes."
+    if [[ "$HERE" == "$ROOT" ]]; then
+      say "  If $REPO_NAME's own $RELEASE_DIR/ code imports it as well, declare it:"
+      say "    ln -s $NAME $NAME$SEP$(dependent_name)"
+    fi ;;
   vendored)
     say "inside $RELEASE_DIR/ of $REPO_NAME: installed as vendored source, nothing to declare" ;;
   plain)
@@ -247,11 +271,16 @@ say "staged, not committed"
 
 # --- what does it need ------------------------------------------------------
 echo
-if [[ -f "$DEST/.suede/core/deps.sh" ]]; then
-  bash "$DEST/.suede/core/deps.sh" || true
-elif ls "$DEST/.suede/.dependencies"/*.gitrepo >/dev/null 2>&1; then
+DEPS_ARGS=()
+[[ "$HTTPS_ONLY" == 1 ]] && DEPS_ARGS=(--https)
+SHIPPED_DEPS="$DEST/.suede/core/deps.sh"
+# A dependency published before --https existed ships a deps.sh that would
+# refuse the flag; the hosted one takes it.
+if [[ -f "$SHIPPED_DEPS" ]] && { [[ "$HTTPS_ONLY" == 0 ]] || grep -q -- '--https)' "$SHIPPED_DEPS"; }; then
+  bash "$SHIPPED_DEPS" ${DEPS_ARGS[@]+"${DEPS_ARGS[@]}"} || true
+elif [[ -f "$SHIPPED_DEPS" ]] || ls "$DEST/.suede/.dependencies"/*.gitrepo >/dev/null 2>&1; then
   if command -v curl >/dev/null 2>&1; then
-    bash <(curl -fsSL "${SUEDE_DEPS_URL:-https://suede.sh/deps}") --in "$DEST" || true
+    bash <(curl -fsSL "${SUEDE_DEPS_URL:-https://suede.sh/deps}") --in "$DEST" ${DEPS_ARGS[@]+"${DEPS_ARGS[@]}"} || true
   else
     say "$NAME has dependencies of its own under .suede/.dependencies but ships no deps.sh; see https://suede.sh/deps"
   fi

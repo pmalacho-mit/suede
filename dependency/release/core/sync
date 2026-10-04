@@ -19,7 +19,8 @@
 #     are symlinks;
 #   * falls back to the other spelling of the remote (SSH <-> HTTPS) when the
 #     recorded one does not answer, so a dependency installed with an SSH
-#     remote still pulls on a machine with no key. git-subrepo would record
+#     remote still pulls on a machine with no key. `--https` skips the SSH
+#     attempt entirely, when you know there is no key to find. git-subrepo would record
 #     the fallback in the .gitrepo; sync puts the recorded remote back in the
 #     same commit. Pass your own -r/--remote to skip all of this.
 #
@@ -77,21 +78,26 @@ ROOT="$(cd "$ROOT" && pwd -P)"
 # push through; a machine with no key - a CI runner, a fresh container - reaches
 # the same public repository over HTTPS. So fetch from what is recorded, and
 # fall back to the other spelling. A local path, or an address carrying a port,
-# has one spelling: itself.
+# has one spelling: itself. With --https (HTTPS_ONLY=1) only the HTTPS spelling
+# is tried: you know there is no SSH key here, so do not spend a timeout
+# finding out.
 spellings() { # <url>
   local url="$1" rest host path
-  printf '%s\n' "$url"
   case "$url" in
     https://*|http://*) rest="${url#*://}"; rest="${rest#*@}"; host="${rest%%/*}"; path="${rest#*/}" ;;
     ssh://*)            rest="${url#ssh://}"; rest="${rest#*@}"; host="${rest%%/*}"; path="${rest#*/}" ;;
     *@*:*)              rest="${url#*@}"; host="${rest%%:*}"; path="${rest#*:}" ;;
-    *)                  return 0 ;;
+    *)                  printf '%s\n' "$url"; return 0 ;;
   esac
-  [[ -n "$host" && -n "$path" && "$host" != *:* ]] || return 0
+  if [[ -z "$host" || -z "$path" || "$host" == *:* ]]; then printf '%s\n' "$url"; return 0; fi
   path="${path%/}"; path="${path%.git}"
   case "$url" in
-    https://*|http://*) printf 'git@%s:%s.git\n' "$host" "$path" ;;
-    *)                  printf 'https://%s/%s.git\n' "$host" "$path" ;;
+    https://*|http://*)
+      printf '%s\n' "$url"
+      [[ "${HTTPS_ONLY:-0}" == 1 ]] || printf 'git@%s:%s.git\n' "$host" "$path" ;;
+    *)
+      [[ "${HTTPS_ONLY:-0}" == 1 ]] || printf '%s\n' "$url"
+      printf 'https://%s/%s.git\n' "$host" "$path" ;;
   esac
 }
 
@@ -110,6 +116,14 @@ reachable_remote() { # <url> <branch>
   return 1
 }
 
+# --https is ours, not git-subrepo's: take it out before forwarding the rest.
+HTTPS_ONLY=0
+PASS=()
+for argument in "$@"; do
+  if [[ "$argument" == --https ]]; then HTTPS_ONLY=1; else PASS+=("$argument"); fi
+done
+set -- ${PASS[@]+"${PASS[@]}"}
+
 OVERRIDE=()
 USER_REMOTE=0
 for argument in "$@"; do
@@ -120,8 +134,12 @@ BRANCH="$(git config -f "$DEP_DIR/.gitrepo" --get subrepo.branch 2>/dev/null || 
 if [[ "$USER_REMOTE" == 0 && -n "$RECORDED" ]]; then
   if REACHED="$(reachable_remote "$RECORDED" "${BRANCH:-release}")"; then
     if [[ "$REACHED" != "$RECORDED" ]]; then
-      printf 'sync: %s did not answer; pulling over %s (the .gitrepo keeps %s)\n' \
-        "$RECORDED" "$REACHED" "$RECORDED" >&2
+      if [[ "$HTTPS_ONLY" == 1 ]]; then
+        printf 'sync: --https: pulling over %s (the .gitrepo keeps %s)\n' "$REACHED" "$RECORDED" >&2
+      else
+        printf 'sync: %s did not answer; pulling over %s (the .gitrepo keeps %s)\n' \
+          "$RECORDED" "$REACHED" "$RECORDED" >&2
+      fi
       OVERRIDE=(--remote="$REACHED")
     fi
   fi
