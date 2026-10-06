@@ -43,4 +43,6 @@ jobs:
           git clone --quiet --branch 0.4.9 https://github.com/ingydotnet/git-subrepo "$HOME/.git-subrepo"
           echo "$HOME/.git-subrepo/lib" >> "$GITHUB_PATH"
 
-      - run: bash .suede/core/push-release.sh
+      # --https: a runner has no SSH key, so the SSH attempt would only cost a
+      # timeout per dependency before the fallback.
+      - run: bash .suede/core/push-release.sh --https
