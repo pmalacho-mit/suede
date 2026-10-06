@@ -3,7 +3,8 @@
 #     <repo>/<dependency>/.suede/core/upstream
 #
 # Running it proposes THIS dependency's local changes to the library upstream,
-# as a reviewable PR against the library's `main`:
+# as a reviewable PR against the library's `main`, then waits for that PR and
+# prints its link (pass --no-wait to skip waiting):
 #     ./<dependency>/.suede/core/upstream       (if executable)
 #     bash <dependency>/.suede/core/upstream
 #
