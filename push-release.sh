@@ -13,6 +13,9 @@
 # push and writes the reason into the job summary, rather than publishing a
 # lie.
 #
+# Flags:
+#   --https              reach every remote over HTTPS only (CI has no SSH key)
+#
 # Inputs (env):
 #   RELEASE_DIR          default: release
 #   DRY_RUN              set to 1 to stop before touching the remote
@@ -24,6 +27,14 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 DRY_RUN="${DRY_RUN:-0}"
 CORE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+HTTPS_FLAG=()
+for argument in "$@"; do
+  case "$argument" in
+    --https) HTTPS_FLAG=(--https) ;;
+    *) lib_die "unknown argument: $argument" ;;
+  esac
+done
 
 lib_enter_root
 [[ -d "$RELEASE_DIR" ]] || lib_die "no ./$RELEASE_DIR folder - nothing to publish"
@@ -53,7 +64,9 @@ refresh_manifest() {
 # Two different failures, two different fixes, so they are reported separately.
 guard() {
   local failed=0 deps
-  if ! bash "$CORE_DIR/diff.sh" > "$WORKSPACE/diff.txt" 2>&1; then
+  # Shipped only: a development dependency ships nothing, and being behind is
+  # never a reason to refuse a release.
+  if ! bash "$CORE_DIR/diff.sh" --shipped-only ${HTTPS_FLAG[@]+"${HTTPS_FLAG[@]}"} > "$WORKSPACE/diff.txt" 2>&1; then
     report "### suede: a release dependency has diverged from its pin"
     report ''
     report '```'
