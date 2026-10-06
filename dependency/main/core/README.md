@@ -85,6 +85,38 @@ SUEDE_PR_BACKEND=print bash .suede/core/open-pull-request.sh   # dry run
 
 ## What you run
 
+### [push.sh](./push.sh) and [check-release.sh](./check-release.sh)
+
+Push, and see whether the push publishes and whether the publish worked:
+
+```bash
+bash .suede/core/push.sh                    # git push, then check-release.sh
+git push && bash .suede/core/check-release.sh   # the same, spelled out
+bash .suede/core/check-release.sh           # on its own: main's latest commit on GitHub
+```
+
+`push.sh` is exactly `git push "$@" && bash .suede/core/check-release.sh`.
+`check-release.sh` knows what was just pushed without being told: git logs every
+push in `origin/main`'s reflog, with the commit `main` was at before. Then:
+
+1. If nothing under `release/` changed, the publish workflow does not run; it
+   says so and stops, asking GitHub nothing.
+2. If `release/.gitrepo` pins a `release` commit GitHub does not have, because
+   the `release` branch was never pushed, it says so and names the fix
+   (`git push origin release`). The run cannot succeed without it.
+3. It finds the `subrepo-push-release` run for the pushed commit, prints its
+   link as soon as GitHub has created it, and waits for it to finish.
+4. On success it reminds you to `git pull` the `.gitrepo` update the run pushes
+   back. On failure it points at the run's job summary, where the guard writes
+   its reason, and with a token in `GH_TOKEN` it prints the failed job's log too.
+
+On its own it reports the run for `main`'s latest commit, or, when that commit
+does not publish, the latest publish run. `--no-wait` reports where things
+stand without waiting. Exit `0` published or nothing to publish, `1` the run
+failed or the pin is missing, `2` could not tell. GitHub only, through its
+public API (no `gh`); needs `curl` and `jq`.
+
+
 ### [extract.sh](./extract.sh)
 
 Writes `release/.suede/.dependencies/` from what the tree declares: one

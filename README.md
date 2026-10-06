@@ -318,6 +318,7 @@ After your dependency repository is set up, you can maintain and develop it as y
 
 - **Use the `main` branch for all development.** Treat the `main` branch as the primary development branch where you add features, fix bugs, and iterate on the code. You can freely edit files on main, commit changes, and create sub-branches for feature development as needed.
 - **Keep distributable code in the `./release` folder.** Only the code intended to be consumed by other projects should go in the `./release` directory on `main`. This folder mirrors the content of the `release` branch. Do not put other files (tests, examples, docs, etc.) inside `./release`.
+- **Push with `bash .suede/core/push.sh`.** It runs `git push`, then says whether the push publishes, links the publish run as soon as GitHub starts it, and waits for the result. On its own, `bash .suede/core/check-release.sh` reports on `main`'s latest commit; see [`.suede/core`'s README](./dependency/main/core/README.md#pushsh-and-check-releasesh).
 - **Automatic publishing.** Whenever a change under `release/` lands on `main`, the [subrepo-push-release](./dependency/main/workflows/subrepo-push-release.yml) action runs [`.suede/core/push-release.sh`](./dependency/main/core/push-release.sh), which regenerates the dependency records, runs the publish **guard**, and then syncs `./release` out to the `release` branch.
 > [!NOTE]  
 > The publish also updates `./release/.gitrepo` on `main` to point at the new commit on the `release` branch, so pull from `main` before pushing further changes.

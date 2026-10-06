@@ -204,6 +204,8 @@ bash .suede/core/diff.sh --shipped-only   # what the publish guard checks
 bash release/.suede/core/deps.sh --check --in release   # everything declared is in place
 bash .suede/core/sync.sh                  # update every suede subrepo this repo vendors
 DRY_RUN=1 bash .suede/core/push-release.sh   # the publish guard, without publishing
+bash .suede/core/push.sh                  # git push, then follow the publish it starts
+bash .suede/core/check-release.sh         # did main's latest push publish, and did it work
 ```
 
 `sync.sh` is how the vendored machinery is updated, never by editing it; it
