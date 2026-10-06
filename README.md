@@ -282,6 +282,16 @@ What happens next:
 2. **A pull request is opened into `main`** by the [suede-downstream-to-main](./dependency/release/workflows/suede-downstream-to-main.yml) action, which replays your change onto the current release and transplants it under `release/` on top of `main`. Maintainers can test, fix and merge it there. Once merged, it flows back out to `release` through the normal publish path.
 3. **Your local state is restored**, so a later sync stays safe.
 
+When the dependency is on GitHub, `upstream` then **waits for the PR and prints
+its link** — up to three minutes, since the workflow that opens it takes about a
+minute. A draft PR means replaying the change onto the current release hit
+conflicts, left as markers for the maintainers. "Nothing new to propose" means
+the dependency's `main` already has the change, so no PR was opened. If the
+workflow fails, it prints the run's link and exits `1`; if no PR appears in
+time, the Actions page and `2`. `--no-wait` skips the wait. It uses GitHub's
+public API and needs `jq`; a token in `GH_TOKEN` lifts the hourly request
+limit.
+
 Each commit becomes its own proposal; re-running on the same commit is a no-op. Pass `-r`/`--remote <name>` to push to a remote other than the one tracked in the dependency's `.gitrepo`.
 
 > [!IMPORTANT]

@@ -13,6 +13,20 @@
 # branch in place as a main-shaped PR head for the maintainers to test & merge.
 # `release` is never modified, and local subrepo tracking is restored so a later
 # `git subrepo pull` is safe.
+#
+# Then, for a dependency on GitHub, it waits for that Action and prints the
+# PR's link: as a draft when replaying the change onto the current release hit
+# conflicts, "nothing new" when the dependency's main already has the change
+# (the Action deletes the branch), or the run's link when the Action failed.
+# Pass --no-wait to skip that. Through GitHub's public API; needs jq. A token
+# in GH_TOKEN (or GITHUB_TOKEN) lifts the 60-requests-an-hour limit.
+#
+# Exit: 0 proposed (a PR is open, or there was nothing new); 1 failed; 2 pushed,
+# but no PR appeared within the wait.
+#
+# Env: SUEDE_GITHUB_API (default https://api.github.com), SUEDE_UPSTREAM_WAIT
+# seconds to wait for the PR (default 180), SUEDE_UPSTREAM_INTERVAL seconds
+# between polls (default 5).
 
 set -euo pipefail
 
@@ -22,18 +36,21 @@ BRANCH_PREFIX="downstream"
 die() { echo "error: $*" >&2; exit 1; }
 usage() {
   cat <<'USAGE'
-usage: upstream <path-to-dependency> [-r|--remote <name>]
-  Proposes the dependency's local changes upstream via a PR to its `main`.
+usage: upstream <path-to-dependency> [-r|--remote <name>] [--no-wait]
+  Proposes the dependency's local changes upstream via a PR to its `main`,
+  then waits for the PR and prints its link (--no-wait: do not wait).
   The dependency's `release` branch is left untouched.
 USAGE
 }
 
 DIR=""
 REMOTE_OVERRIDE=""
+WAIT=1
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help)   usage; exit 0 ;;
     -r|--remote) REMOTE_OVERRIDE="${2:-}"; shift 2 ;;
+    --no-wait)   WAIT=0; shift ;;
     -*)          die "unknown flag: $1" ;;
     *)           [ -z "$DIR" ] || die "unexpected argument: $1"; DIR="$1"; shift ;;
   esac
@@ -142,3 +159,76 @@ OK Proposed upstream. Local state restored — safe to 'git subrepo pull' anytim
   - Further local changes become a NEW snapshot/branch/PR (one-off per commit).
   - The 'release' branch was NOT modified; other consumers are unaffected.
 MSG
+
+# ---- wait for the PR --------------------------------------------------------
+[ "$WAIT" = 1 ] || exit 0
+
+API="${SUEDE_GITHUB_API:-https://api.github.com}"
+WAIT_FOR="${SUEDE_UPSTREAM_WAIT:-180}"
+INTERVAL="${SUEDE_UPSTREAM_INTERVAL:-5}"
+
+github_slug() { # <url> -> owner/name, or nothing for a remote not on GitHub
+  local rest
+  case "$1" in
+    https://github.com/*|http://github.com/*) rest="${1#*github.com/}" ;;
+    git@github.com:*)                         rest="${1#git@github.com:}" ;;
+    ssh://git@github.com/*)                   rest="${1#ssh://git@github.com/}" ;;
+    *) return 1 ;;
+  esac
+  rest="${rest%/}"; rest="${rest%.git}"
+  printf '%s' "$rest"
+}
+
+api() { # <path>
+  local token="${GH_TOKEN:-${GITHUB_TOKEN:-}}" auth=()
+  [ -n "$token" ] && auth=(-H "Authorization: Bearer $token")
+  curl -fsSL -H "Accept: application/vnd.github+json" ${auth[@]+"${auth[@]}"} "$API/$1"
+}
+
+if ! dep_slug="$(github_slug "$dep_remote")"; then
+  echo
+  echo "($dep_remote is not on GitHub, so there is no PR to wait for: the branch is $BRANCH)"
+  exit 0
+fi
+if ! command -v jq >/dev/null 2>&1; then
+  echo
+  echo "(install jq to have upstream wait for the PR and print its link: https://github.com/$dep_slug/pulls)"
+  exit 0
+fi
+
+echo
+echo "Waiting for the PR (up to ${WAIT_FOR}s; --no-wait skips this) ..."
+dep_owner="${dep_slug%%/*}"
+deadline=$((SECONDS + WAIT_FOR))
+while :; do
+  pr="$(api "repos/$dep_slug/pulls?head=$dep_owner:$BRANCH&state=all&per_page=1" 2>/dev/null | jq -c '.[0] // empty' 2>/dev/null || true)"
+  if [ -n "$pr" ]; then
+    if [ "$(jq -r '.draft' <<<"$pr")" = true ]; then
+      echo "PR opened as a draft: replaying your change onto the current release hit conflicts,"
+      echo "which are left as markers for the maintainers to resolve."
+    else
+      echo "PR opened:"
+    fi
+    echo "  $(jq -r '.html_url' <<<"$pr")"
+    exit 0
+  fi
+  run="$(api "repos/$dep_slug/actions/runs?branch=$BRANCH&per_page=1" 2>/dev/null | jq -c '.workflow_runs[0] // empty' 2>/dev/null || true)"
+  if [ -n "$run" ] && [ "$(jq -r '.status' <<<"$run")" = completed ]; then
+    if [ "$(jq -r '.conclusion' <<<"$run")" != success ]; then
+      echo "The Action that opens the PR ended: $(jq -r '.conclusion' <<<"$run")"
+      echo "  $(jq -r '.html_url' <<<"$run")"
+      exit 1
+    fi
+    # It succeeded without a PR: either the branch had nothing new and the
+    # Action deleted it, or the PR is a moment from showing in the API.
+    if ! git ls-remote --heads --exit-code "$dep_remote" "$BRANCH" >/dev/null 2>&1; then
+      echo "Nothing new to propose: the dependency's main already has this change, so the"
+      echo "Action removed the branch and opened no PR."
+      exit 0
+    fi
+  fi
+  [ "$SECONDS" -lt "$deadline" ] || break
+  sleep "$INTERVAL"
+done
+echo "No PR after ${WAIT_FOR}s. Follow the Action at https://github.com/$dep_slug/actions (branch: $BRANCH)."
+exit 2

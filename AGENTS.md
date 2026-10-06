@@ -180,7 +180,7 @@ bash <dep>/.suede/core/diff               # pinned commit -> your tree: what you
 bash <dep>/.suede/core/diff --sync        # your tree -> release tip: what you would receive
 bash <dep>/.suede/core/diff --at <commit> # against some other commit
 bash <dep>/.suede/core/sync               # git subrepo pull, symlink- and cwd-safe
-bash <dep>/.suede/core/upstream           # propose local edits back as a PR
+bash <dep>/.suede/core/upstream           # propose local edits back as a PR, then print its link
 bash <dep>/.suede/core/clean              # git subrepo clean, after a sync/upstream that stopped part way
 ```
 

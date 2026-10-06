@@ -187,6 +187,16 @@ symlink path fails.
 3. Your local state is restored afterward, so a later `sync` stays safe. The
    `release` branch is **never** modified, so other consumers are unaffected.
 
+When the dependency is on GitHub, `upstream` then **waits for the PR and prints
+its link** — up to three minutes, since the workflow that opens it takes about a
+minute. A draft PR means replaying the change onto the current release hit
+conflicts, left as markers for the maintainers. "Nothing new to propose" means
+the dependency's `main` already has the change, so no PR was opened. If the
+workflow fails, it prints the run's link and exits `1`; if no PR appears in
+time, the Actions page and `2`. `--no-wait` skips the wait. It uses GitHub's
+public API and needs `jq`; a token in `GH_TOKEN` lifts the hourly request
+limit.
+
 Each commit becomes its own proposal; re-running on the same commit is a no-op.
 Pass `-r`/`--remote <name>` to push to a remote other than the one tracked in
 the dependency's `.gitrepo`. It is a thin bootstrapper: the real logic is hosted
