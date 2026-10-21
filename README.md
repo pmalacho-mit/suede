@@ -57,6 +57,51 @@ DRY_RUN=1 bash .suede/core/push-release.sh --https    # without the SSH attempt
 The workflow passes `--https`: a runner has no SSH key, so trying SSH first
 would only cost a timeout per dependency.
 
+**Only what is on GitHub is published.** Before anything is committed or
+pushed, a real publish refuses, saying what to do, when:
+
+- the working tree has uncommitted changes;
+- `main` has commits `origin` does not (push first), is behind `origin` (pull
+  first), or has diverged from it;
+- `release/.gitrepo` pins a commit the `release` branch does not have (push
+  `release` first).
+
+In CI a run can only be behind, when a newer push landed while it queued. It then
+moves to that newer tip and publishes it, so the newest `main` is always what
+ships; the run queued for that push then finds nothing new. `DRY_RUN=1` checks
+the same things but only warns, so the guard still runs on work you have not
+pushed. If someone pushes to `main` while a publish is running, the publish's
+own bookkeeping — the records and the `.gitrepo` update — is replayed onto
+their push and pushed again. A conflict there stops it, with an explanation in
+the job summary; the release itself has already gone out, and the next publish
+brings `main` level.
+
+**Publishing by hand** works from any clone that can push. The release branch
+is pushed through your clone's `origin` whenever `origin` is the same
+repository as the remote `release/.gitrepo` records, comparing owner and name
+only, so an SSH host alias like `git@github.com-work:owner/repo.git` counts. Your
+SSH key or credential helper then applies, even though the recorded remote is
+the HTTPS URL consumers install from. That recorded URL is left as it is.
+
+**A release that changes a workflow file** — typically after `sync.sh` brought
+in an update to `release/.github/workflows` — cannot be published by the
+workflow with its default token: GitHub refuses any push made with
+`GITHUB_TOKEN` that creates or changes a file under `.github/workflows/`. The
+run fails, the `release` branch is untouched, and the job summary says so. Two
+fixes:
+
+- Publish once from your machine: `bash .suede/core/push-release.sh` on an
+  up-to-date `main`.
+- Or add a repository secret **`SUEDE_RELEASE_TOKEN`**: a personal access token
+  with the `workflow` scope, or a fine-grained token with Contents and
+  Workflows write. The workflow uses it in place of `GITHUB_TOKEN` when it is
+  set. A push made with it starts workflows where `GITHUB_TOKEN`'s does not, so
+  the `.gitrepo` update the publish pushes back to `main` starts one more run.
+  That run finds nothing new and pushes nothing.
+
+Any other refused push is explained in the job summary too, with git's own
+words.
+
 `RELEASE_DIR` (default `release`) overrides which folder is published, and
 `SUEDE_RELEASE_CORE` where the consumer-facing `diff` and `deps.sh` are read
 from (default `release/.suede/core`; if that copy predates `deps.sh`, the guard
@@ -84,6 +129,38 @@ SUEDE_PR_BACKEND=print bash .suede/core/open-pull-request.sh   # dry run
 ```
 
 ## What you run
+
+### [push.sh](./push.sh) and [check-release.sh](./check-release.sh)
+
+Push, and see whether the push publishes and whether the publish worked:
+
+```bash
+bash .suede/core/push.sh                    # git push, then check-release.sh
+git push && bash .suede/core/check-release.sh   # the same, spelled out
+bash .suede/core/check-release.sh           # on its own: main's latest commit on GitHub
+```
+
+`push.sh` is exactly `git push "$@" && bash .suede/core/check-release.sh`.
+`check-release.sh` knows what was just pushed without being told: git logs every
+push in `origin/main`'s reflog, with the commit `main` was at before. Then:
+
+1. If nothing under `release/` changed, the publish workflow does not run; it
+   says so and stops, asking GitHub nothing.
+2. If `release/.gitrepo` pins a `release` commit GitHub does not have, because
+   the `release` branch was never pushed, it says so and names the fix
+   (`git push origin release`). The run cannot succeed without it.
+3. It finds the `subrepo-push-release` run for the pushed commit, prints its
+   link as soon as GitHub has created it, and waits for it to finish.
+4. On success it reminds you to `git pull` the `.gitrepo` update the run pushes
+   back. On failure it points at the run's job summary, where the guard writes
+   its reason, and with a token in `GH_TOKEN` it prints the failed job's log too.
+
+On its own it reports the run for `main`'s latest commit, or, when that commit
+does not publish, the latest publish run. `--no-wait` reports where things
+stand without waiting. Exit `0` published or nothing to publish, `1` the run
+failed or the pin is missing, `2` could not tell. GitHub only, through its
+public API (no `gh`); needs `curl` and `jq`.
+
 
 ### [extract.sh](./extract.sh)
 

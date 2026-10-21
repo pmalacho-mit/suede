@@ -119,7 +119,10 @@ recommended_parent() { # <output>
 }
 
 touched_this_subrepo() { # <path> <commit>
-  git log --format=%H -- "$1" | grep -qx "$2"
+  # Captured first: under pipefail, `git log | grep -q` fails whenever grep exits
+  # before git has finished writing, which would send the repair elsewhere.
+  local touched; touched="$(git log --format=%H -- "$1")"
+  grep -qx "$2" <<<"$touched"
 }
 
 repair_parent() { # <path> <pull output> -> 0 if it repaired something
