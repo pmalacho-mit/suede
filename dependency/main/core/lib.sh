@@ -204,6 +204,18 @@ remote_tip() { # <install path>
   return 1
 }
 
+# owner/name of a remote, lowercased: the part two spellings of one GitHub
+# repository share. The host is left out on purpose - an SSH host alias
+# (git@github.com-work:owner/name.git) names the same repository as
+# https://github.com/owner/name.
+repo_path() { # <url>
+  local url="${1%/}"
+  url="${url%.git}"
+  url="${url/://}"
+  url="${url#"${url%/*/*}/"}"
+  printf '%s' "$url" | tr '[:upper:]' '[:lower:]'
+}
+
 # The consumer-facing script of that name, from the copy this repository
 # vendors into release/. It has to be current: deps.sh is newer than some
 # published cores.
